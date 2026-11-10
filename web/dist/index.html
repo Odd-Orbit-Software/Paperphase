@@ -17,7 +17,7 @@
   <main>
     <section class="page-heading">
       <div><div class="eyebrow">YOUR SPACE, AT A GLANCE</div><h1>A little less screen.</h1><p>Make room for the information that matters.</p></div>
-      <div class="heading-actions"><span id="save-state" class="subtle">Loading workspace…</span><button id="discard" hidden>Discard</button><button id="save" class="primary" hidden>Save to display <span aria-hidden="true">↗</span></button><button id="edit" class="primary">Edit layout <span aria-hidden="true">↗</span></button></div>
+      <div class="heading-actions"><span id="save-state" class="subtle">Loading workspace…</span><button id="refresh" disabled>↻ Refresh display</button><button id="discard" hidden>Discard</button><button id="save" class="primary" hidden>Save to display <span aria-hidden="true">↗</span></button><button id="edit" class="primary">Edit layout <span aria-hidden="true">↗</span></button></div>
     </section>
     <div id="notice" role="status" aria-live="polite" hidden></div>
     <section class="studio" aria-label="Display editor">
@@ -25,7 +25,7 @@
         <div class="panel-heading"><h2>Components</h2><span id="component-count" class="count">0</span></div>
         <p class="panel-description" id="library-description">Your saved arrangement.</p>
         <div id="component-list" class="component-list"></div>
-        <div id="add-tools" hidden><div class="section-label">ADD TO YOUR DISPLAY</div><button id="add-text" class="template"><span class="template-icon">Aa</span><span><strong>Text</strong><small>A note, heading, or quotation</small></span><span>+</span></button><button id="add-data" class="template"><span class="template-icon">≋</span><span><strong>Data field</strong><small>Connect a dataset value</small></span><span>+</span></button></div>
+        <div id="add-tools" hidden><div class="section-label">ADD TO YOUR DISPLAY</div><button id="add-text" class="template"><span class="template-icon">Aa</span><span><strong>Text</strong><small>A note, heading, or quotation</small></span><span>+</span></button><button id="add-data" class="template"><span class="template-icon">≋</span><span><strong>Data field</strong><small>Connect a dataset value</small></span><span>+</span></button><button id="add-clock" class="template"><span class="template-icon">◷</span><span><strong>Time &amp; date</strong><small>Keep time in your timezone</small></span><span>+</span></button><button id="display-settings" class="wide-button">Display settings</button></div>
         <div class="library-note"><span class="tiny-orbit">◌</span><strong>A place for everything.</strong><p>Components sit side by side. Each one owns its space on the display.</p></div>
       </aside>
       <div class="canvas-panel">

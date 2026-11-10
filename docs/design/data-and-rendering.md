@@ -112,8 +112,10 @@ with the source's freshness state. Error details are not painted on the panel.
 
 Reports list source and rendering problems per component. Status does not imply
 a connection to physical hardware; the CLI labels the overall result `simulated`.
-Freshness is evaluated when rendering is requested. Automatic scheduling and
-quiet-hours enforcement belong to the future service/controller.
+Freshness is evaluated at the supplied render time. The service now schedules
+bound-snapshot freshness transitions and gates completed display updates through
+[quiet hours](clock-and-refresh.md). The standalone renderer does not enforce
+display timing policy.
 
 ## Text layout and rasterization
 
@@ -175,6 +177,7 @@ visually inspected. Pi resource and physical-display validation remain pending.
 
 The [desktop editor/service](desktop-editor.md) now adds persistence, a text/data
 block builder, and draft previews on top of this renderer. Further builder nodes,
-a plugin package/settings contract, and automatic refresh scheduling are pending.
-The built-in live clock, real provider integrations, physical drivers, and Pi
-validation remain pending.
+a plugin package/settings contract, and provider scheduling are pending.
+[Live clocks and simulated refresh scheduling](clock-and-refresh.md) are
+implemented. Real provider integrations, physical drivers, and Pi validation
+remain pending.

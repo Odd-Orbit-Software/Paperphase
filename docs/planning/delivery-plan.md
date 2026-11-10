@@ -36,8 +36,10 @@ Progress: the [shared renderer and file-based simulator](../design/data-and-rend
 and the [first desktop editor/service](../design/desktop-editor.md) are
 implemented, including text/data templates, a block builder, draft isolation,
 non-overlapping geometry, undo/redo, durable revision-checked saves, and simulated
-completion state. Plugin settings, the live clock, scheduling, and refresh policy
-remain to be delivered; stage 2 is not complete.
+completion state. [Time/date blocks, clock/freshness deadlines, quiet hours, and
+explicit simulated refresh](../design/clock-and-refresh.md) are also implemented.
+Plugin settings, provider scheduling, direct internal positioning, fuller builder
+nodes, and panel-aware refresh policy remain pending; stage 2 is not complete.
 
 Deliver a usable desktop workflow backed by the real rendering and scheduling
 boundaries, with deterministic sample datasets and simulated display operations.

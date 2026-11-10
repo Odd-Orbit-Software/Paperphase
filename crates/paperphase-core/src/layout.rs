@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{Dataset, Result, require, valid_id};
+use crate::{ClockSpec, Dataset, Result, require, valid_id};
 
 pub const MAX_PIXELS: u64 = 4_194_304;
 pub const STATUS_HEIGHT: u32 = 18;
@@ -130,6 +130,7 @@ pub enum Overflow {
 pub enum TextSource {
     Literal { text: String },
     Field { binding: Binding },
+    Clock { clock: ClockSpec },
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -237,6 +238,10 @@ impl Layout {
                     "font size must be 8–256 pixels",
                 )?;
                 match &block.source {
+                    TextSource::Clock { clock } => clock.validate().map_err(|mut error| {
+                        error.path = format!("{path}.source.clock.{}", error.path);
+                        error
+                    })?,
                     TextSource::Literal { text } => {
                         require(
                             text.len() <= 4096,

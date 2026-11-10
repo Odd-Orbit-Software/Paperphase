@@ -1,11 +1,14 @@
 export {};
 type Rect = { x: number; y: number; width: number; height: number };
 type Binding = { connection_id: string; dataset_id: string; field_id: string; row: number; decimals: number | null; prefix: string; suffix: string };
-type Source = { kind: 'literal'; text: string } | { kind: 'field'; binding: Binding };
+type ClockSpec = { timezone: string; content: 'time' | 'date' | 'date_time'; hour_cycle: 'twenty_four' | 'twelve'; date_format: 'long' | 'short' | 'iso' | 'weekday' };
+type RefreshSettings = { quiet_hours: { timezone: string; start: string; end: string } | null };
+type Source = { kind: 'literal'; text: string } | { kind: 'field'; binding: Binding } | { kind: 'clock'; clock: ClockSpec };
 type Block = { id: string; source: Source; font_size: number; align: string; overflow: string };
 type Component = { id: string; rect: Rect; padding: number; gap: number; border: boolean; blocks: Block[] };
 type Layout = { schema_version: number; display: { id: string; width: number; height: number }; components: Component[] };
-type Workspace = { revision: number; displayed_revision: number; phase: string; layout: Layout; addresses: string[] };
+type Workspace = { revision: number; displayed_revision: number; frame_id: string; clock_now: number; pending: boolean; phase: string; layout: Layout; refresh_settings: RefreshSettings; addresses: string[] };
+type EditState = { layout: Layout; settings: RefreshSettings };
 type Dataset = { connection_id: string; dataset_id: string; fields: { id: string; kind: string; unit?: string }[]; rows: number; stale: boolean };
 type Report = { id: string; state: string; warnings: string[] };
 type Preview = { png_base64: string; components: Report[] };
@@ -14,18 +17,22 @@ const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getEleme
 const clone = <T>(value: T): T => structuredClone(value);
 const button = (id: string) => $<HTMLButtonElement>(id);
 const checked = (id: string) => $<HTMLInputElement>(id).checked;
-const equal = (a: Layout, b: Layout) => JSON.stringify(a) === JSON.stringify(b);
+const equal = <T>(a: T, b: T) => JSON.stringify(a) === JSON.stringify(b);
 let saved: Workspace;
 let draft: Layout;
+let draftSettings: RefreshSettings;
+let zones: string[] = [];
+let settingsSelected = false;
 let catalog: Dataset[] = [];
 let editing = false;
 let viewingDraft = false;
 let selected: string | null = null;
-let undo: Layout[] = [];
-let redo: Layout[] = [];
+let undo: EditState[] = [];
+let redo: EditState[] = [];
 let reports: Report[] = [];
 let draftImage = '';
-let displayedRevision = -1;
+let displayedFrame = '';
+let draftMinute = -1;
 let zoom = 1;
 let autoFit = true;
 let saving = false;
@@ -37,7 +44,9 @@ let coalescedKey = '';
 let lastEdit = 0;
 let connected = true;
 let lastInspectedId: string | null = null;
-let drag: { id: string; startX: number; startY: number; original: Rect; last: Rect; baseline: Layout; resize: boolean; pointerId: number; invalid: boolean } | undefined;
+let drag: { id: string; startX: number; startY: number; original: Rect; last: Rect; baseline: EditState; resize: boolean; pointerId: number; invalid: boolean } | undefined;
+function capture(): EditState { return { layout: clone(draft), settings: clone(draftSettings) }; }
+function restore(state: EditState) { draft = clone(state.layout); draftSettings = clone(state.settings); }
 
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(path, options);
@@ -54,7 +63,7 @@ function notice(message = '', error = false) {
   $('notice').textContent = message;
   $('notice').classList.toggle('error', error);
 }
-function dirty() { return editing && !equal(draft, saved.layout); }
+function dirty() { return editing && (!equal(draft, saved.layout) || !equal(draftSettings, saved.refresh_settings)); }
 function active() { return editing && viewingDraft && !saving; }
 function component() { return draft.components.find(c => c.id === selected); }
 function name(c: Component): string {
@@ -62,6 +71,7 @@ function name(c: Component): string {
   if (first?.source.kind === 'literal' && first.source.text.trim()) return first.source.text.trim().split('\n')[0]!.slice(0, 36);
   const field = c.blocks.find(b => b.source.kind === 'field');
   if (field?.source.kind === 'field') return `${field.source.binding.field_id} · ${field.source.binding.connection_id}`;
+  if (c.blocks.some(b => b.source.kind === 'clock')) return 'Time & date';
   return 'Untitled text';
 }
 function validRect(rect: Rect, id: string, layout = draft): boolean {
@@ -77,7 +87,7 @@ function validRect(rect: Rect, id: string, layout = draft): boolean {
 function locallyValid(layout: Layout) {
   return layout.components.length <= 64 && layout.components.every(c => validRect(c.rect, c.id, layout));
 }
-function remember(before: Layout, key = '') {
+function remember(before: EditState, key = '') {
   const now = Date.now();
   if (!key || coalescedKey !== key || now - lastEdit > 800) {
     undo.push(before);
@@ -89,15 +99,19 @@ function remember(before: Layout, key = '') {
 }
 function change(update: (layout: Layout) => void, key = '', rebuild = true) {
   if (!active()) return;
-  const before = clone(draft);
+  const before = capture();
   update(draft);
   if (!locallyValid(draft)) {
-    draft = before;
+    restore(before);
     notice('That change leaves too little space or overlaps another component. The previous position is kept.', true);
     renderInspector();
     return;
   }
-  if (equal(before, draft)) return;
+  const quiet = draftSettings.quiet_hours;
+  if (quiet && (!/^([01]\d|2[0-3]):[0-5]\d$/.test(quiet.start) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(quiet.end) || quiet.start === quiet.end)) {
+    restore(before); notice('Quiet hours need valid, distinct start and end times.', true); renderInspector(); return;
+  }
+  if (equal(before, capture())) return;
   remember(before, key);
   notice();
   render(rebuild);
@@ -141,6 +155,7 @@ function render(rebuildInspector = true) {
   button('save').hidden = !editing;
   button('save').disabled = !isDirty || saving || conflict || !connected;
   button('discard').disabled = saving;
+  button('refresh').disabled = !connected || saving;
   $('inspector-body').inert = saving;
   $('save-state').textContent = saving ? 'Saving…' : conflict ? 'Newer layout available' : isDirty ? '● Unsaved changes' : `Saved · revision ${saved.revision}`;
   $('save-state').classList.toggle('dirty-dot', isDirty);
@@ -168,7 +183,7 @@ function render(rebuildInspector = true) {
 }
 function setDisplayedImage(force = false) {
   const image = $<HTMLImageElement>('frame');
-  const path = `/api/display.png?revision=${saved.displayed_revision}`;
+  const path = `/api/display.png?frame=${encodeURIComponent(saved.frame_id)}`;
   if (force || image.getAttribute('src') !== path) image.src = path;
 }
 function node<K extends keyof HTMLElementTagNameMap>(tag: K, className = '', content = '') {
@@ -185,12 +200,12 @@ function renderList() {
   for (const c of layout.components) {
     const item = node('button', `component-item ${active() && selected === c.id ? 'selected' : ''}`);
     item.setAttribute('aria-label', `Select ${c.id}`);
-    item.append(node('span', 'component-icon', c.blocks.some(b => b.source.kind === 'field') ? '≋' : 'Aa'));
+    item.append(node('span', 'component-icon', c.blocks.some(b => b.source.kind === 'clock') ? '◷' : c.blocks.some(b => b.source.kind === 'field') ? '≋' : 'Aa'));
     const text = node('span');
     text.append(node('span', 'item-name', name(c)), node('small', '', `${c.rect.width} × ${c.rect.height} · ${c.rect.x}, ${c.rect.y}`));
     item.append(text);
     item.disabled = !active();
-    item.onclick = () => { selected = c.id; render(); };
+    item.onclick = () => { selected = c.id; settingsSelected = false; render(); };
     list.append(item);
   }
 }
@@ -218,7 +233,7 @@ function renderOverlays() {
     }
     box.onfocus = () => {
       if (selected !== c.id) {
-        selected = c.id; renderInspector(); renderList(); renderOverlays();
+        selected = c.id; settingsSelected = false; renderInspector(); renderList(); renderOverlays();
         for (const next of overlays.querySelectorAll<HTMLElement>('[data-component]')) if (next.dataset.component === c.id) next.focus();
       }
     };
@@ -282,6 +297,7 @@ function renderInspector() {
     lastInspectedId = selected;
   }
   inspector.replaceChildren();
+  if (active() && settingsSelected) { renderSettings(inspector); return; }
   const c = component();
   if (!active() || !c) {
     const empty = node('div', 'empty-properties');
@@ -309,12 +325,20 @@ function renderInspector() {
     action('↑', 'Move block up', heading, () => move(-1), index === 0);
     action('↓', 'Move block down', heading, () => move(1), index === c.blocks.length - 1);
     action('×', 'Remove block', heading, () => updateComponent(c => { c.blocks = c.blocks.filter(b => b.id !== block.id); }), c.blocks.length === 1);
-    select('Content source', block.source.kind, [['literal', 'Text'], ['field', 'Dataset field']], card, kind => updateBlock(b => {
+    select('Content source', block.source.kind, [['literal', 'Text'], ['field', 'Dataset field'], ['clock', 'Time & date']], card, kind => updateBlock(b => {
       if (kind === 'literal') b.source = { kind: 'literal', text: 'Your text' };
+      else if (kind === 'clock') b.source = { kind: 'clock', clock: newClock('time') };
       else if (catalog[0]) b.source = { kind: 'field', binding: newBinding(catalog[0]) };
     }));
     if (block.source.kind === 'literal') {
       textField('Text', block.source.text, card, value => updateBlock(b => { if (b.source.kind === 'literal') b.source.text = value; }, `${id}.${block.id}.text`, false), true, 4096);
+    } else if (block.source.kind === 'clock') {
+      const clock = block.source.clock;
+      const updateClock = (fn: (clock: ClockSpec) => void) => updateBlock(b => { if (b.source.kind === 'clock') fn(b.source.clock); });
+      select('Show', clock.content, [['time', 'Time'], ['date', 'Date'], ['date_time', 'Time and date']], card, value => updateClock(c => { c.content = value as ClockSpec['content']; }));
+      select('Timezone', clock.timezone, zones.map(zone => [zone, zone]), card, value => updateClock(c => { c.timezone = value; }));
+      if (clock.content !== 'date') select('Time format', clock.hour_cycle, [['twenty_four', '24-hour'], ['twelve', '12-hour']], card, value => updateClock(c => { c.hour_cycle = value as ClockSpec['hour_cycle']; }));
+      if (clock.content !== 'time') select('Date format', clock.date_format, [['long', 'Tuesday, 10 November 2026'], ['short', '10 Nov 2026'], ['iso', '2026-11-10'], ['weekday', 'Tuesday']], card, value => updateClock(c => { c.date_format = value as ClockSpec['date_format']; }));
     } else {
       const binding = block.source.binding;
       const updateBinding = (fn: (b: Binding) => void, key = '', rebuild = true) => updateBlock(b => { if (b.source.kind === 'field') fn(b.source.binding); }, key, rebuild);
@@ -346,17 +370,40 @@ function newBinding(dataset: Dataset): Binding { return { connection_id: dataset
 // getRandomValues also works over plain HTTP on a LAN; randomUUID requires HTTPS.
 function identifier(prefix: string) { return `${prefix}-${Array.from(crypto.getRandomValues(new Uint8Array(8)), n => n.toString(16).padStart(2, '0')).join('')}`; }
 function newBlock(): Block { return { id: identifier('block'), source: { kind: 'literal', text: 'Your text' }, font_size: 20, align: 'left', overflow: 'wrap' }; }
-function addComponent(data: boolean) {
+function newClock(content: ClockSpec['content']): ClockSpec { return { timezone: 'Europe/Dublin', content, hour_cycle: 'twenty_four', date_format: 'short' }; }
+function renderSettings(parent: HTMLElement) {
+  const panel = section('DISPLAY SETTINGS', parent);
+  const toggle = node('label', 'check');
+  const input = node('input'); input.type = 'checkbox'; input.checked = !!draftSettings.quiet_hours;
+  input.onchange = () => change(() => { draftSettings.quiet_hours = input.checked ? { timezone: 'Europe/Dublin', start: '22:00', end: '07:00' } : null; });
+  toggle.append(input, document.createTextNode('Enable quiet hours')); panel.append(toggle);
+  panel.append(node('p', 'render-report', 'During quiet hours the displayed frame stays still. The clock continues; the latest saved layout is rendered when quiet hours end.'));
+  const quiet = draftSettings.quiet_hours;
+  if (quiet) {
+    select('Quiet hours timezone', quiet.timezone, zones.map(zone => [zone, zone]), panel, value => change(() => { draftSettings.quiet_hours!.timezone = value; }));
+    for (const [key, title] of [['start', 'Pause at'], ['end', 'Resume at']] as const) {
+      const time = node('input'); time.type = 'time'; time.value = quiet[key]; time.step = '60';
+      time.onchange = () => change(() => { draftSettings.quiet_hours![key] = time.value; });
+      label(title, time, panel);
+    }
+  }
+  panel.append(node('p', 'render-report', 'Use Save to apply these settings, or Discard to restore them. Refresh display also respects quiet hours.'));
+}
+function addComponent(kind: 'text' | 'data' | 'clock') {
   const block = newBlock();
-  if (data) {
+  const blocks = [block];
+  if (kind === 'clock') {
+    block.source = { kind: 'clock', clock: newClock('time') }; block.font_size = 40;
+    const date = newBlock(); date.source = { kind: 'clock', clock: newClock('date') }; date.font_size = 14; blocks.push(date);
+  } else if (kind === 'data') {
     if (!catalog[0]) { notice('No datasets are available. Start with a text component.'); return; }
     block.source = { kind: 'field', binding: newBinding(catalog[0]) };
   }
-  const c: Component = { id: identifier('component'), rect: { x: 0, y: 0, width: 256, height: 128 }, padding: 12, gap: 8, border: false, blocks: [block] };
+  const c: Component = { id: identifier('component'), rect: { x: 0, y: 0, width: 256, height: 128 }, padding: 12, gap: 8, border: false, blocks };
   for (let y = 16; y + c.rect.height <= draft.display.height; y += 8) {
     for (let x = 16; x + c.rect.width <= draft.display.width; x += 8) {
       c.rect.x = x; c.rect.y = y;
-      if (validRect(c.rect, c.id)) { selected = c.id; change(l => { l.components.push(c); }); return; }
+      if (validRect(c.rect, c.id)) { selected = c.id; settingsSelected = false; change(l => { l.components.push(c); }); return; }
     }
   }
   notice('No free 256 × 128 area is available. Resize or remove a component to make room.');
@@ -379,8 +426,9 @@ $('board').addEventListener('pointerdown', event => {
   if (!box) { selected = null; render(); return; }
   event.preventDefault();
   selected = box.dataset.component!;
+  settingsSelected = false;
   const c = component()!;
-  drag = { id: c.id, startX: event.clientX, startY: event.clientY, original: { ...c.rect }, last: { ...c.rect }, baseline: clone(draft), resize: !!target.closest('[data-resize]'), pointerId: event.pointerId, invalid: false };
+  drag = { id: c.id, startX: event.clientX, startY: event.clientY, original: { ...c.rect }, last: { ...c.rect }, baseline: capture(), resize: !!target.closest('[data-resize]'), pointerId: event.pointerId, invalid: false };
   lastPointerX = event.clientX; lastPointerY = event.clientY;
   $('board').setPointerCapture(event.pointerId);
   document.body.classList.add('dragging');
@@ -399,10 +447,10 @@ function endDrag(cancel = false) {
   if (!drag) return;
   const state = drag;
   drag = undefined;
-  if (cancel) draft = state.baseline;
+  if (cancel) restore(state.baseline);
   else {
     component()!.rect = state.last;
-    if (!equal(state.baseline, draft)) remember(state.baseline);
+    if (!equal(state.baseline, capture())) remember(state.baseline);
     if (state.invalid) notice('Components cannot overlap or leave the display. Restored the last valid position.');
   }
   if ($('board').hasPointerCapture(state.pointerId)) $('board').releasePointerCapture(state.pointerId);
@@ -418,7 +466,7 @@ function history(direction: 'undo' | 'redo') {
   const to = direction === 'undo' ? redo : undo;
   const layout = from.pop();
   if (!layout) return;
-  to.push(clone(draft)); draft = layout; coalescedKey = '';
+  to.push(capture()); restore(layout); coalescedKey = '';
   if (!component()) selected = null;
   notice(); render(); queuePreview();
 }
@@ -426,23 +474,23 @@ async function save() {
   if (!dirty() || saving || conflict || !connected || drag) return;
   saving = true; render(false); notice();
   try {
-    const result = await api<{ revision: number }>('/api/layout', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ base_revision: saved.revision, layout: draft }) });
-    saved = { ...saved, revision: result.revision, layout: clone(draft), phase: 'refreshing' };
+    const result = await api<{ revision: number; phase: string }>('/api/layout', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ base_revision: saved.revision, layout: draft, refresh_settings: draftSettings }) });
+    saved = { ...saved, revision: result.revision, layout: clone(draft), refresh_settings: clone(draftSettings), phase: result.phase };
     editing = false; viewingDraft = false; selected = null; undo = []; redo = [];
     ++previewSequence; previewAbort?.abort(); window.clearTimeout(previewTimer);
-    notice('Layout saved. The simulator is refreshing.');
+    notice(result.phase === 'paused' ? 'Saved. Display updates are paused for quiet hours.' : result.phase === 'refreshing' ? 'Saved. The simulator is refreshing.' : 'Saved. The display is already up to date.');
   } catch (error) { notice(String(error), true); }
   finally { saving = false; render(); }
 }
 button('edit').onclick = () => {
-  editing = true; viewingDraft = true; draft = clone(saved.layout); draftImage = $<HTMLImageElement>('frame').src;
+  editing = true; viewingDraft = true; draft = clone(saved.layout); draftSettings = clone(saved.refresh_settings); settingsSelected = false; draftImage = $<HTMLImageElement>('frame').src;
   undo = []; redo = []; selected = null; conflict = false; notice(); render(); queuePreview();
 };
 button('discard').onclick = async () => {
   if (drag) endDrag(true);
   try {
     const current = await api<Workspace>('/api/state');
-    saved = current; draft = clone(current.layout); editing = false; viewingDraft = false; selected = null; conflict = false;
+    saved = current; draft = clone(current.layout); draftSettings = clone(current.refresh_settings); settingsSelected = false; editing = false; viewingDraft = false; selected = null; conflict = false;
     ++previewSequence; previewAbort?.abort(); window.clearTimeout(previewTimer); notice(); render(); updateStatus();
   } catch (error) { notice(String(error), true); }
 };
@@ -450,7 +498,17 @@ button('save').onclick = () => { void save(); };
 button('view-current').onclick = () => { if (drag) endDrag(); viewingDraft = false; render(); };
 button('view-draft').onclick = () => { viewingDraft = true; render(); };
 button('undo').onclick = () => history('undo'); button('redo').onclick = () => history('redo');
-button('add-text').onclick = () => addComponent(false); button('add-data').onclick = () => addComponent(true);
+button('add-text').onclick = () => addComponent('text'); button('add-data').onclick = () => addComponent('data'); button('add-clock').onclick = () => addComponent('clock');
+button('display-settings').onclick = () => { settingsSelected = true; selected = null; render(); };
+button('refresh').onclick = async () => {
+  button('refresh').disabled = true;
+  try {
+    const result = await api<{ phase: string }>('/api/refresh', { method: 'POST' });
+    notice(result.phase === 'paused' ? 'Refresh queued until quiet hours end.' : result.phase === 'idle' ? 'The display is already up to date.' : 'Refreshing the saved layout.');
+    await poll();
+  } catch (error) { notice(String(error), true); }
+  finally { button('refresh').disabled = !connected; }
+};
 $('grid').onchange = () => render(false);
 button('zoom-fit').onclick = () => { autoFit = true; fit(); };
 button('zoom-in').onclick = () => { autoFit = false; zoom += .1; fit(); };
@@ -462,7 +520,7 @@ document.addEventListener('keydown', event => {
   const mod = event.ctrlKey || event.metaKey;
   if (mod && event.key.toLowerCase() === 's') { event.preventDefault(); void save(); return; }
   if (!active()) return;
-  if (event.key === 'Escape') { if (drag) endDrag(true); else { selected = null; render(); } return; }
+  if (event.key === 'Escape') { if (drag) endDrag(true); else { selected = null; settingsSelected = false; render(); } return; }
   if (typing || drag) return;
   if (mod && event.key.toLowerCase() === 'z') { event.preventDefault(); history(event.shiftKey ? 'redo' : 'undo'); return; }
   const c = component();
@@ -476,7 +534,7 @@ document.addEventListener('keydown', event => {
   }
 });
 function updateStatus() {
-  $('device-status').textContent = !connected ? 'Service unavailable' : saved.phase === 'refreshing' ? 'Simulator refreshing' : 'Simulator idle';
+  $('device-status').textContent = !connected ? 'Service unavailable' : saved.phase === 'paused' ? 'Quiet hours · paused' : saved.phase === 'error' ? 'Display update failed' : saved.phase === 'refreshing' ? 'Simulator refreshing' : 'Simulator idle';
   const dot = document.querySelector('.device .status-dot')!;
   dot.classList.toggle('busy', connected && saved.phase === 'refreshing'); dot.classList.toggle('offline', !connected);
   const onLan = location.hostname !== 'localhost' && location.hostname !== '127.0.0.1' && location.hostname !== '[::1]';
@@ -488,13 +546,15 @@ async function poll() {
   try {
     const current = await api<Workspace>('/api/state');
     if (saving || drag) return;
-    const changed = !connected || current.revision !== saved.revision || current.displayed_revision !== saved.displayed_revision || current.phase !== saved.phase;
+    const changed = !connected || current.revision !== saved.revision || current.frame_id !== saved.frame_id || current.displayed_revision !== saved.displayed_revision || current.phase !== saved.phase;
     connected = true;
     if (editing) {
       if (current.revision !== saved.revision && !conflict) { conflict = true; notice('A newer layout was saved in another tab. Your draft is retained. Discard to load the newer layout.', true); }
-      saved.phase = current.phase; saved.displayed_revision = current.displayed_revision;
-    } else { saved = current; draft = clone(current.layout); }
-    if (!viewingDraft && displayedRevision !== current.displayed_revision) { displayedRevision = current.displayed_revision; setDisplayedImage(true); }
+      saved.phase = current.phase; saved.displayed_revision = current.displayed_revision; saved.frame_id = current.frame_id; saved.clock_now = current.clock_now;
+    } else { saved = current; draft = clone(current.layout); draftSettings = clone(current.refresh_settings); }
+    if (!viewingDraft && displayedFrame !== current.frame_id) { displayedFrame = current.frame_id; setDisplayedImage(true); }
+    const minute = Math.floor(current.clock_now / 60);
+    if (editing && viewingDraft && minute !== draftMinute && draft.components.some(c => c.blocks.some(b => b.source.kind === 'clock'))) { draftMinute = minute; queuePreview(); }
     updateStatus();
     // Polling must not replace focused component buttons every second.
     if (changed) render(false);
@@ -502,8 +562,8 @@ async function poll() {
 }
 async function start() {
   try {
-    [saved, catalog] = await Promise.all([api<Workspace>('/api/state'), api<Dataset[]>('/api/catalog')]);
-    draft = clone(saved.layout); updateStatus(); render();
+    [saved, catalog, zones] = await Promise.all([api<Workspace>('/api/state'), api<Dataset[]>('/api/catalog'), api<string[]>('/api/timezones')]);
+    draft = clone(saved.layout); draftSettings = clone(saved.refresh_settings); updateStatus(); render();
     window.setInterval(() => { void poll(); }, 1000);
   } catch (error) { notice(`Cannot load the workspace. ${String(error)} Reload after the service is available.`, true); button('edit').disabled = true; }
 }

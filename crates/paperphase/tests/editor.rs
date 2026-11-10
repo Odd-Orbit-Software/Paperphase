@@ -250,3 +250,85 @@ fn concurrent_saves_have_one_winner_and_one_workspace_owner() {
     assert_eq!(statuses, [200, 409]);
     assert_eq!(server.state()["revision"], 1);
 }
+
+#[test]
+fn clock_and_quiet_settings_preserve_older_workspaces_and_validate_before_persistence() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("workspace.json");
+    let layout: Value =
+        serde_json::from_str(include_str!("../../../examples/simulator/layout.json")).unwrap();
+    // The previous workspace schema has no refresh_settings field.
+    std::fs::write(
+        &path,
+        serde_json::to_vec(&json!({"schema_version":1,"revision":7,"layout":layout})).unwrap(),
+    )
+    .unwrap();
+    let mut server = Server::start(&path);
+    assert_eq!(
+        server.state()["refresh_settings"],
+        json!({"quiet_hours":null})
+    );
+    let zones: Vec<String> = server
+        .client
+        .get(format!("{}/api/timezones", server.url))
+        .send()
+        .unwrap()
+        .json()
+        .unwrap();
+    assert!(zones.contains(&"Europe/Dublin".into()));
+    let disk = std::fs::read(&path).unwrap();
+    let mut layout = layout;
+    layout["components"][0]["blocks"][0]["source"] =
+        json!({"kind":"clock","clock":{"timezone":"Invalid/Zone"}});
+    assert_eq!(
+        server
+            .client
+            .post(format!("{}/api/preview", server.url))
+            .json(&layout)
+            .send()
+            .unwrap()
+            .status(),
+        422
+    );
+    layout["components"][0]["blocks"][0]["source"]["clock"]["timezone"] = json!("Europe/Dublin");
+    let invalid = json!({"base_revision":7,"layout":layout,"refresh_settings":{"quiet_hours":{"timezone":"Europe/Dublin","start":"22:00","end":"22:00"}}});
+    assert_eq!(
+        server
+            .client
+            .put(format!("{}/api/layout", server.url))
+            .json(&invalid)
+            .send()
+            .unwrap()
+            .status(),
+        422
+    );
+    assert_eq!(std::fs::read(&path).unwrap(), disk);
+    let request = json!({"base_revision":7,"layout":layout,"refresh_settings":{"quiet_hours":{"timezone":"Europe/Dublin","start":"22:00","end":"07:00"}}});
+    let original = server.png();
+    let response: Value = server
+        .client
+        .put(format!("{}/api/layout", server.url))
+        .json(&request)
+        .send()
+        .unwrap()
+        .json()
+        .unwrap();
+    assert_eq!(response["phase"], "paused");
+    assert_eq!(server.png(), original);
+    let response: Value = server
+        .client
+        .post(format!("{}/api/refresh", server.url))
+        .send()
+        .unwrap()
+        .json()
+        .unwrap();
+    assert_eq!(response["phase"], "paused");
+    assert_eq!(server.png(), original);
+    server.stop();
+    let restarted = Server::start(&path);
+    assert_eq!(restarted.state()["revision"], 8);
+    assert_eq!(
+        restarted.state()["refresh_settings"],
+        request["refresh_settings"]
+    );
+}

@@ -5,7 +5,7 @@ use std::{
     net::SocketAddr,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::{Context, Result, ensure};
@@ -19,13 +19,14 @@ use axum::{
     routing::{get, post, put},
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
-use paperphase_core::{Layout, SnapshotSet};
+use paperphase_core::{Layout, RefreshSettings, SnapshotSet};
 use paperphase_render::{ComponentReport, Renderer};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::sync::{Mutex as AsyncMutex, Semaphore};
 
 use crate::simulator::read_json;
+mod scheduling;
 
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -33,12 +34,22 @@ struct Saved {
     schema_version: u32,
     revision: u64,
     layout: Layout,
+    #[serde(default)]
+    refresh_settings: RefreshSettings,
 }
 
 struct Workspace {
     saved: Saved,
     displayed_revision: u64,
     png: Vec<u8>,
+    frame_serial: u64,
+    render_token: u64,
+    refreshing: bool,
+    quiet: bool,
+    pending: bool,
+    last_tick: u64,
+    next_due: Option<u64>,
+    last_error: Option<String>,
 }
 
 struct App {
@@ -46,7 +57,9 @@ struct App {
     renderer: Mutex<Renderer>,
     snapshots: SnapshotSet,
     state_file: PathBuf,
-    fixed_now: Option<u64>,
+    clock: Arc<dyn Fn() -> u64 + Send + Sync>,
+    boot_id: String,
+    tick_lock: AsyncMutex<()>,
     authorities: Vec<String>,
     addresses: Vec<String>,
     render_slots: Arc<Semaphore>,
@@ -57,6 +70,7 @@ struct App {
 type Shared = Arc<App>;
 type ApiResult<T> = std::result::Result<T, ApiError>;
 
+#[derive(Debug)]
 struct ApiError(StatusCode, String);
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
@@ -137,6 +151,7 @@ pub fn run(
             schema_version: 1,
             revision: 0,
             layout,
+            refresh_settings: RefreshSettings::default(),
         }
     };
     ensure!(
@@ -144,6 +159,7 @@ pub fn run(
         "unsupported workspace schema version"
     );
     saved.layout.validate()?;
+    saved.refresh_settings.validate()?;
     let snapshots: SnapshotSet = if let Some(path) = data {
         read_json(&path)?
     } else {
@@ -151,7 +167,8 @@ pub fn run(
     };
     snapshots.validate()?;
     let mut renderer = Renderer::new()?;
-    let frame = renderer.render(&saved.layout, &snapshots, now(fixed_now))?;
+    let initial_now = now(fixed_now);
+    let frame = renderer.render(&saved.layout, &snapshots, initial_now)?;
     let mut png = Vec::new();
     frame.frame.write_png(&mut png)?;
     if !exists {
@@ -216,15 +233,17 @@ pub fn run(
             })
             .collect();
         let app = Arc::new(App {
-            workspace: AsyncMutex::new(Workspace {
-                displayed_revision: saved.revision,
-                saved,
-                png,
-            }),
+            workspace: AsyncMutex::new(Workspace::new(saved, png, &snapshots, initial_now)?),
             renderer: Mutex::new(renderer),
             snapshots,
             state_file,
-            fixed_now,
+            clock: Arc::new(move || now(fixed_now)),
+            boot_id: format!(
+                "{}-{}",
+                std::process::id(),
+                SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos()
+            ),
+            tick_lock: AsyncMutex::new(()),
             authorities,
             addresses,
             render_slots: Arc::new(Semaphore::new(4)),
@@ -260,15 +279,21 @@ pub fn run(
             )
             .route("/api/state", get(state))
             .route("/api/catalog", get(catalog))
+            .route(
+                "/api/timezones",
+                get(|| async { Json(paperphase_core::timezones()) }),
+            )
             .route("/api/display.png", get(display))
             .route("/api/preview", post(preview))
             .route("/api/layout", put(save))
+            .route("/api/refresh", post(refresh))
             .layer(DefaultBodyLimit::max(1024 * 1024))
             .layer(middleware::from_fn_with_state(
                 Arc::clone(&app),
                 same_origin,
             ))
-            .with_state(app);
+            .with_state(Arc::clone(&app));
+        let scheduler = scheduling::start(app);
         let browser_address = if address.ip().is_unspecified() {
             SocketAddr::new(
                 if address.is_ipv4() {
@@ -288,6 +313,7 @@ pub fn run(
                 let _ = tokio::signal::ctrl_c().await;
             })
             .await?;
+        scheduler.abort();
         Ok(())
     })
 }
@@ -342,9 +368,11 @@ async fn same_origin(State(app): State<Shared>, request: Request, next: Next) ->
 async fn state(State(app): State<Shared>) -> Json<serde_json::Value> {
     let ws = app.workspace.lock().await;
     Json(json!({
-        "revision": ws.saved.revision, "layout": ws.saved.layout,
+        "revision": ws.saved.revision, "layout": ws.saved.layout, "refresh_settings": ws.saved.refresh_settings,
         "displayed_revision": ws.displayed_revision,
-        "phase": if ws.saved.revision == ws.displayed_revision { "idle" } else { "refreshing" },
+        "phase": ws.phase(), "pending": ws.pending, "next_update_at": ws.next_due,
+        "frame_id": format!("{}-{}", app.boot_id, ws.frame_serial), "clock_now": (app.clock)(),
+        "last_error": ws.last_error,
         "mode": "simulated", "addresses": app.addresses, "fixture_data": true,
     }))
 }
@@ -362,7 +390,7 @@ async fn catalog(State(app): State<Shared>) -> Json<serde_json::Value> {
             .map(|s| json!({
                 "connection_id": s.connection_id, "dataset_id": s.dataset.id,
                 "fields": s.dataset.fields, "rows": s.dataset.rows.len(),
-                "stale": s.is_stale(now(app.fixed_now)),
+                "stale": s.is_stale((app.clock)()),
             }))
             .collect::<Vec<_>>()
     ))
@@ -374,7 +402,7 @@ struct Preview {
     components: Vec<ComponentReport>,
 }
 
-async fn render(app: Shared, layout: Layout) -> ApiResult<Preview> {
+async fn render(app: Shared, layout: Layout, at: u64) -> ApiResult<Preview> {
     layout.validate().map_err(invalid)?;
     let permit = Arc::clone(&app.render_slots)
         .try_acquire_owned()
@@ -388,7 +416,7 @@ async fn render(app: Shared, layout: Layout) -> ApiResult<Preview> {
         let _permit = permit;
         let mut renderer = app.renderer.lock().map_err(internal)?;
         let rendered = renderer
-            .render(&layout, &app.snapshots, now(app.fixed_now))
+            .render(&layout, &app.snapshots, at)
             .map_err(invalid)?;
         let mut png = Vec::new();
         rendered.frame.write_png(&mut png).map_err(internal)?;
@@ -405,7 +433,8 @@ async fn preview(
     State(app): State<Shared>,
     Json(layout): Json<Layout>,
 ) -> ApiResult<Json<Preview>> {
-    render(app, layout).await.map(Json)
+    let at = (app.clock)();
+    render(app, layout, at).await.map(Json)
 }
 
 #[derive(Deserialize)]
@@ -413,6 +442,8 @@ async fn preview(
 struct SaveRequest {
     base_revision: u64,
     layout: Layout,
+    #[serde(default)]
+    refresh_settings: Option<RefreshSettings>,
 }
 
 async fn save(
@@ -431,8 +462,17 @@ async fn save(
             "Display profile changes require a service restart with a new workspace.",
         ));
     }
-    let preview = render(Arc::clone(&app), request.layout.clone()).await?;
-    let png = STANDARD.decode(preview.png_base64).map_err(internal)?;
+    let refresh_settings = request
+        .refresh_settings
+        .unwrap_or_else(|| ws.saved.refresh_settings.clone());
+    refresh_settings.validate().map_err(invalid)?;
+    let prepared = scheduling::prepare(
+        Arc::clone(&app),
+        &request.layout,
+        &refresh_settings,
+        (app.clock)(),
+    )
+    .await?;
     let saved = Saved {
         schema_version: 1,
         revision: ws
@@ -441,6 +481,7 @@ async fn save(
             .checked_add(1)
             .ok_or_else(|| internal("revision exhausted"))?,
         layout: request.layout,
+        refresh_settings,
     };
     let path = app.state_file.clone();
     let to_write = saved.clone();
@@ -462,18 +503,15 @@ async fn save(
             .map_err(internal)?;
         let revision = saved.revision;
         ws.saved = saved;
-        drop(ws);
-        let finish = Arc::clone(&app_commit);
-        tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(180)).await;
-            let mut ws = finish.workspace.lock().await;
-            if ws.saved.revision == revision {
-                ws.png = png;
-                ws.displayed_revision = revision;
-            }
-        });
-        Ok(Json(json!({"revision": revision, "phase": "refreshing"})))
+        scheduling::queue(&app_commit, &mut ws, prepared);
+        Ok(Json(json!({"revision": revision, "phase": ws.phase()})))
     })
     .await
     .map_err(internal)?
+}
+
+async fn refresh(State(app): State<Shared>) -> ApiResult<Json<serde_json::Value>> {
+    scheduling::tick(Arc::clone(&app), true).await?;
+    let ws = app.workspace.lock().await;
+    Ok(Json(json!({"phase": ws.phase(), "pending": ws.pending})))
 }

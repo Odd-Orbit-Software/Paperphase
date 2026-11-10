@@ -1,8 +1,10 @@
 //! Hardware- and runtime-independent data and layout contracts.
 
+mod clock;
 mod dataset;
 mod layout;
 
+pub use clock::*;
 pub use dataset::{Dataset, Field, FieldKind};
 pub use layout::*;
 

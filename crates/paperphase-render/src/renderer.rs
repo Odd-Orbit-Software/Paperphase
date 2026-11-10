@@ -116,10 +116,11 @@ impl Renderer {
                 .blocks
                 .iter()
                 .map(|block| match &block.source {
-                    TextSource::Literal { text } => text.clone(),
-                    TextSource::Field { binding } => resolve(binding, &index, now, &mut report),
+                    TextSource::Literal { text } => Ok(text.clone()),
+                    TextSource::Field { binding } => Ok(resolve(binding, &index, now, &mut report)),
+                    TextSource::Clock { clock } => clock.format(now).map_err(Into::into),
                 })
-                .collect();
+                .collect::<Result<_>>()?;
             self.draw_component(&mut frame, component, &values, &mut report);
             reports.push(report);
         }

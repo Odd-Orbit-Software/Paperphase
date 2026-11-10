@@ -30,6 +30,47 @@ fn literal(text: &str, size: u16, overflow: &str) -> Layout {
 }
 
 #[test]
+fn clock_and_equivalent_literal_render_identical_pixels_without_a_data_band() {
+    let mut value = serde_json::to_value(literal("", 20, "wrap")).unwrap();
+    value["components"][0]["blocks"][0]["source"] = json!({"kind":"clock","clock":{"timezone":"Asia/Kolkata","content":"date_time","hour_cycle":"twelve","date_format":"iso"}});
+    let scene: Layout = serde_json::from_value(value.clone()).unwrap();
+    let at = 1_700_000_000;
+    let rendered = Renderer::new()
+        .unwrap()
+        .render(&scene, &data(), at)
+        .unwrap();
+    let spec: paperphase_core::ClockSpec =
+        serde_json::from_value(value["components"][0]["blocks"][0]["source"]["clock"].clone())
+            .unwrap();
+    let expected = Renderer::new()
+        .unwrap()
+        .render(&literal(&spec.format(at).unwrap(), 20, "wrap"), &data(), at)
+        .unwrap();
+    assert_eq!(rendered.frame.bits(), expected.frame.bits());
+    assert_eq!(rendered.components[0].state, DataState::Fresh);
+    let later = Renderer::new()
+        .unwrap()
+        .render(&scene, &data(), at + 60)
+        .unwrap();
+    assert!(
+        rendered
+            .frame
+            .difference_bounds(&later.frame)
+            .unwrap()
+            .is_some()
+    );
+    value["components"][0]["blocks"][0]["source"]["clock"]["timezone"] = json!("Invalid/Zone");
+    let invalid: Layout = serde_json::from_value(value).unwrap();
+    assert!(
+        invalid
+            .validate()
+            .unwrap_err()
+            .path
+            .ends_with("source.clock.timezone")
+    );
+}
+
+#[test]
 fn png_and_pbm_represent_exactly_the_same_odd_width_frame() {
     let mut scene = layout();
     scene.display.width = 197;

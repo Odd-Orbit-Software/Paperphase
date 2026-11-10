@@ -5,8 +5,56 @@ test.beforeEach(async ({ request }) => {
   const current = await (await request.get('/api/state')).json();
   const layout = JSON.parse(readFileSync('../examples/simulator/layout.json', 'utf8'));
   layout.components = layout.components.slice(0, 3);
-  expect((await request.put('/api/layout', { data: { base_revision: current.revision, layout } })).ok()).toBeTruthy();
+  expect((await request.put('/api/layout', { data: { base_revision: current.revision, layout, refresh_settings: { quiet_hours: null } } })).ok()).toBeTruthy();
   await expect.poll(async () => (await (await request.get('/api/state')).json()).phase).toBe('idle');
+});
+
+test('clock presentation and quiet hours are editable, undoable and persistent', async ({ page, request }) => {
+  await page.goto('/');
+  const before = await (await request.get('/api/display.png')).body();
+  await page.getByRole('button', { name: 'Edit layout' }).click();
+  await page.getByRole('button', { name: 'Time & date', exact: false }).click();
+  await page.getByLabel('Timezone', { exact: true }).first().selectOption('Asia/Kolkata');
+  await page.getByLabel('Timezone', { exact: true }).nth(1).selectOption('Asia/Kolkata');
+  await page.getByLabel('Time format', { exact: true }).selectOption('twelve');
+  await page.getByLabel('Date format', { exact: true }).selectOption('iso');
+  await page.getByRole('button', { name: 'Display settings', exact: true }).click();
+  await page.getByRole('checkbox', { name: 'Enable quiet hours' }).check();
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect(page.getByRole('checkbox', { name: 'Enable quiet hours' })).not.toBeChecked();
+  await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  await expect(page.getByRole('checkbox', { name: 'Enable quiet hours' })).toBeChecked();
+  // The test service clock is pinned at 22:13 UTC, inside this interval.
+  await page.getByLabel('Quiet hours timezone', { exact: true }).selectOption('Europe/Dublin');
+  await page.getByRole('button', { name: 'Save to display' }).click();
+  await expect(page.locator('#device-status')).toContainText('paused');
+  await expect(page.locator('#notice')).toContainText('quiet hours');
+  expect(await (await request.get('/api/display.png')).body()).toEqual(before);
+  const state = await (await request.get('/api/state')).json();
+  const blocks = state.layout.components.at(-1).blocks;
+  expect(blocks[0].source.clock.timezone).toBe('Asia/Kolkata');
+  expect(blocks[0].source.clock.hour_cycle).toBe('twelve');
+  expect(blocks[1].source.clock.date_format).toBe('iso');
+  expect(blocks[1].source.clock.timezone).toBe('Asia/Kolkata');
+  expect(state.pending).toBe(true);
+  await page.getByRole('button', { name: 'Refresh display' }).click();
+  await expect(page.locator('#notice')).toContainText('until quiet hours end');
+  expect(await (await request.get('/api/display.png')).body()).toEqual(before);
+  await page.reload();
+  await expect(page.locator('#device-status')).toContainText('paused');
+  await page.getByRole('button', { name: 'Edit layout' }).click();
+  await page.getByRole('button', { name: 'Display settings', exact: true }).click();
+  await expect(page.getByRole('checkbox', { name: 'Enable quiet hours' })).toBeChecked();
+  await expect(page.locator('#frame')).toHaveAttribute('src', /^data:image\/png/);
+  if (process.env.CAPTURE_SCREENSHOTS === '1') await page.screenshot({ path: '../docs/design/images/clock-quiet-hours.png' });
+  await page.getByRole('checkbox', { name: 'Enable quiet hours' }).uncheck();
+  await page.getByRole('button', { name: 'Save to display' }).click();
+  await expect.poll(async () => (await (await request.get('/api/state')).json()).phase).toBe('idle');
+  const latest = await (await request.get('/api/state')).json();
+  const rendered = await (await request.post('/api/preview', { data: latest.layout })).json();
+  expect(await (await request.get('/api/display.png')).body()).toEqual(Buffer.from(rendered.png_base64, 'base64'));
+  expect(latest.displayed_revision).toBe(latest.revision);
+  expect(latest.frame_id).not.toBe(state.frame_id);
 });
 
 test('desktop edit, collision recovery, bindings, history, save and discard', async ({ page, request }) => {

@@ -76,8 +76,8 @@ sequenceDiagram
     Service->>Service: Check revision and display profile
     Service->>Renderer: Validate and render
     Service->>Disk: Sync temporary file, atomically rename
-    Service-->>Browser: New saved revision, refreshing
-    Service->>Simulator: Complete latest frame after simulated delay
+    Service-->>Browser: New saved revision and refresh status
+    Service->>Simulator: Queue latest frame through quiet-hours gate
     Browser->>Service: Poll state and fetch completed PNG
 ```
 
@@ -98,8 +98,9 @@ An OS file lock prevents a second service from using the same workspace path.
 Startup rejects malformed, oversized, or unsupported saved state and prevents
 workspace/lock paths from replacing explicitly supplied fixture inputs.
 
-After a successful commit, the simulator waits 180 ms before replacing the
-completed PNG. A later save supersedes an older pending completion. Until then,
+After a successful commit, changed pixels wait 180 ms before replacing the
+completed PNG, subject to quiet hours. Unchanged pixels need no refresh. A later
+save supersedes an older pending completion. Until then,
 the displayed revision and image remain distinct from the saved revision. On
 restart, the simulator immediately renders the saved layout from the supplied
 snapshots; it does not claim to recover a physical panel's retained pixels.
@@ -120,10 +121,11 @@ the draft, and disables Save until polling reconnects.
 
 ## Scope and validation
 
-The fixtures are fixed at startup. Freshness is evaluated when rendering; the
-clock can be pinned with `--now`. Automatic fetching, live clock/date blocks,
-plugin settings/installation, historical storage, quiet hours, refresh budgets,
-and physical refresh policy remain subsequent work. There is no hardware status
+The fixtures are fixed at startup. The [clock and refresh layer](clock-and-refresh.md)
+now adds time/date blocks, automatic clock/freshness deadlines, quiet hours, and
+Refresh display. The clock can be pinned with `--now`. Automatic fetching,
+plugin settings/installation, historical storage, refresh budgets, and physical
+refresh policy remain subsequent work. There is no hardware status
 disguised as an attached display, and the short simulator delay is not a panel
 timing claim.
 

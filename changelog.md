@@ -97,3 +97,28 @@ persistence, pointer interactions, bindings, Save/Discard, and retained drafts.
 Pi resource measurements, Google account linking, live scheduling, and physical
 display validation remain pending. This is the first editor slice, not completion
 of delivery stage 2.
+
+### Built-in clock and simulated refresh scheduling
+
+- Added host-rendered time/date sources with IANA timezones, 12/24-hour time,
+  English long/short/ISO/weekday dates, and a two-block Time & date template.
+  Added per-block clock controls using the host's timezone catalog.
+- Added minute/local-date and bound-snapshot freshness deadlines, skipped missed
+  ticks, backward-clock handling, unchanged-frame suppression, and a frame ID
+  separate from layout revisions so browsers receive clock-only pixel changes.
+- Added optional timezone-aware quiet hours to atomic workspace saves, including
+  settings Undo/Redo and Discard. Paused updates retain completed pixels and
+  render the newest saved content when quiet hours end. Older workspaces load
+  with quiet hours disabled.
+- Added Refresh display through the same gate, pending/error/paused status, and
+  completion checks that prevent old or newly quiet/outdated frames from being
+  published. Added clock/refresh design notes, diagrams, usage instructions, and
+  actual screenshots. Direct positioning inside components remains later work.
+
+Validation: `sh scripts/check.sh` passed with 54 Rust tests, including calendar/
+DST boundaries, missed ticks, backward adjustments, quiet pause/resume, competing
+completions, unchanged pixels, old workspace compatibility, and settings
+persistence. Frontend type checking/build and all four desktop Chromium workflows
+passed. Both updated Mermaid diagrams rendered to SVG in Chromium. The compiled
+temperature guest is 89,886 bytes (previously 89,882). Version remains `0.1.0`; Pi measurements,
+provider scheduling, Google linking, and physical refresh validation remain pending.
