@@ -35,3 +35,10 @@ provider polling allowances, and physical display validation remain pending.
 - Keep the version at `0.1.0` during the current experimental foundation work.
   After the earliest stable stage, increment the minor version on every commit
   and update the workspace package entries in `Cargo.lock` accordingly.
+
+### CI and build outputs
+
+- Include the GitHub Actions workflow that installs the Rust guest target and
+  runs the complete host/guest check script on pushes and pull requests.
+- Ignore Cargo build output, local caches, compiled native Wasm caches, and
+  profiling output so generated files stay out of source commits.

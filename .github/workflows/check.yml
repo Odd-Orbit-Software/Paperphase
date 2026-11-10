@@ -1,0 +1,21 @@
+name: Check
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust and the guest target
+        run: rustup toolchain install 1.96.0 --profile minimal --component rustfmt,clippy --target wasm32-unknown-unknown
+      - name: Select Rust
+        run: rustup default 1.96.0
+      - name: Check host and compiled guest
+        run: sh scripts/check.sh
