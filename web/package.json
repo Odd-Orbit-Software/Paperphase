@@ -1,0 +1,16 @@
+{
+  "name": "paperphase-editor",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "packageManager": "pnpm@11.5.1",
+  "scripts": {
+    "build": "tsc --noEmit && node build.mjs",
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.0",
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2"
+  }
+}

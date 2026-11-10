@@ -1,4 +1,8 @@
 /target/
+/.paperphase/
+/web/node_modules/
+/web/test-results/
+/web/playwright-report/
 /.cache/
 *.cwasm
 *.profraw

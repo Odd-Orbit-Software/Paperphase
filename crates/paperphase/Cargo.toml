@@ -9,15 +9,21 @@ publish.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+axum.workspace = true
+base64.workspace = true
 clap.workspace = true
+if-addrs.workspace = true
 paperphase-core = { path = "../paperphase-core" }
 paperphase-render = { path = "../paperphase-render" }
 paperphase-runtime = { path = "../paperphase-runtime" }
 serde.workspace = true
 serde_json.workspace = true
+tempfile.workspace = true
+tokio.workspace = true
 
 [dev-dependencies]
-tempfile = "3.27"
+reqwest = { workspace = true, features = ["json"] }
+rustls.workspace = true
 
 [lints]
 workspace = true

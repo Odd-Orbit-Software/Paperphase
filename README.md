@@ -23,8 +23,9 @@ it through the panel's refresh policy.
 ## Status and plans
 
 Foundation implementation includes a compiled-plugin CLI harness, shared typed
-data/layout contracts, and a monochrome renderer with PNG/PBM simulator exports.
-The interactive desktop editor and hardware validation are pending.
+data/layout contracts, a monochrome renderer with PNG/PBM simulator exports,
+and a desktop layout editor served by Rust with durable saves and a simulated
+display. Live integrations, scheduling, and hardware validation are pending.
 The initial target is a Raspberry Pi Zero 2 W running 64-bit Raspberry
 Pi OS Lite with a Waveshare 7.5-inch monochrome e-paper HAT. The exact panel
 revision and resolution remain to be confirmed.
@@ -36,6 +37,8 @@ revision and resolution remain to be confirmed.
 - [Implemented plugin foundation](docs/design/plugin-foundation.md)
 - [Run the display simulator](docs/usage/simulator.md)
 - [Shared data and renderer design](docs/design/data-and-rendering.md)
+- [Run the desktop editor](docs/usage/desktop-editor.md)
+- [Desktop editor design](docs/design/desktop-editor.md)
 - [Changelog](changelog.md)
 
 Implemented features will be documented in `docs/design`, with setup and

@@ -11,7 +11,7 @@ use paperphase_render::Renderer;
 use serde::de::DeserializeOwned;
 use serde_json::json;
 
-fn read_json<T: DeserializeOwned>(path: &Path) -> Result<T> {
+pub(crate) fn read_json<T: DeserializeOwned>(path: &Path) -> Result<T> {
     const MAX_BYTES: usize = 1024 * 1024;
     let mut bytes = Vec::new();
     File::open(path)
@@ -41,7 +41,7 @@ fn path_identity(path: &Path) -> Result<PathBuf> {
         .join(name))
 }
 
-fn same_file(a: &Path, b: &Path) -> Result<bool> {
+pub(crate) fn same_file(a: &Path, b: &Path) -> Result<bool> {
     if path_identity(a)? == path_identity(b)? {
         return Ok(true);
     }

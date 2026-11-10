@@ -16,10 +16,11 @@ use clap::{Parser, Subcommand};
 use paperphase_runtime::{Dataset, Limits, PluginRuntime, RunConfig, RunMetrics};
 use serde::Serialize;
 
+mod server;
 mod simulator;
 
 #[derive(Parser)]
-#[command(version, about = "Paperphase compiled-plugin foundation harness")]
+#[command(version, about = "Paperphase e-paper service and development tools")]
 struct Args {
     #[command(subcommand)]
     command: Command,
@@ -27,6 +28,22 @@ struct Args {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Start the LAN editor with a simulated display (no hardware access).
+    Serve {
+        #[arg(long, default_value = "127.0.0.1:8080")]
+        listen: std::net::SocketAddr,
+        #[arg(long, default_value = ".paperphase/workspace.json")]
+        state_file: PathBuf,
+        /// Initial layout, used only when no saved workspace exists.
+        #[arg(long)]
+        seed_layout: Option<PathBuf>,
+        /// Snapshot fixtures; no external APIs are fetched by this editor slice.
+        #[arg(long)]
+        data: Option<PathBuf>,
+        /// Unix seconds; omit to evaluate snapshot freshness using the host clock.
+        #[arg(long)]
+        now: Option<u64>,
+    },
     /// Render a saved layout and snapshots into a monochrome simulated frame.
     Simulate {
         #[arg(long)]
@@ -76,6 +93,15 @@ struct Report {
 fn main() -> Result<()> {
     let args = Args::parse();
     let (plugin, source_url, iterations, _demo) = match args.command {
+        Command::Serve {
+            listen,
+            state_file,
+            seed_layout,
+            data,
+            now,
+        } => {
+            return server::run(listen, state_file, seed_layout, data, now);
+        }
         Command::Simulate {
             layout,
             data,

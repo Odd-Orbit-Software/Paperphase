@@ -1,0 +1,510 @@
+export {};
+type Rect = { x: number; y: number; width: number; height: number };
+type Binding = { connection_id: string; dataset_id: string; field_id: string; row: number; decimals: number | null; prefix: string; suffix: string };
+type Source = { kind: 'literal'; text: string } | { kind: 'field'; binding: Binding };
+type Block = { id: string; source: Source; font_size: number; align: string; overflow: string };
+type Component = { id: string; rect: Rect; padding: number; gap: number; border: boolean; blocks: Block[] };
+type Layout = { schema_version: number; display: { id: string; width: number; height: number }; components: Component[] };
+type Workspace = { revision: number; displayed_revision: number; phase: string; layout: Layout; addresses: string[] };
+type Dataset = { connection_id: string; dataset_id: string; fields: { id: string; kind: string; unit?: string }[]; rows: number; stale: boolean };
+type Report = { id: string; state: string; warnings: string[] };
+type Preview = { png_base64: string; components: Report[] };
+
+const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
+const clone = <T>(value: T): T => structuredClone(value);
+const button = (id: string) => $<HTMLButtonElement>(id);
+const checked = (id: string) => $<HTMLInputElement>(id).checked;
+const equal = (a: Layout, b: Layout) => JSON.stringify(a) === JSON.stringify(b);
+let saved: Workspace;
+let draft: Layout;
+let catalog: Dataset[] = [];
+let editing = false;
+let viewingDraft = false;
+let selected: string | null = null;
+let undo: Layout[] = [];
+let redo: Layout[] = [];
+let reports: Report[] = [];
+let draftImage = '';
+let displayedRevision = -1;
+let zoom = 1;
+let autoFit = true;
+let saving = false;
+let conflict = false;
+let previewTimer = 0;
+let previewSequence = 0;
+let previewAbort: AbortController | undefined;
+let coalescedKey = '';
+let lastEdit = 0;
+let connected = true;
+let lastInspectedId: string | null = null;
+let drag: { id: string; startX: number; startY: number; original: Rect; last: Rect; baseline: Layout; resize: boolean; pointerId: number; invalid: boolean } | undefined;
+
+async function api<T>(path: string, options?: RequestInit): Promise<T> {
+  const response = await fetch(path, options);
+  if (!response.ok) {
+    let message = `Request failed (${response.status}).`;
+    try { const body = await response.json(); message = body.error || message; } catch { /* plain framework error */ }
+    if (response.status === 409) conflict = true;
+    throw new Error(message);
+  }
+  return response.json() as Promise<T>;
+}
+function notice(message = '', error = false) {
+  $('notice').hidden = !message;
+  $('notice').textContent = message;
+  $('notice').classList.toggle('error', error);
+}
+function dirty() { return editing && !equal(draft, saved.layout); }
+function active() { return editing && viewingDraft && !saving; }
+function component() { return draft.components.find(c => c.id === selected); }
+function name(c: Component): string {
+  const first = c.blocks.find(b => b.source.kind === 'literal');
+  if (first?.source.kind === 'literal' && first.source.text.trim()) return first.source.text.trim().split('\n')[0]!.slice(0, 36);
+  const field = c.blocks.find(b => b.source.kind === 'field');
+  if (field?.source.kind === 'field') return `${field.source.binding.field_id} · ${field.source.binding.connection_id}`;
+  return 'Untitled text';
+}
+function validRect(rect: Rect, id: string, layout = draft): boolean {
+  const target = layout.components.find(c => c.id === id);
+  const padding = 2 * (target?.padding ?? 12);
+  const status = target?.blocks.some(b => b.source.kind === 'field') ? 18 : 0;
+  return Object.values(rect).every(Number.isInteger)
+    && rect.x >= 0 && rect.y >= 0 && rect.width >= 32 && rect.height >= 32
+    && rect.width > padding && rect.height > padding + status
+    && rect.x + rect.width <= layout.display.width && rect.y + rect.height <= layout.display.height
+    && !layout.components.some(c => c.id !== id && rect.x < c.rect.x + c.rect.width && rect.x + rect.width > c.rect.x && rect.y < c.rect.y + c.rect.height && rect.y + rect.height > c.rect.y);
+}
+function locallyValid(layout: Layout) {
+  return layout.components.length <= 64 && layout.components.every(c => validRect(c.rect, c.id, layout));
+}
+function remember(before: Layout, key = '') {
+  const now = Date.now();
+  if (!key || coalescedKey !== key || now - lastEdit > 800) {
+    undo.push(before);
+    if (undo.length > 50) undo.shift();
+  }
+  coalescedKey = key;
+  lastEdit = now;
+  redo = [];
+}
+function change(update: (layout: Layout) => void, key = '', rebuild = true) {
+  if (!active()) return;
+  const before = clone(draft);
+  update(draft);
+  if (!locallyValid(draft)) {
+    draft = before;
+    notice('That change leaves too little space or overlaps another component. The previous position is kept.', true);
+    renderInspector();
+    return;
+  }
+  if (equal(before, draft)) return;
+  remember(before, key);
+  notice();
+  render(rebuild);
+  queuePreview();
+}
+function queuePreview() {
+  window.clearTimeout(previewTimer);
+  // Invalidate in-flight responses immediately, before the debounce elapses.
+  ++previewSequence;
+  previewAbort?.abort();
+  previewTimer = window.setTimeout(() => { void preview(); }, 120);
+}
+async function preview() {
+  const sequence = ++previewSequence;
+  previewAbort?.abort();
+  previewAbort = new AbortController();
+  try {
+    const result = await api<Preview>('/api/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(draft), signal: previewAbort.signal });
+    if (sequence !== previewSequence || !editing) return;
+    draftImage = `data:image/png;base64,${result.png_base64}`;
+    reports = result.components;
+    if (viewingDraft) $<HTMLImageElement>('frame').src = draftImage;
+    renderReport();
+  } catch (error) {
+    if (sequence === previewSequence && !(error instanceof DOMException && error.name === 'AbortError')) notice(String(error), true);
+  }
+}
+function renderReport() {
+  const report = reports.find(r => r.id === selected);
+  const target = $('render-report');
+  if (!target) return;
+  const issues = report?.warnings.map(w => w.replaceAll('_', ' ')) ?? [];
+  if (report?.state === 'stale') issues.unshift('Last good data is shown with a stale indicator.');
+  if (report?.state === 'unavailable') issues.unshift('The selected data is unavailable.');
+  target.textContent = issues.length ? [...new Set(issues)].join(' · ') : 'Rendered at fixed font sizes. Resize to reflow the content.';
+}
+function render(rebuildInspector = true) {
+  const isDirty = dirty();
+  button('edit').hidden = editing;
+  button('discard').hidden = !editing;
+  button('save').hidden = !editing;
+  button('save').disabled = !isDirty || saving || conflict || !connected;
+  button('discard').disabled = saving;
+  $('inspector-body').inert = saving;
+  $('save-state').textContent = saving ? 'Saving…' : conflict ? 'Newer layout available' : isDirty ? '● Unsaved changes' : `Saved · revision ${saved.revision}`;
+  $('save-state').classList.toggle('dirty-dot', isDirty);
+  button('view-draft').disabled = !editing;
+  for (const [id, yes] of [['view-current', !viewingDraft], ['view-draft', viewingDraft]] as const) {
+    button(id).classList.toggle('active', yes);
+    button(id).setAttribute('aria-pressed', String(yes));
+  }
+  button('undo').disabled = !active() || !undo.length;
+  button('redo').disabled = !active() || !redo.length;
+  $('add-tools').hidden = !active();
+  $('library-description').textContent = active() ? 'Select a component to make it yours.' : 'Your saved arrangement.';
+  $('canvas-title').textContent = viewingDraft ? 'Draft preview' : 'Last completed frame';
+  $('canvas-caption').textContent = viewingDraft ? 'Rust-rendered pixels · Drag to move, corner to resize.' : 'Exactly the pixels sent to the simulated display.';
+  $('revision-label').textContent = `Displayed ${saved.displayed_revision} / saved ${saved.revision}`;
+  $('dimensions').textContent = `${draft.display.width} × ${draft.display.height} px`;
+  $('keyboard-hint').textContent = active() ? 'Arrow keys: move · Shift: 8 px · Ctrl/Cmd Z: undo · Ctrl/Cmd S: save' : 'Paperphase 0.1.0 · Experimental';
+  $('grid-overlay').style.display = viewingDraft && checked('grid') ? 'block' : 'none';
+  if (viewingDraft && draftImage) $<HTMLImageElement>('frame').src = draftImage;
+  if (!viewingDraft) setDisplayedImage();
+  renderList();
+  renderOverlays();
+  if (rebuildInspector) renderInspector();
+  fit();
+}
+function setDisplayedImage(force = false) {
+  const image = $<HTMLImageElement>('frame');
+  const path = `/api/display.png?revision=${saved.displayed_revision}`;
+  if (force || image.getAttribute('src') !== path) image.src = path;
+}
+function node<K extends keyof HTMLElementTagNameMap>(tag: K, className = '', content = '') {
+  const element = document.createElement(tag);
+  element.className = className;
+  element.textContent = content;
+  return element;
+}
+function renderList() {
+  const list = $('component-list');
+  list.replaceChildren();
+  const layout = viewingDraft ? draft : saved.layout;
+  $('component-count').textContent = String(layout.components.length);
+  for (const c of layout.components) {
+    const item = node('button', `component-item ${active() && selected === c.id ? 'selected' : ''}`);
+    item.setAttribute('aria-label', `Select ${c.id}`);
+    item.append(node('span', 'component-icon', c.blocks.some(b => b.source.kind === 'field') ? '≋' : 'Aa'));
+    const text = node('span');
+    text.append(node('span', 'item-name', name(c)), node('small', '', `${c.rect.width} × ${c.rect.height} · ${c.rect.x}, ${c.rect.y}`));
+    item.append(text);
+    item.disabled = !active();
+    item.onclick = () => { selected = c.id; render(); };
+    list.append(item);
+  }
+}
+function renderOverlays() {
+  const overlays = $('overlays');
+  overlays.replaceChildren();
+  if (!active()) return;
+  for (const c of draft.components) {
+    const box = node('div', `component-box ${selected === c.id ? 'selected' : ''} ${drag?.id === c.id && drag.invalid ? 'invalid' : ''}`);
+    box.dataset.component = c.id;
+    box.setAttribute('role', 'button');
+    box.setAttribute('aria-pressed', String(selected === c.id));
+    box.setAttribute('aria-label', `Move ${c.id}`);
+    box.tabIndex = 0;
+    const rect = drag?.id === c.id && drag.invalid ? proposedRect(drag, lastPointerX, lastPointerY) : c.rect;
+    Object.assign(box.style, { left: `${rect.x}px`, top: `${rect.y}px`, width: `${rect.width}px`, height: `${rect.height}px` });
+    if (selected === c.id) {
+      const tag = node('span', 'component-tag', name(c));
+      // Keep the label inside the board when the component touches its top edge.
+      if (c.rect.y < 22) tag.style.top = '1px';
+      const handle = node('span', 'resize-handle');
+      handle.dataset.resize = 'true';
+      handle.setAttribute('aria-hidden', 'true');
+      box.append(tag, handle);
+    }
+    box.onfocus = () => {
+      if (selected !== c.id) {
+        selected = c.id; renderInspector(); renderList(); renderOverlays();
+        for (const next of overlays.querySelectorAll<HTMLElement>('[data-component]')) if (next.dataset.component === c.id) next.focus();
+      }
+    };
+    overlays.append(box);
+  }
+}
+function fit() {
+  if (!draft) return;
+  const viewport = $('viewport');
+  if (autoFit) zoom = Math.min(1, (viewport.clientWidth - 68) / draft.display.width, (viewport.clientHeight - 68) / draft.display.height);
+  zoom = Math.max(.1, Math.min(2, zoom));
+  Object.assign($('board').style, { width: `${draft.display.width}px`, height: `${draft.display.height}px`, transform: `scale(${zoom})` });
+  Object.assign($('board-wrap').style, { width: `${draft.display.width * zoom}px`, height: `${draft.display.height * zoom}px` });
+  $('zoom-label').textContent = `${Math.round(zoom * 100)}%`;
+}
+
+function label(title: string, input: HTMLElement, parent: HTMLElement) {
+  input.setAttribute('aria-label', title);
+  const element = node('label');
+  element.append(node('span', '', title), input);
+  parent.append(element);
+  return input;
+}
+function numeric(title: string, value: number, min: number, max: number, parent: HTMLElement, update: (value: number) => void) {
+  const input = node('input');
+  input.type = 'number'; input.value = String(value); input.min = String(min); input.max = String(max); input.step = '1';
+  input.onchange = () => {
+    const n = input.valueAsNumber;
+    if (Number.isInteger(n) && n >= min && n <= max) update(n);
+    else { input.value = String(value); notice(`${title} must be a whole number from ${min} to ${max}.`, true); }
+  };
+  return label(title, input, parent);
+}
+function select(title: string, value: string, options: [string, string][], parent: HTMLElement, update: (value: string) => void) {
+  const input = node('select');
+  // Preserve bindings to a missing source, so opening the inspector never rewrites a layout.
+  if (!options.some(([id]) => id === value)) options = [[value, `${value} (unavailable)`], ...options];
+  for (const [id, text] of options) { const option = node('option', '', text); option.value = id; input.append(option); }
+  input.value = value; input.onchange = () => update(input.value);
+  return label(title, input, parent);
+}
+function textField(title: string, value: string, parent: HTMLElement, update: (value: string) => void, multiline = false, maxLength = 128) {
+  const input = multiline ? node('textarea') : node('input');
+  input.value = value; input.maxLength = maxLength;
+  input.oninput = () => update(input.value);
+  return label(title, input, parent);
+}
+function action(text: string, title: string, parent: HTMLElement, callback: () => void, disabled = false) {
+  const input = node('button', 'small', text);
+  input.type = 'button'; input.title = title; input.setAttribute('aria-label', title); input.disabled = disabled; input.onclick = callback;
+  parent.append(input);
+  return input;
+}
+function section(title: string, parent: HTMLElement) {
+  const result = node('section', 'property-section'); result.append(node('h3', '', title)); parent.append(result); return result;
+}
+function renderInspector() {
+  const inspector = $('inspector-body');
+  if (lastInspectedId !== selected) {
+    inspector.parentElement!.scrollTop = 0;
+    lastInspectedId = selected;
+  }
+  inspector.replaceChildren();
+  const c = component();
+  if (!active() || !c) {
+    const empty = node('div', 'empty-properties');
+    empty.append(node('span', '', '↖'), node('h3', '', active() ? 'Start with a component.' : 'Your display, your way.'), node('p', '', active() ? 'Select one on the canvas, or add text and data from the library.' : 'Choose Edit layout to arrange components and customise their content.'));
+    inspector.append(empty); return;
+  }
+  const id = c.id;
+  const updateComponent = (fn: (c: Component) => void, key = '', rebuild = true) => change(l => fn(l.components.find(c => c.id === id)!), key, rebuild);
+  const placement = section('PLACEMENT · NATIVE PIXELS', inspector);
+  const geometry = node('div', 'field-grid'); placement.append(geometry);
+  for (const [key, title, min, max] of [['x', 'X', 0, draft.display.width - c.rect.width], ['y', 'Y', 0, draft.display.height - c.rect.height], ['width', 'Width', 32, draft.display.width], ['height', 'Height', 32, draft.display.height]] as const) {
+    numeric(title, c.rect[key], min, max, geometry, n => updateComponent(c => { c.rect[key] = n; }));
+  }
+  const spacing = node('div', 'field-grid'); placement.append(spacing);
+  numeric('Padding', c.padding, 0, 64, spacing, n => updateComponent(c => { c.padding = n; }));
+  numeric('Block gap', c.gap, 0, 64, spacing, n => updateComponent(c => { c.gap = n; }));
+  const borderLabel = node('label', 'check'); const border = node('input'); border.type = 'checkbox'; border.checked = c.border;
+  border.onchange = () => updateComponent(c => { c.border = border.checked; }); borderLabel.append(border, document.createTextNode('Draw component border')); placement.append(borderLabel);
+  const content = section('CONTENT · FLOWS FROM TOP TO BOTTOM', inspector);
+  c.blocks.forEach((block, index) => {
+    const updateBlock = (fn: (b: Block) => void, key = '', rebuild = true) => updateComponent(c => fn(c.blocks.find(b => b.id === block.id)!), key, rebuild);
+    const card = node('div', 'block-card'); card.dataset.block = block.id; content.append(card);
+    const heading = node('div', 'block-heading'); heading.append(node('strong', '', `Block ${index + 1}`)); card.append(heading);
+    const move = (direction: number) => updateComponent(c => { const i = c.blocks.findIndex(b => b.id === block.id); [c.blocks[i], c.blocks[i + direction]] = [c.blocks[i + direction]!, c.blocks[i]!]; });
+    action('↑', 'Move block up', heading, () => move(-1), index === 0);
+    action('↓', 'Move block down', heading, () => move(1), index === c.blocks.length - 1);
+    action('×', 'Remove block', heading, () => updateComponent(c => { c.blocks = c.blocks.filter(b => b.id !== block.id); }), c.blocks.length === 1);
+    select('Content source', block.source.kind, [['literal', 'Text'], ['field', 'Dataset field']], card, kind => updateBlock(b => {
+      if (kind === 'literal') b.source = { kind: 'literal', text: 'Your text' };
+      else if (catalog[0]) b.source = { kind: 'field', binding: newBinding(catalog[0]) };
+    }));
+    if (block.source.kind === 'literal') {
+      textField('Text', block.source.text, card, value => updateBlock(b => { if (b.source.kind === 'literal') b.source.text = value; }, `${id}.${block.id}.text`, false), true, 4096);
+    } else {
+      const binding = block.source.binding;
+      const updateBinding = (fn: (b: Binding) => void, key = '', rebuild = true) => updateBlock(b => { if (b.source.kind === 'field') fn(b.source.binding); }, key, rebuild);
+      const key = `${binding.connection_id}/${binding.dataset_id}`;
+      const dataset = catalog.find(d => `${d.connection_id}/${d.dataset_id}` === key);
+      select('Dataset', key, catalog.map(d => [`${d.connection_id}/${d.dataset_id}`, `${d.connection_id} / ${d.dataset_id}`]), card, value => {
+        const d = catalog.find(d => `${d.connection_id}/${d.dataset_id}` === value)!;
+        updateBlock(b => { b.source = { kind: 'field', binding: newBinding(d) }; });
+      });
+      select('Field', binding.field_id, dataset?.fields.map(f => [f.id, `${f.id} · ${f.kind}`]) ?? [], card, value => updateBinding(b => { b.field_id = value; b.decimals = null; }));
+      numeric('Row (first row = 0)', binding.row ?? 0, 0, 511, card, n => updateBinding(b => { b.row = n; }));
+      if (dataset?.fields.find(f => f.id === binding.field_id)?.kind === 'number') {
+        select('Decimal places', binding.decimals == null ? '' : String(binding.decimals), [['', 'Automatic'], ...Array.from({ length: 7 }, (_, i): [string, string] => [String(i), String(i)])], card, value => updateBinding(b => { b.decimals = value === '' ? null : Number(value); }));
+      }
+      textField('Prefix', binding.prefix ?? '', card, value => updateBinding(b => { b.prefix = value; }, `${id}.${block.id}.prefix`, false));
+      textField('Suffix', binding.suffix ?? '', card, value => updateBinding(b => { b.suffix = value; }, `${id}.${block.id}.suffix`, false));
+    }
+    const typography = node('div', 'field-grid'); card.append(typography);
+    numeric('Font size (px)', block.font_size, 8, 256, typography, value => updateBlock(b => { b.font_size = value; }));
+    select('Alignment', block.align ?? 'left', [['left', 'Left'], ['center', 'Centre'], ['right', 'Right']], typography, value => updateBlock(b => { b.align = value; }));
+    select('Overflow', block.overflow ?? 'wrap', [['wrap', 'Wrap'], ['clip', 'Clip'], ['ellipsis', 'Ellipsis']], card, value => updateBlock(b => { b.overflow = value; }));
+  });
+  action('+ Add text block', 'Add text block', content, () => updateComponent(c => { c.blocks.push(newBlock()); }), c.blocks.length >= 32).className = 'wide-button';
+  const report = node('p', 'render-report'); report.id = 'render-report'; content.append(report); renderReport();
+  const remove = section('COMPONENT', inspector);
+  action('Remove component', 'Remove component', remove, () => { change(l => { l.components = l.components.filter(c => c.id !== id); }); selected = null; render(); }).className = 'danger wide-button';
+}
+function newBinding(dataset: Dataset): Binding { return { connection_id: dataset.connection_id, dataset_id: dataset.dataset_id, field_id: dataset.fields[0]!.id, row: 0, decimals: null, prefix: '', suffix: '' }; }
+// getRandomValues also works over plain HTTP on a LAN; randomUUID requires HTTPS.
+function identifier(prefix: string) { return `${prefix}-${Array.from(crypto.getRandomValues(new Uint8Array(8)), n => n.toString(16).padStart(2, '0')).join('')}`; }
+function newBlock(): Block { return { id: identifier('block'), source: { kind: 'literal', text: 'Your text' }, font_size: 20, align: 'left', overflow: 'wrap' }; }
+function addComponent(data: boolean) {
+  const block = newBlock();
+  if (data) {
+    if (!catalog[0]) { notice('No datasets are available. Start with a text component.'); return; }
+    block.source = { kind: 'field', binding: newBinding(catalog[0]) };
+  }
+  const c: Component = { id: identifier('component'), rect: { x: 0, y: 0, width: 256, height: 128 }, padding: 12, gap: 8, border: false, blocks: [block] };
+  for (let y = 16; y + c.rect.height <= draft.display.height; y += 8) {
+    for (let x = 16; x + c.rect.width <= draft.display.width; x += 8) {
+      c.rect.x = x; c.rect.y = y;
+      if (validRect(c.rect, c.id)) { selected = c.id; change(l => { l.components.push(c); }); return; }
+    }
+  }
+  notice('No free 256 × 128 area is available. Resize or remove a component to make room.');
+}
+
+let lastPointerX = 0;
+let lastPointerY = 0;
+function proposedRect(state: NonNullable<typeof drag>, x: number, y: number): Rect {
+  const snap = (n: number) => Math.round(n / (checked('snap') ? 8 : 1)) * (checked('snap') ? 8 : 1);
+  const dx = (x - state.startX) / zoom, dy = (y - state.startY) / zoom;
+  const rect = { ...state.original };
+  if (state.resize) { rect.width = Math.max(32, snap(rect.width + dx)); rect.height = Math.max(32, snap(rect.height + dy)); }
+  else { rect.x = snap(rect.x + dx); rect.y = snap(rect.y + dy); }
+  return rect;
+}
+$('board').addEventListener('pointerdown', event => {
+  if (!active() || event.button !== 0 || drag) return;
+  const target = event.target as HTMLElement;
+  const box = target.closest<HTMLElement>('[data-component]');
+  if (!box) { selected = null; render(); return; }
+  event.preventDefault();
+  selected = box.dataset.component!;
+  const c = component()!;
+  drag = { id: c.id, startX: event.clientX, startY: event.clientY, original: { ...c.rect }, last: { ...c.rect }, baseline: clone(draft), resize: !!target.closest('[data-resize]'), pointerId: event.pointerId, invalid: false };
+  lastPointerX = event.clientX; lastPointerY = event.clientY;
+  $('board').setPointerCapture(event.pointerId);
+  document.body.classList.add('dragging');
+  coalescedKey = '';
+  render();
+});
+$('board').addEventListener('pointermove', event => {
+  if (!drag || event.pointerId !== drag.pointerId) return;
+  lastPointerX = event.clientX; lastPointerY = event.clientY;
+  const rect = proposedRect(drag, event.clientX, event.clientY);
+  drag.invalid = !validRect(rect, drag.id);
+  if (!drag.invalid) { drag.last = rect; component()!.rect = rect; queuePreview(); }
+  renderOverlays();
+});
+function endDrag(cancel = false) {
+  if (!drag) return;
+  const state = drag;
+  drag = undefined;
+  if (cancel) draft = state.baseline;
+  else {
+    component()!.rect = state.last;
+    if (!equal(state.baseline, draft)) remember(state.baseline);
+    if (state.invalid) notice('Components cannot overlap or leave the display. Restored the last valid position.');
+  }
+  if ($('board').hasPointerCapture(state.pointerId)) $('board').releasePointerCapture(state.pointerId);
+  document.body.classList.remove('dragging');
+  render(); queuePreview();
+}
+$('board').addEventListener('pointerup', () => endDrag());
+$('board').addEventListener('pointercancel', () => endDrag(true));
+$('board').addEventListener('lostpointercapture', () => endDrag(true));
+function history(direction: 'undo' | 'redo') {
+  if (!active() || drag) return;
+  const from = direction === 'undo' ? undo : redo;
+  const to = direction === 'undo' ? redo : undo;
+  const layout = from.pop();
+  if (!layout) return;
+  to.push(clone(draft)); draft = layout; coalescedKey = '';
+  if (!component()) selected = null;
+  notice(); render(); queuePreview();
+}
+async function save() {
+  if (!dirty() || saving || conflict || !connected || drag) return;
+  saving = true; render(false); notice();
+  try {
+    const result = await api<{ revision: number }>('/api/layout', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ base_revision: saved.revision, layout: draft }) });
+    saved = { ...saved, revision: result.revision, layout: clone(draft), phase: 'refreshing' };
+    editing = false; viewingDraft = false; selected = null; undo = []; redo = [];
+    ++previewSequence; previewAbort?.abort(); window.clearTimeout(previewTimer);
+    notice('Layout saved. The simulator is refreshing.');
+  } catch (error) { notice(String(error), true); }
+  finally { saving = false; render(); }
+}
+button('edit').onclick = () => {
+  editing = true; viewingDraft = true; draft = clone(saved.layout); draftImage = $<HTMLImageElement>('frame').src;
+  undo = []; redo = []; selected = null; conflict = false; notice(); render(); queuePreview();
+};
+button('discard').onclick = async () => {
+  if (drag) endDrag(true);
+  try {
+    const current = await api<Workspace>('/api/state');
+    saved = current; draft = clone(current.layout); editing = false; viewingDraft = false; selected = null; conflict = false;
+    ++previewSequence; previewAbort?.abort(); window.clearTimeout(previewTimer); notice(); render(); updateStatus();
+  } catch (error) { notice(String(error), true); }
+};
+button('save').onclick = () => { void save(); };
+button('view-current').onclick = () => { if (drag) endDrag(); viewingDraft = false; render(); };
+button('view-draft').onclick = () => { viewingDraft = true; render(); };
+button('undo').onclick = () => history('undo'); button('redo').onclick = () => history('redo');
+button('add-text').onclick = () => addComponent(false); button('add-data').onclick = () => addComponent(true);
+$('grid').onchange = () => render(false);
+button('zoom-fit').onclick = () => { autoFit = true; fit(); };
+button('zoom-in').onclick = () => { autoFit = false; zoom += .1; fit(); };
+button('zoom-out').onclick = () => { autoFit = false; zoom -= .1; fit(); };
+new ResizeObserver(() => { if (!drag) fit(); }).observe($('viewport'));
+window.addEventListener('beforeunload', event => { if (dirty()) { event.preventDefault(); event.returnValue = ''; } });
+document.addEventListener('keydown', event => {
+  const typing = (event.target as HTMLElement).closest('input,textarea,select,[contenteditable=true]');
+  const mod = event.ctrlKey || event.metaKey;
+  if (mod && event.key.toLowerCase() === 's') { event.preventDefault(); void save(); return; }
+  if (!active()) return;
+  if (event.key === 'Escape') { if (drag) endDrag(true); else { selected = null; render(); } return; }
+  if (typing || drag) return;
+  if (mod && event.key.toLowerCase() === 'z') { event.preventDefault(); history(event.shiftKey ? 'redo' : 'undo'); return; }
+  const c = component();
+  if (!c) return;
+  if (event.key === 'Delete' || event.key === 'Backspace') { event.preventDefault(); const id = c.id; change(l => { l.components = l.components.filter(c => c.id !== id); }); selected = null; render(); return; }
+  const delta: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+  const movement = delta[event.key];
+  if (movement) {
+    event.preventDefault(); const step = event.shiftKey ? 8 : 1;
+    change(l => { const target = l.components.find(c => c.id === selected)!; target.rect.x += movement[0] * step; target.rect.y += movement[1] * step; }, `move.${c.id}`);
+  }
+});
+function updateStatus() {
+  $('device-status').textContent = !connected ? 'Service unavailable' : saved.phase === 'refreshing' ? 'Simulator refreshing' : 'Simulator idle';
+  const dot = document.querySelector('.device .status-dot')!;
+  dot.classList.toggle('busy', connected && saved.phase === 'refreshing'); dot.classList.toggle('offline', !connected);
+  const onLan = location.hostname !== 'localhost' && location.hostname !== '127.0.0.1' && location.hostname !== '[::1]';
+  $('host-address').textContent = onLan ? location.host : saved.addresses[0] ?? location.host;
+  $('host-address').title = ['Browser address: ' + location.host, ...saved.addresses].join('\n');
+}
+async function poll() {
+  if (saving || drag) return;
+  try {
+    const current = await api<Workspace>('/api/state');
+    if (saving || drag) return;
+    const changed = !connected || current.revision !== saved.revision || current.displayed_revision !== saved.displayed_revision || current.phase !== saved.phase;
+    connected = true;
+    if (editing) {
+      if (current.revision !== saved.revision && !conflict) { conflict = true; notice('A newer layout was saved in another tab. Your draft is retained. Discard to load the newer layout.', true); }
+      saved.phase = current.phase; saved.displayed_revision = current.displayed_revision;
+    } else { saved = current; draft = clone(current.layout); }
+    if (!viewingDraft && displayedRevision !== current.displayed_revision) { displayedRevision = current.displayed_revision; setDisplayedImage(true); }
+    updateStatus();
+    // Polling must not replace focused component buttons every second.
+    if (changed) render(false);
+  } catch { connected = false; if (saved) { updateStatus(); render(false); } }
+}
+async function start() {
+  try {
+    [saved, catalog] = await Promise.all([api<Workspace>('/api/state'), api<Dataset[]>('/api/catalog')]);
+    draft = clone(saved.layout); updateStatus(); render();
+    window.setInterval(() => { void poll(); }, 1000);
+  } catch (error) { notice(`Cannot load the workspace. ${String(error)} Reload after the service is available.`, true); button('edit').disabled = true; }
+}
+void start();

@@ -68,3 +68,32 @@ Clippy, compiled guest build, and all 40 tests (18 boundary, 7 model, 10 rendere
 input/output alias protection, visually inspected the generated sample frame,
 and verified the bundled font checksum and documentation links. Pi and physical
 display measurements remain pending.
+
+### Desktop editor and simulated service
+
+- Added `paperphase serve`, embedding a compiled TypeScript frontend in the Rust
+  executable, with loopback/LAN binding, host addresses, and simulator status.
+- Added separate displayed/draft views, text/data templates, native-pixel drag
+  and resize, optional grid/snapping, numeric placement, keyboard controls,
+  collision feedback, last-valid-position recovery, undo/redo, and Save/Discard.
+- Added a block builder with typed dataset/row bindings, text, number formatting,
+  spacing, borders, fixed-size fonts, alignment, and overflow controls. Draft
+  previews use the existing Rust renderer; no browser text rasterisation is used.
+- Added atomic workspace persistence, exclusive process ownership, revision
+  conflicts that retain drafts, and separate saved/completed simulator revisions.
+  Kept render work bounded and off async workers; commit work survives a client
+  disconnect. Added origin/host checks and request-size limits for the LAN API.
+- Added service integration tests and desktop Chromium workflows, embedded-asset
+  consistency and browser checks in CI, an actual editor screenshot, and design
+  and operator documentation. Version remains experimental `0.1.0`.
+- Replaced a bare semicolon in the editor sequence diagram's response label;
+  Mermaid treats it as a statement separator rather than message text. Reproduced
+  the original error and verified both design sequence diagrams with Mermaid 11.
+
+Validation: frontend type checking/build, `sh scripts/check.sh` (43 Rust tests),
+and desktop Chromium workflows passed on x86-64 Linux. Verified preview isolation,
+matching preview/completed PNG bytes, failed writes, competing saves, restart
+persistence, pointer interactions, bindings, Save/Discard, and retained drafts.
+Pi resource measurements, Google account linking, live scheduling, and physical
+display validation remain pending. This is the first editor slice, not completion
+of delivery stage 2.

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f4ef">
+  <title>Paperphase · Display studio</title>
+  <link rel="stylesheet" href="/app.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Paperphase home"><span class="brand-mark" aria-hidden="true">◒</span> paperphase<span class="experimental">LAB</span></a>
+    <span class="product-label">DISPLAY STUDIO</span>
+    <div class="device"><span class="status-dot"></span><strong id="device-status">Connecting</strong><span class="divider"></span><span id="host-address">—</span></div>
+  </header>
+  <main>
+    <section class="page-heading">
+      <div><div class="eyebrow">YOUR SPACE, AT A GLANCE</div><h1>A little less screen.</h1><p>Make room for the information that matters.</p></div>
+      <div class="heading-actions"><span id="save-state" class="subtle">Loading workspace…</span><button id="discard" hidden>Discard</button><button id="save" class="primary" hidden>Save to display <span aria-hidden="true">↗</span></button><button id="edit" class="primary">Edit layout <span aria-hidden="true">↗</span></button></div>
+    </section>
+    <div id="notice" role="status" aria-live="polite" hidden></div>
+    <section class="studio" aria-label="Display editor">
+      <aside class="library">
+        <div class="panel-heading"><h2>Components</h2><span id="component-count" class="count">0</span></div>
+        <p class="panel-description" id="library-description">Your saved arrangement.</p>
+        <div id="component-list" class="component-list"></div>
+        <div id="add-tools" hidden><div class="section-label">ADD TO YOUR DISPLAY</div><button id="add-text" class="template"><span class="template-icon">Aa</span><span><strong>Text</strong><small>A note, heading, or quotation</small></span><span>+</span></button><button id="add-data" class="template"><span class="template-icon">≋</span><span><strong>Data field</strong><small>Connect a dataset value</small></span><span>+</span></button></div>
+        <div class="library-note"><span class="tiny-orbit">◌</span><strong>A place for everything.</strong><p>Components sit side by side. Each one owns its space on the display.</p></div>
+      </aside>
+      <div class="canvas-panel">
+        <div class="canvas-toolbar"><div class="view-switch" role="group" aria-label="Canvas view"><button id="view-current" class="active" aria-pressed="true">On display</button><button id="view-draft" aria-pressed="false" disabled>Draft</button></div><div class="canvas-tools"><button id="undo" aria-label="Undo" title="Undo (Ctrl/Cmd Z)" disabled>↶</button><button id="redo" aria-label="Redo" title="Redo (Ctrl/Cmd Shift Z)" disabled>↷</button><span class="divider"></span><label class="check"><input id="snap" type="checkbox" checked> Snap</label><label class="check"><input id="grid" type="checkbox"> Grid</label></div></div>
+        <div class="canvas-heading"><span><span class="status-dot muted-dot"></span> <strong id="canvas-title">Last completed frame</strong></span><span id="dimensions">—</span></div>
+        <div id="viewport" tabindex="-1"><div id="board-wrap"><div id="board" aria-label="Display canvas"><img id="frame" alt="Monochrome frame rendered by Paperphase" draggable="false"><div id="grid-overlay"></div><div id="overlays"></div></div></div></div>
+        <div class="canvas-caption"><span id="canvas-caption">Exactly the pixels sent to the simulated display.</span><div class="zoom-tools"><button id="zoom-out" aria-label="Zoom out">−</button><span id="zoom-label">100%</span><button id="zoom-in" aria-label="Zoom in">+</button><button id="zoom-fit">Fit</button></div></div>
+        <div class="canvas-footer"><span class="simulation-badge">SIMULATOR</span><span>Monochrome · Sample data</span><span id="revision-label" class="push-right">—</span></div>
+      </div>
+      <aside class="inspector"><div class="panel-heading"><h2>Properties</h2><span class="properties-symbol">☷</span></div><div id="inspector-body"><div class="empty-properties"><span>↖</span><h3>Your display, your way.</h3><p>Choose <strong>Edit layout</strong> to arrange components and customise their content.</p></div></div></aside>
+    </section>
+    <footer class="page-footer"><span>ODD ORBIT SOFTWARE <span class="footer-orbit">◌</span> Small tools. Considered spaces.</span><span id="keyboard-hint">Paperphase 0.1.0 · Experimental</span></footer>
+  </main>
+</body>
+</html>

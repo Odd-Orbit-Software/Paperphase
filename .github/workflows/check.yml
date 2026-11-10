@@ -17,5 +17,18 @@ jobs:
         run: rustup toolchain install 1.96.0 --profile minimal --component rustfmt,clippy --target wasm32-unknown-unknown
       - name: Select Rust
         run: rustup default 1.96.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Build embedded editor assets
+        run: |
+          npm install --global pnpm@11.5.1
+          pnpm --dir web install --frozen-lockfile
+          pnpm --dir web build
+          git diff --exit-code -- web/dist
       - name: Check host and compiled guest
         run: sh scripts/check.sh
+      - name: Check desktop editor
+        run: |
+          pnpm --dir web exec playwright install --with-deps chromium
+          pnpm --dir web test
