@@ -32,6 +32,10 @@ measurements do not substitute for the plugin evaluation on a Zero 2 W.
 
 ## 2. Build the editor against a simulated display
 
+Progress: the [shared renderer and file-based simulator](../design/data-and-rendering.md)
+are implemented. The interactive editor, service, persistence, fuller builder,
+live clock, and scheduling remain to be delivered.
+
 Deliver a usable desktop workflow backed by the real rendering and scheduling
 boundaries, with deterministic sample datasets and simulated display operations.
 

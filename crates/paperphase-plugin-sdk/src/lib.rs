@@ -1,9 +1,19 @@
 //! Experimental guest bindings for the foundation harness, not a stable SDK.
 
+pub use paperphase_core::{Dataset, Field, FieldKind};
+
 #[derive(Debug)]
 pub enum Error {
     UnsupportedTarget,
     InvalidResponse,
+    InvalidDataset(paperphase_core::ValidationError),
+}
+
+/// Serialize the same typed dataset contract the host and renderer validate.
+pub fn publish_dataset(dataset: &Dataset) -> Result<(), Error> {
+    dataset.validate().map_err(Error::InvalidDataset)?;
+    let bytes = serde_json::to_vec(dataset).map_err(|_| Error::InvalidResponse)?;
+    publish(&bytes)
 }
 
 #[cfg(target_arch = "wasm32")]

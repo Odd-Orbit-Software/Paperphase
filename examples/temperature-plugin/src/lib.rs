@@ -11,7 +11,7 @@ pub extern "C" fn run() -> i32 {
 
 #[cfg(target_arch = "wasm32")]
 fn fetch() -> Result<(), ()> {
-    use paperphase_plugin_sdk::{http_get, publish, source_url};
+    use paperphase_plugin_sdk::{Dataset, Field, FieldKind, http_get, publish_dataset, source_url};
     use serde_json::{Value, json};
 
     let source = source_url().map_err(|_| ())?;
@@ -21,11 +21,18 @@ fn fetch() -> Result<(), ()> {
         .get("temperature_c")
         .and_then(Value::as_f64)
         .ok_or(())?;
-    let dataset = json!({
-        "schema_version": 1,
-        "id": "current-weather",
-        "fields": [{"id": "temperature", "kind": "number", "unit": "celsius"}],
-        "rows": [{"temperature": temperature}]
-    });
-    publish(&serde_json::to_vec(&dataset).map_err(|_| ())?).map_err(|_| ())
+    let dataset = Dataset {
+        schema_version: 1,
+        id: "current-weather".into(),
+        fields: vec![Field {
+            id: "temperature".into(),
+            kind: FieldKind::Number,
+            unit: Some("celsius".into()),
+        }],
+        rows: vec![std::collections::BTreeMap::from([(
+            "temperature".into(),
+            json!(temperature),
+        )])],
+    };
+    publish_dataset(&dataset).map_err(|_| ())
 }

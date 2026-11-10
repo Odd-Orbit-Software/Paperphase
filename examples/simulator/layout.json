@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "display": { "id": "simulated-800x480-mono", "width": 800, "height": 480 },
+  "components": [
+    {
+      "id": "header", "rect": { "x": 16, "y": 16, "width": 768, "height": 80 },
+      "padding": 8, "gap": 4,
+      "blocks": [
+        { "id": "title", "font_size": 28, "source": { "kind": "literal", "text": "Paperphase" } },
+        { "id": "subtitle", "font_size": 14, "source": { "kind": "literal", "text": "Sample data · 800 × 480 monochrome · simulated display" } }
+      ]
+    },
+    {
+      "id": "weather", "rect": { "x": 16, "y": 112, "width": 240, "height": 176 },
+      "border": true, "gap": 6,
+      "blocks": [
+        { "id": "label", "font_size": 13, "source": { "kind": "literal", "text": "WEATHER · DUBLIN" } },
+        { "id": "temperature", "font_size": 48, "source": { "kind": "field", "binding": { "connection_id": "weather.dublin", "dataset_id": "current-weather", "field_id": "temperature", "decimals": 1, "suffix": " °C" } } },
+        { "id": "summary", "font_size": 14, "source": { "kind": "field", "binding": { "connection_id": "weather.dublin", "dataset_id": "current-weather", "field_id": "summary" } } }
+      ]
+    },
+    {
+      "id": "agenda", "rect": { "x": 272, "y": 112, "width": 512, "height": 176 },
+      "border": true, "gap": 10,
+      "blocks": [
+        { "id": "label", "font_size": 13, "source": { "kind": "literal", "text": "AGENDA · FICTIONAL EVENTS" } },
+        { "id": "first", "font_size": 20, "source": { "kind": "literal", "text": "18:30   Dinner with friends" } },
+        { "id": "second", "font_size": 20, "source": { "kind": "literal", "text": "20:00   Read and unwind" } },
+        { "id": "note", "font_size": 13, "source": { "kind": "literal", "text": "Calendar account linking is still pending." } }
+      ]
+    },
+    {
+      "id": "luas", "rect": { "x": 16, "y": 304, "width": 368, "height": 160 },
+      "border": true, "gap": 8,
+      "blocks": [
+        { "id": "label", "font_size": 13, "source": { "kind": "literal", "text": "LUAS · RANELAGH" } },
+        { "id": "destination", "font_size": 24, "overflow": "ellipsis", "source": { "kind": "field", "binding": { "connection_id": "luas.ranelagh", "dataset_id": "departures", "field_id": "destination" } } },
+        { "id": "arrival", "font_size": 20, "source": { "kind": "field", "binding": { "connection_id": "luas.ranelagh", "dataset_id": "departures", "field_id": "minutes", "decimals": 0, "suffix": " min · sample estimate" } } }
+      ]
+    },
+    {
+      "id": "headlines", "rect": { "x": 400, "y": 304, "width": 384, "height": 160 },
+      "border": true, "gap": 8,
+      "blocks": [
+        { "id": "label", "font_size": 13, "source": { "kind": "literal", "text": "HEADLINES · SAMPLE FEED" } },
+        { "id": "headline", "font_size": 20, "source": { "kind": "field", "binding": { "connection_id": "rss.sample", "dataset_id": "headlines", "field_id": "title" } } }
+      ]
+    }
+  ]
+}

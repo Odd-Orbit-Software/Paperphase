@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "snapshots": [
+    {
+      "connection_id": "weather.dublin", "last_success_at": 1699999940, "stale_after_secs": 600,
+      "dataset": {
+        "schema_version": 1, "id": "current-weather",
+        "fields": [{ "id": "temperature", "kind": "number", "unit": "celsius" }, { "id": "summary", "kind": "text" }],
+        "rows": [{ "temperature": 16.0, "summary": "Cloudy with bright spells." }]
+      }
+    },
+    {
+      "connection_id": "luas.ranelagh", "last_success_at": 1699999880, "stale_after_secs": 60,
+      "dataset": {
+        "schema_version": 1, "id": "departures",
+        "fields": [{ "id": "destination", "kind": "text" }, { "id": "minutes", "kind": "number", "unit": "minutes" }],
+        "rows": [{ "destination": "Broombridge", "minutes": 4 }]
+      }
+    },
+    {
+      "connection_id": "rss.sample", "last_success_at": 1699999980, "stale_after_secs": 900,
+      "dataset": {
+        "schema_version": 1, "id": "headlines",
+        "fields": [{ "id": "title", "kind": "text" }],
+        "rows": [{ "title": "The preview and simulated display now share the same rendered pixels." }]
+      }
+    }
+  ]
+}

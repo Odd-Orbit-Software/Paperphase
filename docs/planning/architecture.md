@@ -6,6 +6,10 @@ hardware benchmark has been completed. The first
 detailed contracts below still identify outstanding work rather than fixing the
 final API or runtime choice.
 
+The [shared data model and monochrome renderer](../design/data-and-rendering.md)
+now provide typed bindings, non-overlapping layout validation, freshness status,
+and PNG/PBM simulator output. The desktop editor and service are still pending.
+
 See [requirements.md](requirements.md) for product scope and hardware uncertainty,
 and [delivery-plan.md](delivery-plan.md) for the agreed implementation sequence.
 

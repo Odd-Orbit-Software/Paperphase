@@ -10,9 +10,14 @@ publish.workspace = true
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
+paperphase-core = { path = "../paperphase-core" }
+paperphase-render = { path = "../paperphase-render" }
 paperphase-runtime = { path = "../paperphase-runtime" }
 serde.workspace = true
 serde_json.workspace = true
+
+[dev-dependencies]
+tempfile = "3.27"
 
 [lints]
 workspace = true

@@ -16,6 +16,8 @@ use clap::{Parser, Subcommand};
 use paperphase_runtime::{Dataset, Limits, PluginRuntime, RunConfig, RunMetrics};
 use serde::Serialize;
 
+mod simulator;
+
 #[derive(Parser)]
 #[command(version, about = "Paperphase compiled-plugin foundation harness")]
 struct Args {
@@ -25,6 +27,20 @@ struct Args {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Render a saved layout and snapshots into a monochrome simulated frame.
+    Simulate {
+        #[arg(long)]
+        layout: PathBuf,
+        #[arg(long)]
+        data: Option<PathBuf>,
+        #[arg(long)]
+        output: PathBuf,
+        #[arg(long)]
+        pbm: Option<PathBuf>,
+        /// Unix seconds; omit to use the host clock for freshness checks.
+        #[arg(long)]
+        now: Option<u64>,
+    },
     /// Run against a deterministic local API; no external service is contacted.
     Demo {
         #[arg(long)]
@@ -60,6 +76,15 @@ struct Report {
 fn main() -> Result<()> {
     let args = Args::parse();
     let (plugin, source_url, iterations, _demo) = match args.command {
+        Command::Simulate {
+            layout,
+            data,
+            output,
+            pbm,
+            now,
+        } => {
+            return simulator::run(&layout, data.as_deref(), &output, pbm.as_deref(), now);
+        }
         Command::Demo { plugin, iterations } => {
             let demo = DemoApi::start()?;
             (plugin, demo.url.clone(), iterations, Some(demo))

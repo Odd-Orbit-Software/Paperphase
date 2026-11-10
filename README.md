@@ -22,9 +22,10 @@ it through the panel's refresh policy.
 
 ## Status and plans
 
-Foundation implementation has started with a compiled-plugin CLI harness,
-experimental Rust guest bindings, and boundary tests. Hardware validation is
-pending. The initial target is a Raspberry Pi Zero 2 W running 64-bit Raspberry
+Foundation implementation includes a compiled-plugin CLI harness, shared typed
+data/layout contracts, and a monochrome renderer with PNG/PBM simulator exports.
+The interactive desktop editor and hardware validation are pending.
+The initial target is a Raspberry Pi Zero 2 W running 64-bit Raspberry
 Pi OS Lite with a Waveshare 7.5-inch monochrome e-paper HAT. The exact panel
 revision and resolution remain to be confirmed.
 
@@ -33,6 +34,8 @@ revision and resolution remain to be confirmed.
 - [Delivery plan](docs/planning/delivery-plan.md)
 - [Run and validate the foundation harness](docs/usage/foundation-harness.md)
 - [Implemented plugin foundation](docs/design/plugin-foundation.md)
+- [Run the display simulator](docs/usage/simulator.md)
+- [Shared data and renderer design](docs/design/data-and-rendering.md)
 - [Changelog](changelog.md)
 
 Implemented features will be documented in `docs/design`, with setup and

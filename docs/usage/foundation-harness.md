@@ -24,7 +24,7 @@ HTTP servers; the environment must permit local sockets. No provider credentials
 or external API access are needed for tests.
 
 `cargo test --workspace` alone runs the other tests and reports the compiled
-guest test as ignored. The full script supplies the artifact and enables it.
+guest tests as ignored. The full script supplies the artifact and enables them.
 
 ## Deterministic demo
 
@@ -79,6 +79,9 @@ The harness does not yet measure a production install path or long-running idle
 service because those are not implemented.
 
 ## Initial desktop measurement
+
+These historical measurements used the original guest before the shared typed
+contract/SDK refactor. They are not measurements of the current guest or renderer.
 
 One release demo on 2026-11-10, x86-64 Linux in an unprivileged container with
 no external network, produced these results for the 82 KiB Rust guest:

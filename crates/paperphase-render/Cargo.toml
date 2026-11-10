@@ -1,0 +1,21 @@
+[package]
+name = "paperphase-render"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+fontdue.workspace = true
+paperphase-core = { path = "../paperphase-core" }
+png.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

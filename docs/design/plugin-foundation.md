@@ -8,6 +8,7 @@ validation, not a completed plugin platform or a final SDK contract.
 | Package | Responsibility |
 | --- | --- |
 | `paperphase` | CLI, deterministic local API, and JSON benchmark report |
+| `paperphase-core` | Shared dataset, layout, snapshot, and validation types |
 | `paperphase-runtime` | Native Wasm compilation, invocation limits, shared HTTP client, dataset validation |
 | `paperphase-plugin-sdk` | Rust guest wrappers for the experimental host imports |
 | `paperphase-temperature-example` | Fetch an observation and publish a typed temperature dataset |
@@ -149,9 +150,9 @@ limits, memory/table growth, invalid buffers, publication limits, unavailable
 WASI imports, malformed modules, and cross-runtime misuse. Healthy invocations
 are checked after guest and upstream failures.
 
-The compiled guest test is explicitly ignored in ordinary `cargo test` until a
+Compiled-guest tests are explicitly ignored in ordinary `cargo test` until a
 guest artifact is supplied. `scripts/check.sh` builds it, supplies its path, and
-runs the suite including that test. GitHub Actions runs this script.
+runs the suite including those tests. GitHub Actions runs this script.
 
 Local execution used x86-64 Linux. The shell blocks loopback sockets, so the
 integration test executable ran in a read-only, unprivileged container with no
@@ -168,9 +169,10 @@ Formatting and Clippy checks also passed. These results do not validate the Pi.
 - Confirm the panel revision and validate physical refresh behaviour.
 - Implement persistent native caches with runtime/configuration compatibility.
 
-Rendering, layout editing, persistence, historical storage, provider polling,
-installation, and hardware drivers are not implemented by this harness. The
-local API is a deterministic fixture, not a weather-provider integration.
+The [shared model and renderer](data-and-rendering.md) now extend this foundation
+with a separate file-based simulator. Layout editing, persistence, historical
+storage, provider polling, installation, and hardware drivers remain pending.
+The local API is a deterministic fixture, not a weather-provider integration.
 
 ## References
 
