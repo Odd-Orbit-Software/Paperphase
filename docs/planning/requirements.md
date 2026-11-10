@@ -1,7 +1,8 @@
 # Requirements
 
 Status: agreed requirements from the planning conversation; unresolved details are
-identified explicitly. No implementation has started.
+identified explicitly. Foundation implementation has started; see the
+[implemented harness](../design/plugin-foundation.md).
 
 ## Purpose
 
@@ -11,10 +12,12 @@ in a browser editor representing the physical display.
 
 ## Project identity
 
-Develop the project under **Odd Orbit Software**. The organisation domains are
+The project is named **Paperphase**, developed under **Odd Orbit Software**.
+The repository is [Odd-Orbit-Software/Paperphase](https://github.com/Odd-Orbit-Software/Paperphase).
+The organisation domains are
 [oddorbit.software](https://oddorbit.software) and
 [oddorbitsoftware.com](https://oddorbitsoftware.com). Use Odd Orbit Software as
-the project attribution identity. The product name is still being selected.
+the project attribution identity.
 
 ## Platform and deployment
 
@@ -181,6 +184,17 @@ display, then complete integrations and plugin distribution.
 - Include diagrams and actual screenshots where they clarify behaviour.
 - Keep proposed designs distinct from implemented behaviour.
 - Put installation and operation instructions in `docs/usage`.
+
+## Commit and versioning policy
+
+Use short, descriptive commit subjects and keep detailed changes and validation
+in the repository's [changelog](../../changelog.md).
+
+The current `0.1.0` foundation is experimental. Once the earliest stable stage
+has been reached and recorded, increment the minor version on every commit,
+including documentation-only commits. Update workspace package versions in
+`Cargo.lock` with the workspace version. Define and record the earliest stable
+milestone before starting this per-commit versioning policy.
 
 ## Sources and validation notes
 

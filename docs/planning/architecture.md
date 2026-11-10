@@ -1,8 +1,10 @@
 # Architecture plan
 
 Status: agreed architectural boundaries and outstanding design work. No
-implementation or hardware benchmark has been completed. Detailed contracts
-below identify what needs specification, rather than fixing library choices.
+hardware benchmark has been completed. The first
+[plugin validation harness](../design/plugin-foundation.md) is implemented;
+detailed contracts below still identify outstanding work rather than fixing the
+final API or runtime choice.
 
 See [requirements.md](requirements.md) for product scope and hardware uncertainty,
 and [delivery-plan.md](delivery-plan.md) for the agreed implementation sequence.

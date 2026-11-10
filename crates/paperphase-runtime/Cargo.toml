@@ -1,0 +1,23 @@
+[package]
+name = "paperphase-runtime"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+reqwest.workspace = true
+# Select ring for reqwest's shared Rustls backend instead of compiling AWS-LC.
+rustls.workspace = true
+rustls-native-certs.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+wasmtime.workspace = true
+
+[dev-dependencies]
+wat.workspace = true
+
+[lints]
+workspace = true

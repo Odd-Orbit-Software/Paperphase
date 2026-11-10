@@ -1,7 +1,9 @@
 # Delivery plan
 
 Status: delivery order agreed. The criteria below make each stage reviewable;
-they do not report completed work. Implementation has not started.
+they do not by themselves report completed work. Stage 1 is in progress: the
+[plugin harness](../design/plugin-foundation.md) is implemented, with current
+[validation results](../usage/foundation-harness.md#foundation-progress).
 
 Product scope is in [requirements.md](requirements.md). Architectural boundaries
 are in [architecture.md](architecture.md).
