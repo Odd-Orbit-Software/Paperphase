@@ -16,6 +16,7 @@ use wasmtime::{
 use wasmtime::{Result, ensure, error::Context, format_err as anyhow};
 
 use crate::Dataset;
+use paperphase_core::Publication;
 
 const ABI: &str = "paperphase_v0";
 const MAX_URL_BYTES: usize = 8192;
@@ -123,6 +124,10 @@ pub struct RunMetrics {
 #[derive(Debug, Serialize)]
 pub struct RunResult {
     pub dataset: Dataset,
+    pub observed_at: Option<u64>,
+    pub min_poll_secs: Option<u32>,
+    pub additional_datasets: Vec<Dataset>,
+    pub additional_observed_at: std::collections::BTreeMap<String, u64>,
     pub metrics: RunMetrics,
 }
 
@@ -145,7 +150,7 @@ struct HostState {
     config: RunConfig,
     client: Client,
     requests: u32,
-    output: Option<Dataset>,
+    output: Option<Publication>,
 }
 
 impl PluginRuntime {
@@ -272,6 +277,7 @@ impl PluginRuntime {
         linker.func_wrap(ABI, "settings_json", settings_json)?;
         linker.func_wrap(ABI, "http_get", http_get)?;
         linker.func_wrap(ABI, "publish", publish)?;
+        linker.func_wrap(ABI, "publish_with_metadata", publish_with_metadata)?;
         let instance = linker
             .instantiate(&mut store, &plugin.module)
             .context("instantiating plugin")?;
@@ -286,12 +292,16 @@ impl PluginRuntime {
             .data_size(&store);
         let fuel_consumed = self.limits.fuel - store.get_fuel()?;
         let state = store.data_mut();
-        let dataset = state
+        let publication = state
             .output
             .take()
             .ok_or_else(|| anyhow!("plugin did not publish a dataset"))?;
         Ok(RunResult {
-            dataset,
+            dataset: publication.dataset,
+            observed_at: publication.observed_at,
+            min_poll_secs: publication.min_poll_secs,
+            additional_datasets: publication.additional_datasets,
+            additional_observed_at: publication.additional_observed_at,
             metrics: RunMetrics {
                 elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
                 fuel_consumed,
@@ -430,6 +440,26 @@ fn publish(mut caller: Caller<'_, HostState>, ptr: i32, len: i32) -> Result<i32>
     let bytes = read(&mut caller, ptr, len, limit)?;
     let dataset: Dataset = serde_json::from_slice(&bytes).context("invalid dataset JSON")?;
     dataset.validate()?;
-    caller.data_mut().output = Some(dataset);
+    caller.data_mut().output = Some(Publication {
+        dataset,
+        observed_at: None,
+        min_poll_secs: None,
+        additional_datasets: vec![],
+        additional_observed_at: Default::default(),
+    });
+    Ok(0)
+}
+
+fn publish_with_metadata(mut caller: Caller<'_, HostState>, ptr: i32, len: i32) -> Result<i32> {
+    ensure!(
+        caller.data().output.is_none(),
+        "plugin may publish only once per invocation"
+    );
+    let limit = caller.data().budgets.max_output_bytes;
+    let bytes = read(&mut caller, ptr, len, limit)?;
+    let publication: Publication =
+        serde_json::from_slice(&bytes).context("invalid publication JSON")?;
+    publication.validate()?;
+    caller.data_mut().output = Some(publication);
     Ok(0)
 }

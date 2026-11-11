@@ -25,7 +25,15 @@ the same renderer as the rest of the layout.
 | `connector_id` | An existing settings-definition ID, unique in this file |
 | `wasm` | Portable binary module, relative to the registration file or absolute |
 | `source_url` | Explicit HTTP(S) source and exact scheme/host/effective-port grant |
+| `source_setting` | Alternative to a fixed URL: name of a required URL setting |
+| `origin_interval_secs` | Optional origin spacing, 1–86400 seconds; defaults to the definition's minimum polling interval |
 | `stale_after_secs` | Fetch-age threshold, 1–604,800 seconds |
+
+Exactly one fixed URL or URL setting is required. The
+[weather/RSS layer](weather-and-rss.md) now exercises dynamic RSS origin grants,
+explicit origin spacing, atomic additional datasets, observation timestamps,
+publication polling hints, and connection templates. These extend the
+experimental ABI while retaining the legacy single-dataset call.
 
 The host creates one `PluginRuntime` before entering Tokio, then validates and
 compiles each module once. All connections share its HTTP client and compiler;
@@ -172,3 +180,10 @@ and completed PNGs. Pi budgets, real provider rules/OAuth, installation, histori
 multiple datasets per invocation, and physical refresh policy remain pending.
 
 See [running a compiled connector](../usage/compiled-connectors.md).
+
+Additional datasets can now declare their own observation times through
+`Publication.additional_observed_at`. The optional map is bounded to declared
+additional IDs and is persisted on those snapshots. Luas uses the same observation
+for its board and arrivals; weather's future forecast datasets retain fetch-time
+freshness. Eligible automatic requests are ranked by their own polling deadline
+so shared-origin spacing does not starve later connection IDs. See [Luas](luas.md).

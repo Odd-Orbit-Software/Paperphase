@@ -62,7 +62,8 @@ displayed content from newer available data.
 
 | Integration | Required behaviour | Unresolved details |
 | --- | --- | --- |
-| Weather | Location-based conditions and forecasts | Provider and location selection |
+| Weather | Location-based current, hourly and daily forecasts, including rain timing and condition symbols | Open-Meteo implemented first; location search remains later work |
+| Air quality | Independent location-based air-quality connection after weather/RSS | Fields, presentation and provider setup to finalise |
 | Google Calendar | Combine selected calendars from multiple accounts into one agenda, with source labels | Account-linking flow and display formats |
 | Luas | Local stop arrival forecasts in Ireland | Stops, directions, API availability and usage limits |
 | RSS | Feed headlines | Feed selection, item rotation, RSS/Atom coverage |
@@ -112,6 +113,9 @@ quiet hours.
   icons, lists, charts, and data bindings inside each component. Keep component
   rectangles non-overlapping on the display. The exact initial building blocks
   and editing interactions remain to be designed.
+- Keep plugin artwork and its licence in the plugin package. The host provides
+  shared bounded asset loading and rendering. Initial weather icons use static
+  monochrome Meteocons, replaceable by a custom sprite atlas.
 - Allow components to bind to any compatible dataset, regardless of which plugin
   supplies the template. For example, a generic list component can show headlines
   or transport arrivals. Dataset compatibility and field mapping need an explicit
@@ -129,7 +133,8 @@ quiet hours.
 - Display a stale-data indicator within the affected component.
 - Distinguish a successful empty result from a failed fetch.
 - Support bounded historical data storage for future graph components, such as
-  air-quality history. Air quality itself is not currently planned.
+  air-quality history. Air quality is now agreed as a separate plugin after the
+  first weather/RSS slice; historical graph storage remains separate work.
 - Historical retention limits and stale thresholds remain to be selected.
 
 ## Application updates

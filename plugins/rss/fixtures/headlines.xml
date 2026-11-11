@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel>
+<title>Paperphase sample headlines</title><link>https://example.org/</link><description>Fictional fixture headlines.</description><ttl>60</ttl>
+<item><title>New walking trail opens near the coast</title><link>/stories/trail</link><guid>trail</guid><pubDate>Tue, 14 Nov 2023 21:30:00 GMT</pubDate></item>
+<item><title><![CDATA[Community garden welcomes <em>new</em> volunteers]]></title><link>/stories/garden</link><guid>garden</guid></item>
+<item><title>Local library extends weekend hours</title><link>/stories/library</link><guid>library</guid></item>
+</channel></rss>

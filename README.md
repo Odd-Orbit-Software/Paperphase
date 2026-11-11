@@ -29,12 +29,15 @@ display. Built-in time/date blocks, clock/freshness scheduling, and quiet hours
 work in the simulator. Connector definitions generate persistent settings forms
 with private-value handling. Registered compiled connectors now fetch and cache
 data through shared host networking, with polling, backoff, and Fetch now.
-The internal editor supports direct positioning of text, data, and clock elements
+The internal editor supports direct positioning of text, data, clock and icon elements
 inside each component, alongside the original vertical flow.
 The simulator now exercises partial/full refresh decisions, batching, maintenance
 thresholds, and serialized completion/retry behaviour. Initial real-source plugin
-work is planned before physical hardware.
-Real provider integrations, Pi measurements, and hardware validation are pending.
+work runs before physical hardware. The first weather/RSS plugins now include
+hourly/daily forecasts, plugin-owned monochrome icons, feed headlines, and reusable
+connection templates. Luas stop boards now support both directions and shared
+polling; air quality remains planned as a separate plugin.
+Remaining integrations, Pi measurements, and hardware validation are pending.
 The initial target is a Raspberry Pi Zero 2 W running 64-bit Raspberry
 Pi OS Lite with a Waveshare 7.5-inch monochrome e-paper HAT. The exact panel
 revision and resolution remain to be confirmed.
@@ -56,6 +59,12 @@ revision and resolution remain to be confirmed.
 - [Connector settings design](docs/design/connector-settings.md)
 - [Run a compiled connector](docs/usage/compiled-connectors.md)
 - [Compiled connection design](docs/design/compiled-connectors.md)
+- [Set up weather and RSS](docs/usage/weather-and-rss.md)
+- [Weather/RSS design](docs/design/weather-and-rss.md)
+- [Set up Luas departures](docs/usage/luas.md)
+- [Luas design](docs/design/luas.md)
+- [Plugin-owned icon design](docs/design/plugin-icons.md)
+- [Use or replace plugin icons](docs/usage/plugin-icons.md)
 - [Changelog](changelog.md)
 
 Implemented features will be documented in `docs/design`, with setup and

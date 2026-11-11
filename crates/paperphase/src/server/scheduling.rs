@@ -68,7 +68,8 @@ pub(super) fn next_due(
         for block in &component.blocks {
             match &block.source {
                 TextSource::Clock { clock } => offer(clock.next_change_after(now)?),
-                TextSource::Field { binding } => {
+                source if source.binding().is_some() => {
+                    let binding = source.binding().expect("checked");
                     if let Some(snapshot) = data.snapshots.iter().find(|s| {
                         s.connection_id == binding.connection_id
                             && s.dataset.id == binding.dataset_id
@@ -91,7 +92,7 @@ pub(super) fn next_due(
                         }
                     }
                 }
-                TextSource::Literal { .. } => {}
+                _ => {}
             }
         }
     }
@@ -402,6 +403,7 @@ pub(super) mod tests {
             snapshots,
             state_file: path,
             clock: Arc::new(move || time.load(Ordering::SeqCst)),
+            clock_fixed: false,
             boot_id: "test".into(),
             tick_lock: AsyncMutex::new(()),
             authorities: vec![],

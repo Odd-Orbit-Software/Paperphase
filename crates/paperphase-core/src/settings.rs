@@ -22,6 +22,16 @@ pub struct ConnectorDefinition {
     pub min_poll_secs: u32,
     pub default_poll_secs: u32,
     pub settings: Vec<SettingDefinition>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub templates: Vec<ComponentTemplate>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ComponentTemplate {
+    pub id: String,
+    pub name: String,
+    pub component: crate::Component,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -44,6 +54,10 @@ pub enum SettingInput {
         #[serde(default)]
         default: Option<String>,
     },
+    Url {
+        #[serde(default)]
+        default: Option<String>,
+    },
     Secret {
         max_bytes: u16,
     },
@@ -52,6 +66,12 @@ pub enum SettingInput {
         max: i64,
         #[serde(default)]
         default: Option<i64>,
+    },
+    Number {
+        min: f64,
+        max: f64,
+        #[serde(default)]
+        default: Option<f64>,
     },
     Boolean {
         #[serde(default)]
@@ -77,10 +97,11 @@ impl SettingInput {
     }
     pub fn default_value(&self) -> Option<Value> {
         match self {
-            Self::Text { default, .. } | Self::Choice { default, .. } => {
+            Self::Text { default, .. } | Self::Choice { default, .. } | Self::Url { default } => {
                 default.clone().map(Value::String)
             }
             Self::Integer { default, .. } => default.map(Value::from),
+            Self::Number { default, .. } => default.map(Value::from),
             Self::Boolean { default } => default.map(Value::Bool),
             Self::Secret { .. } => None,
         }
@@ -90,9 +111,22 @@ impl SettingInput {
             Self::Text { max_bytes, .. } | Self::Secret { max_bytes } => value
                 .as_str()
                 .is_some_and(|s| s.len() <= usize::from(*max_bytes)),
+            Self::Url { .. } => value.as_str().is_some_and(|s| {
+                s.len() <= 2048
+                    && url::Url::parse(s).is_ok_and(|url| {
+                        matches!(url.scheme(), "http" | "https")
+                            && url.host_str().is_some()
+                            && url.username().is_empty()
+                            && url.password().is_none()
+                            && url.fragment().is_none()
+                    })
+            }),
             Self::Integer { min, max, .. } => {
                 value.as_i64().is_some_and(|n| n >= *min && n <= *max)
             }
+            Self::Number { min, max, .. } => value
+                .as_f64()
+                .is_some_and(|n| n.is_finite() && n >= *min && n <= *max),
             Self::Boolean { .. } => value.is_boolean(),
             Self::Choice { options, .. } => value
                 .as_str()
@@ -170,11 +204,19 @@ impl ConnectorCatalog {
                         &path,
                         "integer bounds must be ordered and browser-safe",
                     )?,
+                    SettingInput::Number { min, max, default } => require(
+                        min.is_finite()
+                            && max.is_finite()
+                            && min <= max
+                            && default.is_none_or(f64::is_finite),
+                        &path,
+                        "number bounds and default must be finite and ordered",
+                    )?,
                     SettingInput::Choice { options, .. } => {
                         require(
-                            !options.is_empty() && options.len() <= 32,
+                            !options.is_empty() && options.len() <= 128,
                             &path,
-                            "must provide 1–32 choices",
+                            "must provide 1–128 choices",
                         )?;
                         let mut values = BTreeSet::new();
                         for option in options {
@@ -188,7 +230,7 @@ impl ConnectorCatalog {
                             )?;
                         }
                     }
-                    SettingInput::Boolean { .. } => {}
+                    SettingInput::Boolean { .. } | SettingInput::Url { .. } => {}
                 }
                 if let Some(default) = field.input.default_value() {
                     require(
@@ -199,6 +241,48 @@ impl ConnectorCatalog {
                         "invalid default value",
                     )?;
                 }
+            }
+            require(
+                connector.templates.len() <= 8,
+                &path,
+                "template limit exceeded",
+            )?;
+            let mut templates = BTreeSet::new();
+            for template in &connector.templates {
+                require(
+                    valid_id(&template.id)
+                        && templates.insert(&template.id)
+                        && !template.name.trim().is_empty()
+                        && template.name.len() <= 96,
+                    &path,
+                    "invalid template identifier or name",
+                )?;
+                let c = &template.component;
+                require(
+                    c.rect.x == 0 && c.rect.y == 0,
+                    &path,
+                    "template must start at the origin",
+                )?;
+                crate::Layout {
+                    schema_version: 1,
+                    display: crate::DisplaySpec {
+                        id: "template".into(),
+                        width: c.rect.width,
+                        height: c.rect.height,
+                    },
+                    components: vec![c.clone()],
+                }
+                .validate()?;
+                require(
+                    c.blocks.iter().all(|block| {
+                        block
+                            .source
+                            .binding()
+                            .is_none_or(|binding| binding.connection_id == "template")
+                    }),
+                    &path,
+                    "template bindings must use the template connection placeholder",
+                )?;
             }
         }
         require(

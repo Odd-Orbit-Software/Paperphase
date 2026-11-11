@@ -25,13 +25,15 @@ Each setting has an ID, label, optional help, required flag, and a tagged `input
 | `text` | UTF-8 byte limit and optional default | Text input |
 | `secret` | UTF-8 byte limit, no public default | Empty password input and explicit Clear checkbox |
 | `integer` | Inclusive bounds and optional default | Number input with integer step |
+| `number` | Finite inclusive bounds and optional default | Decimal number input |
+| `url` | HTTP(S), no credentials/fragments, at most 2048 bytes | URL input |
 | `boolean` | Optional default | Checkbox |
 | `choice` | Unique value/label options and optional default | Select |
 
 IDs use the existing bounded ASCII identifier rules. Catalog validation checks
 duplicates, label/help lengths, defaults, choices, and ordered polling bounds.
 Integer bounds must fit JavaScript's exact integer range. Text/secret fields are
-limited to 4,096 bytes; choices to 32 entries; the encoded catalog to 256 KiB.
+limited to 4,096 bytes; choices to 128 entries; the encoded catalog to 256 KiB.
 No publisher-provided HTML or script is evaluated. Labels/help are rendered as
 text. Unknown fields and unsupported schema versions are rejected.
 
@@ -139,3 +141,6 @@ and the final public plugin/SDK contract remain pending. Real credentials, Pi
 performance, and physical display validation have not been exercised by the demo.
 
 See [connection operations](../usage/connections.md).
+
+The [weather/RSS layer](weather-and-rss.md) adds decimal/URL settings and
+validated component templates exposed from configured connections in the editor.

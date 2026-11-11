@@ -14,7 +14,8 @@ space below the header/weather/agenda components for new components. Sample data
 is fictional. With no registered modules the service makes no source API requests.
 The host clock drives time/date blocks
 and marks old fixtures stale. Add `--now 1700000000` for deterministic fixture
-freshness; this also freezes time/date blocks until the service restarts.
+freshness; this also freezes time/date blocks until the service restarts. For the compiled
+weather and headline integrations, see [weather/RSS setup](weather-and-rss.md).
 
 For access from another LAN computer:
 
@@ -145,9 +146,11 @@ pnpm --dir web test
 `web/dist` files with source changes so Rust-only builds work without Node. CI
 rebuilds them and checks for differences before running Rust and browser tests.
 The browser suite starts/stops its own fixture service on `127.0.0.1:8097` and
-uses a temporary workspace, local source, and compiled temperature guest. Run
+uses a temporary workspace, local sources, and compiled temperature, weather,
+and RSS guests. Run
 `sh scripts/check.sh` first to build that guest. Set `PAPERPHASE_TEST_BINARY` and
-`PAPERPHASE_TEST_PLUGIN` to absolute artifact paths when using a different Cargo
+`PAPERPHASE_TEST_PLUGIN`, `PAPERPHASE_TEST_WEATHER_PLUGIN`, and
+`PAPERPHASE_TEST_RSS_PLUGIN` to absolute artifact paths when using a different Cargo
 output directory. For screenshot updates:
 
 ```sh

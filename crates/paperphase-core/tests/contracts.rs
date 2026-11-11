@@ -66,8 +66,13 @@ fn geometry_is_checked_without_integer_wraparound() {
 fn identities_and_structure_survive_serialization_but_duplicates_fail() {
     let mut value = layout();
     value.components[0].blocks[0].id = "stable-title".into();
+    value.components[0].label = Some("Kitchen weather".into());
     let roundtrip: Layout = serde_json::from_slice(&serde_json::to_vec(&value).unwrap()).unwrap();
     assert_eq!(roundtrip.components[0].blocks[0].id, "stable-title");
+    assert_eq!(
+        roundtrip.components[0].label.as_deref(),
+        Some("Kitchen weather")
+    );
     value.components.push(value.components[0].clone());
     assert!(value.validate().unwrap_err().message.contains("duplicate"));
     let mut value = serde_json::to_value(layout()).unwrap();

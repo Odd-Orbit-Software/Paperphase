@@ -1,7 +1,7 @@
 //! Experimental guest bindings for the foundation harness, not a stable SDK.
 
 pub use paperphase_core::SettingsValues;
-pub use paperphase_core::{Dataset, Field, FieldKind};
+pub use paperphase_core::{Dataset, Field, FieldKind, Publication};
 
 #[derive(Debug)]
 pub enum Error {
@@ -28,6 +28,8 @@ unsafe extern "C" {
     fn host_http_get(url_ptr: i32, url_len: i32, out_ptr: i32, capacity: i32) -> i32;
     #[link_name = "publish"]
     fn host_publish(ptr: i32, len: i32) -> i32;
+    #[link_name = "publish_with_metadata"]
+    fn host_publish_with_metadata(ptr: i32, len: i32) -> i32;
 }
 
 pub fn settings() -> Result<SettingsValues, Error> {
@@ -108,4 +110,28 @@ pub fn publish(json: &[u8]) -> Result<(), Error> {
         let _ = json;
         Err(Error::UnsupportedTarget)
     }
+}
+
+/// Publish up to eight datasets atomically, with observation and polling hints.
+pub fn publish_with_metadata(publication: &Publication) -> Result<(), Error> {
+    publication.validate().map_err(Error::InvalidDataset)?;
+    #[cfg(target_arch = "wasm32")]
+    {
+        let bytes = serde_json::to_vec(publication).map_err(|_| Error::InvalidResponse)?;
+        let length = i32::try_from(bytes.len()).map_err(|_| Error::InvalidResponse)?;
+        // SAFETY: The serialized buffer remains allocated throughout the host call.
+        let status = unsafe { host_publish_with_metadata(bytes.as_ptr() as i32, length) };
+        if status == 0 {
+            Ok(())
+        } else {
+            Err(Error::InvalidResponse)
+        }
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    Err(Error::UnsupportedTarget)
+}
+
+/// Shared clock formatting for location-local forecast labels.
+pub mod clock {
+    pub use paperphase_core::{ClockContent, ClockSpec, DateFormat, HourCycle};
 }

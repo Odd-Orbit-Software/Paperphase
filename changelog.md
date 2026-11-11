@@ -5,6 +5,102 @@
 Current development version: `0.1.0`. The earliest stable stage has not been
 reached; minor-version increments per commit begin after that milestone.
 
+### Luas departures
+
+- Added a Rust/Wasm Luas connector using one shared-host HTTPS request for both
+  directions, service messages and provider observation time. Includes the 67-stop
+  selector, direction/destination filtering, bounded XML parsing, sorted arrival
+  rows, due/unknown/empty states, attribution and two editable board templates.
+- Charlemont with both directions is the first requested live connection.
+  Defaults are 60-second polling/shared-origin spacing and 120-second staleness;
+  no published numeric provider quota was found, so that remains unconfirmed.
+- Added optional observation timestamps for additional datasets, persisted by
+  the host, so fresh fetches of old transport data remain stale consistently.
+  Increased bounded setting choices to 128 and made shared-origin scheduling
+  fair when multiple connections request every available slot.
+- Added deterministic parser/DST tests, compiled guest and cache integration,
+  browser coverage, operator/design documentation and third-party data notice.
+  Air quality remains planned after the user's transport-priority change.
+
+Validation: the complete Rust script passed all 117 tests, formatting,
+host/guest Clippy and four Wasm builds. TypeScript/frontend builds and all 14
+Chromium flows passed; the Luas flow was rechecked while capturing its completed
+display frame. Mermaid diagrams rendered and actual screenshots were reviewed.
+The local service was backed up/restarted with its saved layout unchanged.
+Charlemont's first live connection returned fresh data for both directions,
+six retained arrivals and matching observation times in both datasets. Version
+remains `0.1.0`; Pi and physical-display validation remain pending.
+
+### Plugin-owned weather icons
+
+- Added static monochrome Meteocons artwork, MIT notice, pinned provenance and
+  offline atlas generation under `plugins/weather/assets`. No weather artwork
+  is embedded in the main binary.
+- Added bounded generic PNG sprite-pack loading, semantic literal/data-bound
+  icon elements, nearest-neighbour drawing, clipping, freshness scheduling and
+  missing-asset warnings. Registered manifests load at startup.
+- Weather now publishes 33 semantic keys across current/hourly/daily datasets,
+  using provider day/night flags for current/hourly clear/cloud variants.
+  New templates contain icons; existing saved layouts and symbols remain valid.
+- Added icon pack/selection/size controls to the internal editor and documented
+  custom sprite-sheet replacement, mappings and third-party attribution.
+
+Validation: the complete Rust script passed 108 tests, formatting, host/guest
+Clippy and three Wasm builds. TypeScript/frontend builds and all 13 Chromium
+flows passed, including icon editing and exact preview/display equality. Mermaid
+diagrams rendered and the actual icon editor screenshot was reviewed. The local
+service loaded all 33 keys and five sizes after a backed-up restart, preserving
+the saved layout revision and connection settings. Existing weather cooldowns
+remain in force; cached data gains icon fields on its next successful fetch. Pi
+and physical-display checks remain pending. Version stays `0.1.0`.
+
+### Plugin setup diagnostics
+
+- Diagnosed components without data when the service starts without registered
+  modules and with a clock pinned by `--now`; settings/templates alone cannot
+  execute a plugin.
+- Added explicit unloaded-plugin status, disabled Fetch actions with setup
+  instructions, template hints, and a fixed-clock warning. Exposed clock mode
+  in workspace status and documented the correct live startup command.
+- Preserved the existing workspace and connection settings when restarting the
+  local service with registered modules and the real clock. Verified successful
+  weather and RSS fetches from the user's existing connections.
+
+Validation: the full Rust script passed all 103 tests, formatting, host/guest
+Clippy and guest builds. TypeScript/frontend builds and all 13 Chromium flows
+passed, including unloaded-plugin/fixed-clock guidance. The running local
+service reported both real connections ready and all saved components fresh,
+with the same saved layout revision. Version remains `0.1.0`.
+
+### Weather forecasts and RSS plugins
+
+- Added Rust/Wasm Open-Meteo weather with current, hourly and daily datasets,
+  local-time forecast labels, metric/imperial display temperatures, condition
+  symbols, and hourly rain-window summaries including showers. Air quality is
+  agreed as the next separate plugin.
+- Added bounded UTF-8 RSS 2.0/Atom parsing, plain-text headlines, namespace/base
+  handling, safe links, duplicate filtering, successful empty feeds, and durable
+  RSS TTL polling hints. Article pages and images are never requested.
+- Added finite decimal/HTTP URL settings, validated connection templates, editable
+  component names, per-connection source grants, and shared origin spacing.
+  Extended the experimental SDK with atomic multi-dataset publications,
+  observation timestamps, and lower-bound polling hints while preserving the
+  legacy single-dataset host call.
+- Persist all datasets together, mark retained data stale together, preserve
+  cooldowns and original-origin hints across configuration changes, and enforce
+  aggregate cache/publication budgets. Added operator/design documentation and
+  actual UI screenshots. UI package installation remains pending.
+
+Validation: the complete Rust script passed on x86-64 Linux with 103 tests,
+formatting, host/guest Clippy and all three guest builds. TypeScript/frontend
+builds and all 12 Chromium flows passed. The compiled weather guest handled a
+48-hour fixture within the unchanged fuel budget; Mermaid diagrams rendered and
+actual UI screenshots were reviewed. A live Open-Meteo fetch through the compiled
+guest returned fresh current data, 24 upcoming hourly periods and three daily
+forecasts on 2026-11-11. RSS publisher-specific live validation, Pi measurements,
+Google accounts, and physical display validation remain separate. Version stays
+`0.1.0`.
+
 ### Simulated refresh controller
 
 - Added component refresh requests and a saved, validated refresh policy.

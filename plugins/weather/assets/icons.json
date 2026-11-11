@@ -1,0 +1,161 @@
+{
+  "schema_version": 1,
+  "id": "weather.open-meteo",
+  "name": "Meteocons weather icons",
+  "variants": [
+    {
+      "size": 16,
+      "image": "icons-16.png"
+    },
+    {
+      "size": 24,
+      "image": "icons-24.png"
+    },
+    {
+      "size": 32,
+      "image": "icons-32.png"
+    },
+    {
+      "size": 48,
+      "image": "icons-48.png"
+    },
+    {
+      "size": 64,
+      "image": "icons-64.png"
+    }
+  ],
+  "icons": {
+    "clear_day": {
+      "column": 0,
+      "row": 0
+    },
+    "clear_night": {
+      "column": 1,
+      "row": 0
+    },
+    "mainly_clear_day": {
+      "column": 2,
+      "row": 0
+    },
+    "mainly_clear_night": {
+      "column": 3,
+      "row": 0
+    },
+    "partly_cloudy_day": {
+      "column": 4,
+      "row": 0
+    },
+    "partly_cloudy_night": {
+      "column": 5,
+      "row": 0
+    },
+    "overcast": {
+      "column": 6,
+      "row": 0
+    },
+    "fog": {
+      "column": 7,
+      "row": 0
+    },
+    "fog_rime": {
+      "column": 0,
+      "row": 1
+    },
+    "drizzle_light": {
+      "column": 1,
+      "row": 1
+    },
+    "drizzle_moderate": {
+      "column": 2,
+      "row": 1
+    },
+    "drizzle_heavy": {
+      "column": 3,
+      "row": 1
+    },
+    "freezing_drizzle_light": {
+      "column": 4,
+      "row": 1
+    },
+    "freezing_drizzle_heavy": {
+      "column": 5,
+      "row": 1
+    },
+    "rain_light": {
+      "column": 6,
+      "row": 1
+    },
+    "rain_moderate": {
+      "column": 7,
+      "row": 1
+    },
+    "rain_heavy": {
+      "column": 0,
+      "row": 2
+    },
+    "freezing_rain_light": {
+      "column": 1,
+      "row": 2
+    },
+    "freezing_rain_heavy": {
+      "column": 2,
+      "row": 2
+    },
+    "snow_light": {
+      "column": 3,
+      "row": 2
+    },
+    "snow_moderate": {
+      "column": 4,
+      "row": 2
+    },
+    "snow_heavy": {
+      "column": 5,
+      "row": 2
+    },
+    "snow_grains": {
+      "column": 6,
+      "row": 2
+    },
+    "rain_showers_light": {
+      "column": 7,
+      "row": 2
+    },
+    "rain_showers_moderate": {
+      "column": 0,
+      "row": 3
+    },
+    "rain_showers_heavy": {
+      "column": 1,
+      "row": 3
+    },
+    "snow_showers_light": {
+      "column": 2,
+      "row": 3
+    },
+    "snow_showers_heavy": {
+      "column": 3,
+      "row": 3
+    },
+    "thunderstorm": {
+      "column": 4,
+      "row": 3
+    },
+    "thunderstorm_hail_light": {
+      "column": 5,
+      "row": 3
+    },
+    "thunderstorm_heavy": {
+      "column": 6,
+      "row": 3
+    },
+    "thunderstorm_hail_heavy": {
+      "column": 7,
+      "row": 3
+    },
+    "unknown": {
+      "column": 0,
+      "row": 4
+    }
+  }
+}

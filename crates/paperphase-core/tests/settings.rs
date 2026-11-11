@@ -159,3 +159,44 @@ fn unicode_limits_count_bytes_and_combined_values_are_bounded() {
     }
     assert!(large.resolve(&SettingsValues::new(), None).is_err());
 }
+
+#[test]
+fn plugin_decimal_urls_and_templates_validate_before_any_network_work() {
+    let catalog = catalog();
+    catalog.validate().unwrap();
+    let weather = catalog.get("weather.open-meteo").unwrap();
+    let resolved = weather
+        .resolve(&values(json!({"latitude":53.3,"longitude":-6.2})), None)
+        .unwrap();
+    assert_eq!(resolved["latitude"], 53.3);
+    assert!(
+        weather
+            .resolve(&values(json!({"latitude":91})), None)
+            .is_err()
+    );
+    assert!(
+        weather
+            .resolve(&values(json!({"latitude":"53.3"})), None)
+            .is_err()
+    );
+    let rss = catalog.get("rss.headlines").unwrap();
+    for value in [
+        "relative.xml",
+        "file:///tmp/feed",
+        "https://user:secret@example.org/feed",
+        "https://example.org/feed#part",
+    ] {
+        assert!(
+            rss.resolve(&values(json!({"feed_url":value})), None)
+                .is_err()
+        );
+    }
+    rss.resolve(
+        &values(json!({"feed_url":"https://example.org/feed.xml"})),
+        None,
+    )
+    .unwrap();
+    let mut broken = catalog.clone();
+    broken.connectors.iter_mut().find(|c| c.id == "weather.open-meteo").unwrap().templates[0].component.blocks[0].source = serde_json::from_value(json!({"kind":"field","binding":{"connection_id":"wrong","dataset_id":"current-weather","field_id":"location"}})).unwrap();
+    assert!(broken.validate().is_err());
+}

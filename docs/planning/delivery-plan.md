@@ -75,9 +75,15 @@ desktop interactions and include screenshots in implementation documentation.
 
 ## 3. Build initial plugins against the simulator
 
-Build useful plugins before requiring the Pi or panel. Weather and RSS are the
-default next candidates; the user's preferred plugin order can refine this.
-Luas follows once provider polling/attribution requirements are checked. Google
+Build useful plugins before requiring the Pi or panel. The first
+[weather and RSS plugins](../design/weather-and-rss.md) are implemented, including
+hourly/daily forecasts, generated settings, and reusable templates.
+[Plugin-owned monochrome icon packs](../design/plugin-icons.md) and editable
+icon elements now support these templates. The user prioritised transport next:
+[Luas stop boards](../design/luas.md) now support both directions, with Charlemont
+as the first live setup. The HTTPS response and attribution were checked; a
+published numeric polling allowance remains unconfirmed. Air quality remains a
+separate planned plugin. Google
 Calendar setup feasibility remains a parallel foundation task when credentials
 are available.
 
@@ -125,8 +131,8 @@ integration.
 - Complete calendar privacy settings for descriptions, locations, and event
   titles, with matching preview and physical presentation.
 - Validate failure, stale-data, empty-result, and partial-source failure states.
-- Provide bounded historical storage for graph-capable data without adding an
-  air-quality integration to the agreed scope.
+- Provide bounded historical storage for graph-capable data. Keep historical
+  graph retention separate from the first air-quality implementation.
 - Complete UI package upload and GitHub release installation, compatibility
   checks, activation, restart, and rollback behaviour.
 - Publish the plugin API/SDK instructions and an example community plugin.

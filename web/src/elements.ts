@@ -1,7 +1,8 @@
 import type { Component, Rect, BlockPlacement } from './model';
+import { sourceBinding } from './model';
 
 export function contentBounds(component: Component): Rect {
-  return { x: 0, y: 0, width: component.rect.width - 2 * component.padding, height: component.rect.height - 2 * component.padding - (component.blocks.some(block => block.source.kind === 'field') ? 18 : 0) };
+  return { x: 0, y: 0, width: component.rect.width - 2 * component.padding, height: component.rect.height - 2 * component.padding - (component.blocks.some(block => sourceBinding(block.source)) ? 18 : 0) };
 }
 function intersects(a: Rect, b: Rect) { return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y; }
 export function validElement(rect: Rect, id: string, component: Component): boolean {

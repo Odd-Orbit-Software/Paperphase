@@ -1,0 +1,120 @@
+{
+  "timezone": "Europe/Dublin",
+  "current_units": {
+    "temperature_2m": "\u00b0C",
+    "wind_speed_10m": "km/h"
+  },
+  "current": {
+    "time": 1700000000,
+    "temperature_2m": 12.5,
+    "apparent_temperature": 10.4,
+    "relative_humidity_2m": 76,
+    "weather_code": 2,
+    "is_day": 0,
+    "wind_speed_10m": 14.2
+  },
+  "hourly": {
+    "time": [
+      1700002800,
+      1700006400,
+      1700010000,
+      1700013600,
+      1700017200,
+      1700020800,
+      1700024400,
+      1700028000
+    ],
+    "temperature_2m": [
+      12,
+      11,
+      10,
+      9,
+      9,
+      8,
+      8,
+      9
+    ],
+    "rain": [
+      0,
+      0.4,
+      0.8,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "precipitation_probability": [
+      10,
+      70,
+      85,
+      20,
+      10,
+      5,
+      5,
+      10
+    ],
+    "weather_code": [
+      2,
+      61,
+      63,
+      3,
+      3,
+      3,
+      3,
+      2
+    ],
+    "showers": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "is_day": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  "daily": {
+    "time": [
+      1699920000,
+      1700006400,
+      1700092800
+    ],
+    "temperature_2m_min": [
+      8,
+      7,
+      9
+    ],
+    "temperature_2m_max": [
+      14,
+      13,
+      15
+    ],
+    "precipitation_sum": [
+      1.2,
+      3.4,
+      0
+    ],
+    "precipitation_probability_max": [
+      85,
+      90,
+      10
+    ],
+    "weather_code": [
+      63,
+      61,
+      2
+    ]
+  }
+}

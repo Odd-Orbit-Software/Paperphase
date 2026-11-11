@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "examples/temperature-plugin"]
+members = ["crates/*", "examples/temperature-plugin", "plugins/*"]
 default-members = ["crates/paperphase", "crates/paperphase-core", "crates/paperphase-render", "crates/paperphase-runtime", "crates/paperphase-plugin-sdk"]
 
 [workspace.package]
@@ -31,6 +31,9 @@ tempfile = "3.27"
 tokio = { version = "1.54", features = ["rt-multi-thread", "net", "signal", "sync", "time", "macros"] }
 wasmtime = { version = "48.0.8", default-features = false, features = ["std", "runtime", "cranelift"] }
 wat = "1.0"
+url = "2.5.8"
+quick-xml = "0.42.0"
+html-escape = "0.3.1"
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"

@@ -1,27 +1,1555 @@
 {
   "schema_version": 1,
-  "connectors": [{
-    "id": "demo.weather",
-    "name": "Demo weather settings",
-    "description": "A settings-only example. Saving a connection does not fetch weather or change the sample datasets yet.",
-    "min_poll_secs": 30,
-    "default_poll_secs": 300,
-    "settings": [
-      { "id": "location", "label": "Location", "help": "A label for this weather location.", "required": true, "input": { "type": "text", "max_bytes": 128, "default": "Dublin" } },
-      { "id": "units", "label": "Units", "input": { "type": "choice", "default": "metric", "options": [{ "value": "metric", "label": "Metric" }, { "value": "imperial", "label": "Imperial" }] } },
-      { "id": "forecast_days", "label": "Forecast days", "input": { "type": "integer", "min": 1, "max": 7, "default": 3 } },
-      { "id": "include_summary", "label": "Include summary", "input": { "type": "boolean", "default": true } },
-      { "id": "test_secret", "label": "Test secret", "help": "Optional private value for exercising secret settings. It is never sent to an API.", "input": { "type": "secret", "max_bytes": 256 } }
-    ]
-  }, {
-    "id": "example.temperature",
-    "name": "Temperature connector",
-    "description": "Reads a temperature observation from the source granted by the host. Register the compiled example module to enable fetching.",
-    "min_poll_secs": 30,
-    "default_poll_secs": 300,
-    "settings": [
-      { "id": "location", "label": "Location label", "required": true, "input": { "type": "text", "max_bytes": 128, "default": "Dublin" } },
-      { "id": "units", "label": "Display units", "input": { "type": "choice", "default": "metric", "options": [{ "value": "metric", "label": "Celsius" }, { "value": "imperial", "label": "Fahrenheit" }] } }
-    ]
-  }]
+  "connectors": [
+    {
+      "id": "demo.weather",
+      "name": "Demo weather settings",
+      "description": "A settings-only example. Saving a connection does not fetch weather or change the sample datasets yet.",
+      "min_poll_secs": 30,
+      "default_poll_secs": 300,
+      "settings": [
+        {
+          "id": "location",
+          "label": "Location",
+          "help": "A label for this weather location.",
+          "required": true,
+          "input": {
+            "type": "text",
+            "max_bytes": 128,
+            "default": "Dublin"
+          }
+        },
+        {
+          "id": "units",
+          "label": "Units",
+          "input": {
+            "type": "choice",
+            "default": "metric",
+            "options": [
+              {
+                "value": "metric",
+                "label": "Metric"
+              },
+              {
+                "value": "imperial",
+                "label": "Imperial"
+              }
+            ]
+          }
+        },
+        {
+          "id": "forecast_days",
+          "label": "Forecast days",
+          "input": {
+            "type": "integer",
+            "min": 1,
+            "max": 7,
+            "default": 3
+          }
+        },
+        {
+          "id": "include_summary",
+          "label": "Include summary",
+          "input": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        {
+          "id": "test_secret",
+          "label": "Test secret",
+          "help": "Optional private value for exercising secret settings. It is never sent to an API.",
+          "input": {
+            "type": "secret",
+            "max_bytes": 256
+          }
+        }
+      ]
+    },
+    {
+      "id": "example.temperature",
+      "name": "Temperature connector",
+      "description": "Reads a temperature observation from the source granted by the host. Register the compiled example module to enable fetching.",
+      "min_poll_secs": 30,
+      "default_poll_secs": 300,
+      "settings": [
+        {
+          "id": "location",
+          "label": "Location label",
+          "required": true,
+          "input": {
+            "type": "text",
+            "max_bytes": 128,
+            "default": "Dublin"
+          }
+        },
+        {
+          "id": "units",
+          "label": "Display units",
+          "input": {
+            "type": "choice",
+            "default": "metric",
+            "options": [
+              {
+                "value": "metric",
+                "label": "Celsius"
+              },
+              {
+                "value": "imperial",
+                "label": "Fahrenheit"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "weather.open-meteo",
+      "name": "Open-Meteo weather",
+      "description": "Current conditions, hourly and daily model forecasts. Free non-commercial API; retain attribution to Open-Meteo under CC BY 4.0. Coordinates determine the local forecast timezone.",
+      "min_poll_secs": 600,
+      "default_poll_secs": 900,
+      "settings": [
+        {
+          "id": "location",
+          "label": "Location label",
+          "required": true,
+          "input": {
+            "type": "text",
+            "max_bytes": 128,
+            "default": "Dublin"
+          }
+        },
+        {
+          "id": "latitude",
+          "label": "Latitude",
+          "required": true,
+          "input": {
+            "type": "number",
+            "min": -90,
+            "max": 90,
+            "default": 53.3498
+          }
+        },
+        {
+          "id": "longitude",
+          "label": "Longitude",
+          "required": true,
+          "input": {
+            "type": "number",
+            "min": -180,
+            "max": 180,
+            "default": -6.2603
+          }
+        },
+        {
+          "id": "units",
+          "label": "Display units",
+          "input": {
+            "type": "choice",
+            "default": "metric",
+            "options": [
+              {
+                "value": "metric",
+                "label": "Celsius"
+              },
+              {
+                "value": "imperial",
+                "label": "Fahrenheit"
+              }
+            ]
+          }
+        },
+        {
+          "id": "forecast_hours",
+          "label": "Hourly forecast length",
+          "input": {
+            "type": "integer",
+            "min": 6,
+            "max": 48,
+            "default": 24
+          }
+        },
+        {
+          "id": "forecast_days",
+          "label": "Daily forecast length",
+          "input": {
+            "type": "integer",
+            "min": 1,
+            "max": 7,
+            "default": 3
+          }
+        },
+        {
+          "id": "rain_threshold",
+          "label": "Likely rain probability (%)",
+          "help": "Rain timing requires at least this probability and 0.1 mm of forecast rain. Hourly estimates are not precise start times.",
+          "input": {
+            "type": "integer",
+            "min": 1,
+            "max": 100,
+            "default": 50
+          }
+        }
+      ],
+      "templates": [
+        {
+          "id": "weather-current",
+          "name": "Weather now",
+          "component": {
+            "id": "weather-current",
+            "rect": {
+              "x": 0,
+              "y": 0,
+              "width": 320,
+              "height": 176
+            },
+            "padding": 8,
+            "gap": 4,
+            "border": true,
+            "content_layout": "positioned",
+            "blocks": [
+              {
+                "id": "location",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "current-weather",
+                    "field_id": "location",
+                    "row": 0
+                  }
+                },
+                "font_size": 12,
+                "overflow": "ellipsis",
+                "rect": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 304,
+                  "height": 16
+                }
+              },
+              {
+                "id": "symbol",
+                "font_size": 42,
+                "source": {
+                  "kind": "icon",
+                  "pack_id": "weather.open-meteo",
+                  "icon": {
+                    "kind": "field",
+                    "binding": {
+                      "connection_id": "template",
+                      "dataset_id": "current-weather",
+                      "field_id": "icon-key",
+                      "row": 0
+                    }
+                  },
+                  "size": 48
+                },
+                "rect": {
+                  "x": 0,
+                  "y": 22,
+                  "width": 56,
+                  "height": 48
+                },
+                "overflow": "clip"
+              },
+              {
+                "id": "temperature",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "current-weather",
+                    "field_id": "display-temperature",
+                    "row": 0
+                  }
+                },
+                "font_size": 32,
+                "overflow": "wrap",
+                "rect": {
+                  "x": 64,
+                  "y": 22,
+                  "width": 240,
+                  "height": 48
+                }
+              },
+              {
+                "id": "summary",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "current-weather",
+                    "field_id": "summary",
+                    "row": 0
+                  }
+                },
+                "font_size": 14,
+                "overflow": "ellipsis",
+                "rect": {
+                  "x": 0,
+                  "y": 76,
+                  "width": 304,
+                  "height": 20
+                }
+              },
+              {
+                "id": "rain",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "current-weather",
+                    "field_id": "rain-summary",
+                    "row": 0
+                  }
+                },
+                "font_size": 12,
+                "overflow": "ellipsis",
+                "rect": {
+                  "x": 0,
+                  "y": 98,
+                  "width": 304,
+                  "height": 18
+                }
+              },
+              {
+                "id": "attribution",
+                "source": {
+                  "kind": "literal",
+                  "text": "open-meteo.com · CC BY 4.0 · rounded/converted\ncreativecommons.org/licenses/by/4.0"
+                },
+                "font_size": 9,
+                "overflow": "wrap",
+                "rect": {
+                  "x": 0,
+                  "y": 118,
+                  "width": 304,
+                  "height": 24
+                }
+              }
+            ],
+            "label": "Weather now"
+          }
+        },
+        {
+          "id": "weather-day",
+          "name": "Daily forecast",
+          "component": {
+            "id": "weather-day",
+            "rect": {
+              "x": 0,
+              "y": 0,
+              "width": 320,
+              "height": 176
+            },
+            "padding": 8,
+            "gap": 4,
+            "border": true,
+            "content_layout": "positioned",
+            "blocks": [
+              {
+                "id": "date",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "daily",
+                    "field_id": "date",
+                    "row": 0
+                  }
+                },
+                "font_size": 16,
+                "overflow": "wrap",
+                "rect": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 304,
+                  "height": 22
+                }
+              },
+              {
+                "id": "low-label",
+                "source": {
+                  "kind": "literal",
+                  "text": "Low"
+                },
+                "font_size": 16,
+                "overflow": "wrap",
+                "rect": {
+                  "x": 64,
+                  "y": 30,
+                  "width": 64,
+                  "height": 24
+                }
+              },
+              {
+                "id": "low",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "daily",
+                    "field_id": "display-min",
+                    "row": 0
+                  }
+                },
+                "font_size": 16,
+                "overflow": "wrap",
+                "rect": {
+                  "x": 136,
+                  "y": 30,
+                  "width": 168,
+                  "height": 24
+                }
+              },
+              {
+                "id": "high-label",
+                "source": {
+                  "kind": "literal",
+                  "text": "High"
+                },
+                "font_size": 16,
+                "overflow": "wrap",
+                "rect": {
+                  "x": 64,
+                  "y": 62,
+                  "width": 64,
+                  "height": 24
+                }
+              },
+              {
+                "id": "high",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "daily",
+                    "field_id": "display-max",
+                    "row": 0
+                  }
+                },
+                "font_size": 16,
+                "overflow": "wrap",
+                "rect": {
+                  "x": 136,
+                  "y": 62,
+                  "width": 168,
+                  "height": 24
+                }
+              },
+              {
+                "id": "attribution",
+                "source": {
+                  "kind": "literal",
+                  "text": "open-meteo.com · CC BY 4.0 · rounded/converted\ncreativecommons.org/licenses/by/4.0"
+                },
+                "font_size": 9,
+                "overflow": "wrap",
+                "rect": {
+                  "x": 0,
+                  "y": 116,
+                  "width": 304,
+                  "height": 26
+                }
+              },
+              {
+                "id": "condition-icon",
+                "source": {
+                  "kind": "icon",
+                  "pack_id": "weather.open-meteo",
+                  "icon": {
+                    "kind": "field",
+                    "binding": {
+                      "connection_id": "template",
+                      "dataset_id": "daily",
+                      "field_id": "icon-key",
+                      "row": 0
+                    }
+                  },
+                  "size": 48
+                },
+                "font_size": 20,
+                "align": "left",
+                "overflow": "clip",
+                "rect": {
+                  "x": 0,
+                  "y": 30,
+                  "width": 56,
+                  "height": 56
+                }
+              }
+            ],
+            "label": "Daily forecast"
+          }
+        },
+        {
+          "id": "weather-hours",
+          "name": "Hourly forecast",
+          "component": {
+            "id": "weather-hours",
+            "rect": {
+              "x": 0,
+              "y": 0,
+              "width": 432,
+              "height": 176
+            },
+            "padding": 8,
+            "gap": 4,
+            "border": true,
+            "content_layout": "positioned",
+            "blocks": [
+              {
+                "id": "heading",
+                "source": {
+                  "kind": "literal",
+                  "text": "Next hours"
+                },
+                "font_size": 12,
+                "overflow": "wrap",
+                "rect": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 416,
+                  "height": 16
+                }
+              },
+              {
+                "id": "time-0",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "hourly",
+                    "field_id": "time-label",
+                    "row": 0
+                  }
+                },
+                "font_size": 14,
+                "overflow": "clip",
+                "rect": {
+                  "x": 0,
+                  "y": 24,
+                  "width": 72,
+                  "height": 20
+                }
+              },
+              {
+                "id": "temp-0",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "hourly",
+                    "field_id": "display-temperature",
+                    "row": 0
+                  }
+                },
+                "font_size": 14,
+                "overflow": "clip",
+                "rect": {
+                  "x": 80,
+                  "y": 24,
+                  "width": 96,
+                  "height": 20
+                }
+              },
+              {
+                "id": "condition-0",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "hourly",
+                    "field_id": "summary",
+                    "row": 0
+                  }
+                },
+                "font_size": 14,
+                "overflow": "ellipsis",
+                "rect": {
+                  "x": 208,
+                  "y": 24,
+                  "width": 208,
+                  "height": 20
+                }
+              },
+              {
+                "id": "time-1",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "hourly",
+                    "field_id": "time-label",
+                    "row": 1
+                  }
+                },
+                "font_size": 14,
+                "overflow": "clip",
+                "rect": {
+                  "x": 0,
+                  "y": 50,
+                  "width": 72,
+                  "height": 20
+                }
+              },
+              {
+                "id": "temp-1",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "hourly",
+                    "field_id": "display-temperature",
+                    "row": 1
+                  }
+                },
+                "font_size": 14,
+                "overflow": "clip",
+                "rect": {
+                  "x": 80,
+                  "y": 50,
+                  "width": 96,
+                  "height": 20
+                }
+              },
+              {
+                "id": "condition-1",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "hourly",
+                    "field_id": "summary",
+                    "row": 1
+                  }
+                },
+                "font_size": 14,
+                "overflow": "ellipsis",
+                "rect": {
+                  "x": 208,
+                  "y": 50,
+                  "width": 208,
+                  "height": 20
+                }
+              },
+              {
+                "id": "time-2",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "hourly",
+                    "field_id": "time-label",
+                    "row": 2
+                  }
+                },
+                "font_size": 14,
+                "overflow": "clip",
+                "rect": {
+                  "x": 0,
+                  "y": 76,
+                  "width": 72,
+                  "height": 20
+                }
+              },
+              {
+                "id": "temp-2",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "hourly",
+                    "field_id": "display-temperature",
+                    "row": 2
+                  }
+                },
+                "font_size": 14,
+                "overflow": "clip",
+                "rect": {
+                  "x": 80,
+                  "y": 76,
+                  "width": 96,
+                  "height": 20
+                }
+              },
+              {
+                "id": "condition-2",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "hourly",
+                    "field_id": "summary",
+                    "row": 2
+                  }
+                },
+                "font_size": 14,
+                "overflow": "ellipsis",
+                "rect": {
+                  "x": 208,
+                  "y": 76,
+                  "width": 208,
+                  "height": 20
+                }
+              },
+              {
+                "id": "attribution",
+                "source": {
+                  "kind": "literal",
+                  "text": "open-meteo.com · CC BY 4.0 · rounded/converted\ncreativecommons.org/licenses/by/4.0"
+                },
+                "font_size": 9,
+                "overflow": "wrap",
+                "rect": {
+                  "x": 0,
+                  "y": 116,
+                  "width": 416,
+                  "height": 26
+                }
+              },
+              {
+                "id": "condition-0-icon",
+                "source": {
+                  "kind": "icon",
+                  "pack_id": "weather.open-meteo",
+                  "icon": {
+                    "kind": "field",
+                    "binding": {
+                      "connection_id": "template",
+                      "dataset_id": "hourly",
+                      "field_id": "icon-key",
+                      "row": 0
+                    }
+                  },
+                  "size": 16
+                },
+                "font_size": 16,
+                "align": "left",
+                "overflow": "clip",
+                "rect": {
+                  "x": 184,
+                  "y": 24,
+                  "width": 16,
+                  "height": 20
+                }
+              },
+              {
+                "id": "condition-1-icon",
+                "source": {
+                  "kind": "icon",
+                  "pack_id": "weather.open-meteo",
+                  "icon": {
+                    "kind": "field",
+                    "binding": {
+                      "connection_id": "template",
+                      "dataset_id": "hourly",
+                      "field_id": "icon-key",
+                      "row": 1
+                    }
+                  },
+                  "size": 16
+                },
+                "font_size": 16,
+                "align": "left",
+                "overflow": "clip",
+                "rect": {
+                  "x": 184,
+                  "y": 50,
+                  "width": 16,
+                  "height": 20
+                }
+              },
+              {
+                "id": "condition-2-icon",
+                "source": {
+                  "kind": "icon",
+                  "pack_id": "weather.open-meteo",
+                  "icon": {
+                    "kind": "field",
+                    "binding": {
+                      "connection_id": "template",
+                      "dataset_id": "hourly",
+                      "field_id": "icon-key",
+                      "row": 2
+                    }
+                  },
+                  "size": 16
+                },
+                "font_size": 16,
+                "align": "left",
+                "overflow": "clip",
+                "rect": {
+                  "x": 184,
+                  "y": 76,
+                  "width": 16,
+                  "height": 20
+                }
+              }
+            ],
+            "label": "Hourly forecast"
+          }
+        }
+      ]
+    },
+    {
+      "id": "rss.headlines",
+      "name": "RSS and Atom headlines",
+      "description": "Reads public UTF-8 RSS 2.0 or Atom feeds. Uses the saved feed URL as its host-granted origin. Check the publisher's access, attribution and polling terms. No article pages or images are fetched.",
+      "min_poll_secs": 900,
+      "default_poll_secs": 1800,
+      "settings": [
+        {
+          "id": "label",
+          "label": "Feed label",
+          "required": true,
+          "input": {
+            "type": "text",
+            "max_bytes": 128,
+            "default": "Headlines"
+          }
+        },
+        {
+          "id": "feed_url",
+          "label": "Feed URL",
+          "required": true,
+          "help": "The canonical public HTTP(S) feed URL. Redirects and URL credentials are not supported.",
+          "input": {
+            "type": "url"
+          }
+        },
+        {
+          "id": "max_items",
+          "label": "Headlines to show",
+          "input": {
+            "type": "integer",
+            "min": 1,
+            "max": 5,
+            "default": 3
+          }
+        }
+      ],
+      "templates": [
+        {
+          "id": "rss-headlines",
+          "name": "Headlines",
+          "component": {
+            "id": "rss-headlines",
+            "rect": {
+              "x": 0,
+              "y": 0,
+              "width": 432,
+              "height": 176
+            },
+            "padding": 8,
+            "gap": 4,
+            "border": true,
+            "content_layout": "flow",
+            "blocks": [
+              {
+                "id": "heading",
+                "source": {
+                  "kind": "literal",
+                  "text": "HEADLINES"
+                },
+                "font_size": 11,
+                "overflow": "wrap"
+              },
+              {
+                "id": "headlines",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "headlines",
+                    "field_id": "headlines",
+                    "row": 0
+                  }
+                },
+                "font_size": 14,
+                "overflow": "wrap"
+              }
+            ],
+            "label": "Headlines"
+          }
+        }
+      ]
+    },
+    {
+      "id": "transport.luas",
+      "name": "Luas departures",
+      "description": "Live stop forecasts and service messages for Dublin’s Red and Green lines. Times are as reported at the last update.",
+      "min_poll_secs": 60,
+      "default_poll_secs": 60,
+      "settings": [
+        {
+          "id": "stop",
+          "label": "Luas stop",
+          "help": "Choose a stop from the bundled Luas stop list.",
+          "required": true,
+          "input": {
+            "type": "choice",
+            "options": [
+              {
+                "value": "BAL",
+                "label": "Green · Balally"
+              },
+              {
+                "value": "BAW",
+                "label": "Green · Ballyogan Wood"
+              },
+              {
+                "value": "BEE",
+                "label": "Green · Beechwood"
+              },
+              {
+                "value": "BRI",
+                "label": "Green · Brides Glen"
+              },
+              {
+                "value": "BRD",
+                "label": "Green · Broadstone - University"
+              },
+              {
+                "value": "BRO",
+                "label": "Green · Broombridge"
+              },
+              {
+                "value": "CAB",
+                "label": "Green · Cabra"
+              },
+              {
+                "value": "CCK",
+                "label": "Green · Carrickmines"
+              },
+              {
+                "value": "CPK",
+                "label": "Green · Central Park"
+              },
+              {
+                "value": "CHA",
+                "label": "Green · Charlemont"
+              },
+              {
+                "value": "CHE",
+                "label": "Green · Cherrywood"
+              },
+              {
+                "value": "COW",
+                "label": "Green · Cowper"
+              },
+              {
+                "value": "DAW",
+                "label": "Green · Dawson"
+              },
+              {
+                "value": "DOM",
+                "label": "Green · Dominick"
+              },
+              {
+                "value": "DUN",
+                "label": "Green · Dundrum"
+              },
+              {
+                "value": "GLE",
+                "label": "Green · Glencairn"
+              },
+              {
+                "value": "GRA",
+                "label": "Green · Grangegorman"
+              },
+              {
+                "value": "HAR",
+                "label": "Green · Harcourt"
+              },
+              {
+                "value": "KIL",
+                "label": "Green · Kilmacud"
+              },
+              {
+                "value": "LAU",
+                "label": "Green · Laughanstown"
+              },
+              {
+                "value": "LEO",
+                "label": "Green · Leopardstown Valley"
+              },
+              {
+                "value": "MAR",
+                "label": "Green · Marlborough"
+              },
+              {
+                "value": "MIL",
+                "label": "Green · Milltown"
+              },
+              {
+                "value": "OGP",
+                "label": "Green · O'Connell - GPO"
+              },
+              {
+                "value": "OUP",
+                "label": "Green · O'Connell - Upper"
+              },
+              {
+                "value": "PAR",
+                "label": "Green · Parnell"
+              },
+              {
+                "value": "PHI",
+                "label": "Green · Phibsborough"
+              },
+              {
+                "value": "RAN",
+                "label": "Green · Ranelagh"
+              },
+              {
+                "value": "SAN",
+                "label": "Green · Sandyford"
+              },
+              {
+                "value": "STS",
+                "label": "Green · St. Stephen's Green"
+              },
+              {
+                "value": "STI",
+                "label": "Green · Stillorgan"
+              },
+              {
+                "value": "GAL",
+                "label": "Green · The Gallops"
+              },
+              {
+                "value": "TRY",
+                "label": "Green · Trinity"
+              },
+              {
+                "value": "WES",
+                "label": "Green · Westmoreland"
+              },
+              {
+                "value": "WIN",
+                "label": "Green · Windy Arbour"
+              },
+              {
+                "value": "ABB",
+                "label": "Red · Abbey Street"
+              },
+              {
+                "value": "BEL",
+                "label": "Red · Belgard"
+              },
+              {
+                "value": "BLA",
+                "label": "Red · Blackhorse"
+              },
+              {
+                "value": "BLU",
+                "label": "Red · Bluebell"
+              },
+              {
+                "value": "BUS",
+                "label": "Red · Busáras"
+              },
+              {
+                "value": "CVN",
+                "label": "Red · Cheeverstown"
+              },
+              {
+                "value": "CIT",
+                "label": "Red · Citywest Campus"
+              },
+              {
+                "value": "CON",
+                "label": "Red · Connolly"
+              },
+              {
+                "value": "COO",
+                "label": "Red · Cookstown"
+              },
+              {
+                "value": "DRI",
+                "label": "Red · Drimnagh"
+              },
+              {
+                "value": "FAT",
+                "label": "Red · Fatima"
+              },
+              {
+                "value": "FET",
+                "label": "Red · Fettercairn"
+              },
+              {
+                "value": "FOR",
+                "label": "Red · Fortunestown"
+              },
+              {
+                "value": "FOU",
+                "label": "Red · Four Courts"
+              },
+              {
+                "value": "GDK",
+                "label": "Red · George's Dock"
+              },
+              {
+                "value": "GOL",
+                "label": "Red · Goldenbridge"
+              },
+              {
+                "value": "HEU",
+                "label": "Red · Heuston"
+              },
+              {
+                "value": "HOS",
+                "label": "Red · Hospital"
+              },
+              {
+                "value": "JAM",
+                "label": "Red · James's"
+              },
+              {
+                "value": "JER",
+                "label": "Red · Jervis"
+              },
+              {
+                "value": "KIN",
+                "label": "Red · Kingswood"
+              },
+              {
+                "value": "KYL",
+                "label": "Red · Kylemore"
+              },
+              {
+                "value": "MYS",
+                "label": "Red · Mayor Square - NCI"
+              },
+              {
+                "value": "MUS",
+                "label": "Red · Museum"
+              },
+              {
+                "value": "RED",
+                "label": "Red · Red Cow"
+              },
+              {
+                "value": "RIA",
+                "label": "Red · Rialto"
+              },
+              {
+                "value": "SAG",
+                "label": "Red · Saggart"
+              },
+              {
+                "value": "SMI",
+                "label": "Red · Smithfield"
+              },
+              {
+                "value": "SDK",
+                "label": "Red · Spencer Dock"
+              },
+              {
+                "value": "SUI",
+                "label": "Red · Suir Road"
+              },
+              {
+                "value": "TAL",
+                "label": "Red · Tallaght"
+              },
+              {
+                "value": "TPT",
+                "label": "Red · The Point"
+              }
+            ],
+            "default": "CHA"
+          }
+        },
+        {
+          "id": "direction",
+          "label": "Direction",
+          "help": "Inbound and outbound are the feed’s direction labels; check the destinations for your journey.",
+          "required": true,
+          "input": {
+            "type": "choice",
+            "options": [
+              {
+                "value": "both",
+                "label": "Both directions"
+              },
+              {
+                "value": "inbound",
+                "label": "Inbound"
+              },
+              {
+                "value": "outbound",
+                "label": "Outbound"
+              }
+            ],
+            "default": "both"
+          }
+        },
+        {
+          "id": "max_arrivals",
+          "label": "Trams per direction",
+          "help": "The two-column board fits three rows per direction by default. Resize or edit its contents to show more.",
+          "required": true,
+          "input": {
+            "type": "integer",
+            "min": 1,
+            "max": 6,
+            "default": 3
+          }
+        },
+        {
+          "id": "destination",
+          "label": "Destination contains",
+          "help": "Optional case-insensitive destination filter, for example Broombridge. Leave blank to show all destinations.",
+          "required": false,
+          "input": {
+            "type": "text",
+            "max_bytes": 128,
+            "default": ""
+          }
+        }
+      ],
+      "templates": [
+        {
+          "id": "luas-board",
+          "name": "Luas board",
+          "component": {
+            "id": "luas-board",
+            "rect": {
+              "x": 0,
+              "y": 0,
+              "width": 464,
+              "height": 320
+            },
+            "padding": 12,
+            "gap": 6,
+            "border": true,
+            "content_layout": "positioned",
+            "refresh_hint": "automatic",
+            "blocks": [
+              {
+                "id": "stop",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "stop-board",
+                    "field_id": "stop-name",
+                    "row": 0,
+                    "decimals": null,
+                    "prefix": "",
+                    "suffix": ""
+                  }
+                },
+                "font_size": 24,
+                "align": "left",
+                "overflow": "ellipsis",
+                "rect": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 440,
+                  "height": 28
+                }
+              },
+              {
+                "id": "message",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "stop-board",
+                    "field_id": "service-message",
+                    "row": 0,
+                    "decimals": null,
+                    "prefix": "",
+                    "suffix": ""
+                  }
+                },
+                "font_size": 12,
+                "align": "left",
+                "overflow": "wrap",
+                "rect": {
+                  "x": 0,
+                  "y": 34,
+                  "width": 440,
+                  "height": 34
+                }
+              },
+              {
+                "id": "inbound-heading",
+                "source": {
+                  "kind": "literal",
+                  "text": "INBOUND"
+                },
+                "font_size": 15,
+                "align": "left",
+                "overflow": "ellipsis",
+                "rect": {
+                  "x": 0,
+                  "y": 76,
+                  "width": 212,
+                  "height": 20
+                }
+              },
+              {
+                "id": "outbound-heading",
+                "source": {
+                  "kind": "literal",
+                  "text": "OUTBOUND"
+                },
+                "font_size": 15,
+                "align": "left",
+                "overflow": "ellipsis",
+                "rect": {
+                  "x": 228,
+                  "y": 76,
+                  "width": 212,
+                  "height": 20
+                }
+              },
+              {
+                "id": "inbound",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "stop-board",
+                    "field_id": "inbound",
+                    "row": 0,
+                    "decimals": null,
+                    "prefix": "",
+                    "suffix": ""
+                  }
+                },
+                "font_size": 16,
+                "align": "left",
+                "overflow": "wrap",
+                "rect": {
+                  "x": 0,
+                  "y": 102,
+                  "width": 212,
+                  "height": 116
+                }
+              },
+              {
+                "id": "outbound",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "stop-board",
+                    "field_id": "outbound",
+                    "row": 0,
+                    "decimals": null,
+                    "prefix": "",
+                    "suffix": ""
+                  }
+                },
+                "font_size": 16,
+                "align": "left",
+                "overflow": "wrap",
+                "rect": {
+                  "x": 228,
+                  "y": 102,
+                  "width": 212,
+                  "height": 116
+                }
+              },
+              {
+                "id": "updated",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "stop-board",
+                    "field_id": "updated-label",
+                    "row": 0,
+                    "decimals": null,
+                    "prefix": "",
+                    "suffix": ""
+                  }
+                },
+                "font_size": 11,
+                "align": "left",
+                "overflow": "ellipsis",
+                "rect": {
+                  "x": 0,
+                  "y": 230,
+                  "width": 440,
+                  "height": 18
+                }
+              },
+              {
+                "id": "attribution",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "stop-board",
+                    "field_id": "attribution",
+                    "row": 0,
+                    "decimals": null,
+                    "prefix": "",
+                    "suffix": ""
+                  }
+                },
+                "font_size": 10,
+                "align": "left",
+                "overflow": "ellipsis",
+                "rect": {
+                  "x": 0,
+                  "y": 254,
+                  "width": 440,
+                  "height": 20
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "luas-compact",
+          "name": "Compact Luas board",
+          "component": {
+            "id": "luas-compact",
+            "rect": {
+              "x": 0,
+              "y": 0,
+              "width": 320,
+              "height": 288
+            },
+            "padding": 12,
+            "gap": 6,
+            "border": true,
+            "content_layout": "positioned",
+            "refresh_hint": "automatic",
+            "blocks": [
+              {
+                "id": "stop",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "stop-board",
+                    "field_id": "stop-name",
+                    "row": 0,
+                    "decimals": null,
+                    "prefix": "",
+                    "suffix": ""
+                  }
+                },
+                "font_size": 22,
+                "align": "left",
+                "overflow": "ellipsis",
+                "rect": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 296,
+                  "height": 26
+                }
+              },
+              {
+                "id": "arrivals",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "stop-board",
+                    "field_id": "board",
+                    "row": 0,
+                    "decimals": null,
+                    "prefix": "",
+                    "suffix": ""
+                  }
+                },
+                "font_size": 12,
+                "align": "left",
+                "overflow": "wrap",
+                "rect": {
+                  "x": 0,
+                  "y": 32,
+                  "width": 296,
+                  "height": 142
+                }
+              },
+              {
+                "id": "message",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "stop-board",
+                    "field_id": "service-message",
+                    "row": 0,
+                    "decimals": null,
+                    "prefix": "",
+                    "suffix": ""
+                  }
+                },
+                "font_size": 10,
+                "align": "left",
+                "overflow": "wrap",
+                "rect": {
+                  "x": 0,
+                  "y": 180,
+                  "width": 296,
+                  "height": 24
+                }
+              },
+              {
+                "id": "updated",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "stop-board",
+                    "field_id": "updated-label",
+                    "row": 0,
+                    "decimals": null,
+                    "prefix": "",
+                    "suffix": ""
+                  }
+                },
+                "font_size": 9,
+                "align": "left",
+                "overflow": "ellipsis",
+                "rect": {
+                  "x": 0,
+                  "y": 210,
+                  "width": 296,
+                  "height": 16
+                }
+              },
+              {
+                "id": "attribution",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "stop-board",
+                    "field_id": "attribution",
+                    "row": 0,
+                    "decimals": null,
+                    "prefix": "",
+                    "suffix": ""
+                  }
+                },
+                "font_size": 9,
+                "align": "left",
+                "overflow": "ellipsis",
+                "rect": {
+                  "x": 0,
+                  "y": 228,
+                  "width": 296,
+                  "height": 16
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
 }

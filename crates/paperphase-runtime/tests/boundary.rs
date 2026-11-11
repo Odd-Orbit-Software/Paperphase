@@ -546,3 +546,252 @@ impl Drop for Server {
         }
     }
 }
+
+#[test]
+fn publication_metadata_is_atomic_bounded_and_compatible_with_legacy_publish() {
+    let runtime = PluginRuntime::new(Limits::default()).unwrap();
+    let dataset: Dataset = serde_json::from_str(DATASET).unwrap();
+    let mut extra = dataset.clone();
+    extra.id = "hourly".into();
+    let publication = json!({"dataset":dataset,"observed_at":123,"min_poll_secs":3600,"additional_datasets":[extra],"additional_observed_at":{"hourly":120}});
+    // Reuse the minimal boundary guest while selecting the new import.
+    fn metadata_wasm(value: &serde_json::Value, status: i32) -> Vec<u8> {
+        let body = value.to_string();
+        wat::parse_str(format!(r#"(module
+          (import "paperphase_v0" "publish_with_metadata" (func $publish (param i32 i32) (result i32)))
+          (memory (export "memory") 2)
+          (data (i32.const 0) "{}")
+          (func (export "run") (result i32) i32.const 0 i32.const {} call $publish drop i32.const {}))"#, escaped(body.as_bytes()), body.len(), status)).unwrap()
+    }
+    let plugin = runtime.prepare(&metadata_wasm(&publication, 0)).unwrap();
+    let result = runtime.run(&plugin, &config()).unwrap();
+    assert_eq!(result.observed_at, Some(123));
+    assert_eq!(result.min_poll_secs, Some(3600));
+    assert_eq!(result.additional_datasets[0].id, "hourly");
+    assert_eq!(result.additional_observed_at.get("hourly"), Some(&120));
+    assert!(
+        runtime
+            .run(
+                &runtime.prepare(&metadata_wasm(&publication, 1)).unwrap(),
+                &config()
+            )
+            .is_err()
+    );
+    let mut duplicate = publication.clone();
+    duplicate["additional_datasets"][0]["id"] = json!("test");
+    assert!(
+        runtime
+            .run(
+                &runtime.prepare(&metadata_wasm(&duplicate, 0)).unwrap(),
+                &config()
+            )
+            .is_err()
+    );
+    let mut invalid_hint = publication.clone();
+    invalid_hint["min_poll_secs"] = json!(604801);
+    assert!(
+        runtime
+            .run(
+                &runtime.prepare(&metadata_wasm(&invalid_hint, 0)).unwrap(),
+                &config()
+            )
+            .is_err()
+    );
+    let mut unknown_observation = publication.clone();
+    unknown_observation["additional_observed_at"] = json!({"missing-dataset":120});
+    assert!(
+        runtime
+            .run(
+                &runtime
+                    .prepare(&metadata_wasm(&unknown_observation, 0))
+                    .unwrap(),
+                &config()
+            )
+            .is_err()
+    );
+    let legacy = runtime
+        .run(
+            &runtime.prepare(&publish_wasm(DATASET, "", 0)).unwrap(),
+            &config(),
+        )
+        .unwrap();
+    assert!(legacy.additional_datasets.is_empty());
+    assert!(legacy.observed_at.is_none());
+}
+
+#[test]
+#[ignore = "scripts/check.sh builds the compiled weather guest"]
+fn compiled_weather_plugin_publishes_forecasts_with_observation_metadata() {
+    let source = Server::ok(include_bytes!(
+        "../../../plugins/weather/fixtures/forecast.json"
+    ));
+    let runtime = PluginRuntime::new(Limits {
+        max_requests: 1,
+        ..Limits::default()
+    })
+    .unwrap();
+    let wasm = std::fs::read(
+        std::env::var("PAPERPHASE_TEST_WEATHER_PLUGIN").expect("build weather guest"),
+    )
+    .unwrap();
+    let module = runtime.prepare(&wasm).unwrap();
+    let catalog: paperphase_core::ConnectorCatalog =
+        serde_json::from_str(include_str!("../../../examples/simulator/connectors.json")).unwrap();
+    let settings = catalog
+        .get("weather.open-meteo")
+        .unwrap()
+        .resolve(&Default::default(), None)
+        .unwrap();
+    let config = RunConfig::new(&source.url)
+        .unwrap()
+        .with_settings(&settings)
+        .unwrap();
+    let result = runtime.run(&module, &config).unwrap();
+    assert_eq!(result.dataset.rows[0]["display-temperature"], "12.5 °C");
+    assert_eq!(result.additional_datasets.len(), 2);
+    assert_eq!(result.additional_datasets[0].id, "hourly");
+    assert_eq!(result.additional_datasets[1].id, "daily");
+    assert_eq!(result.observed_at, Some(1700000000));
+    assert_eq!(result.metrics.http_requests, 1);
+    assert!(result.metrics.fuel_consumed < 10_000_000);
+    let mut long: serde_json::Value = serde_json::from_slice(include_bytes!(
+        "../../../plugins/weather/fixtures/forecast.json"
+    ))
+    .unwrap();
+    for (field, values) in long["hourly"].as_object_mut().unwrap() {
+        let original = values.as_array().unwrap().clone();
+        *values = if field == "time" {
+            json!(
+                (0..48)
+                    .map(|index| 1700002800_u64 + index * 3600)
+                    .collect::<Vec<_>>()
+            )
+        } else {
+            json!(
+                (0..48)
+                    .map(|index| original[index % original.len()].clone())
+                    .collect::<Vec<_>>()
+            )
+        };
+    }
+    let long_source = Server::ok(&serde_json::to_vec(&long).unwrap());
+    let mut long_settings = settings;
+    long_settings.insert("forecast_hours".into(), json!(48));
+    let result = runtime
+        .run(
+            &module,
+            &RunConfig::new(&long_source.url)
+                .unwrap()
+                .with_settings(&long_settings)
+                .unwrap(),
+        )
+        .unwrap();
+    assert_eq!(result.additional_datasets[0].rows.len(), 48);
+    assert!(result.metrics.fuel_consumed < 10_000_000);
+}
+
+#[test]
+#[ignore = "scripts/check.sh builds the compiled RSS guest"]
+fn compiled_rss_plugin_extracts_headlines_and_enforces_feed_ttl() {
+    let source = Server::ok(include_bytes!(
+        "../../../plugins/rss/fixtures/headlines.xml"
+    ));
+    let runtime = PluginRuntime::new(Limits {
+        max_requests: 1,
+        ..Limits::default()
+    })
+    .unwrap();
+    let wasm = std::fs::read(std::env::var("PAPERPHASE_TEST_RSS_PLUGIN").expect("build RSS guest"))
+        .unwrap();
+    let module = runtime.prepare(&wasm).unwrap();
+    let settings =
+        serde_json::from_value(json!({"label":"Test feed","feed_url":source.url,"max_items":3}))
+            .unwrap();
+    let config = RunConfig::new(&source.url)
+        .unwrap()
+        .with_settings(&settings)
+        .unwrap();
+    let result = runtime.run(&module, &config).unwrap();
+    assert_eq!(result.dataset.rows.len(), 3);
+    assert_eq!(result.min_poll_secs, Some(3600));
+    assert_eq!(result.metrics.http_requests, 1);
+    assert!(result.metrics.fuel_consumed < 10_000_000);
+    let atom = Server::ok(include_bytes!("../../../plugins/rss/fixtures/atom.xml"));
+    let config = RunConfig::new(&atom.url)
+        .unwrap()
+        .with_settings(&settings)
+        .unwrap();
+    assert_eq!(
+        runtime.run(&module, &config).unwrap().dataset.rows[0]["title"],
+        "Tea & cake"
+    );
+    let bad = Server::ok(b"<not-a-feed>");
+    assert!(
+        runtime
+            .run(
+                &module,
+                &RunConfig::new(&bad.url)
+                    .unwrap()
+                    .with_settings(&settings)
+                    .unwrap()
+            )
+            .is_err()
+    );
+}
+
+#[test]
+#[ignore = "scripts/check.sh builds the compiled Luas guest"]
+fn compiled_luas_plugin_uses_one_request_and_preserves_times_for_both_datasets() {
+    let source = Server::ok(include_bytes!(
+        "../../../plugins/luas/fixtures/forecast.xml"
+    ));
+    let runtime = PluginRuntime::new(Limits {
+        max_requests: 1,
+        ..Limits::default()
+    })
+    .unwrap();
+    let module = runtime
+        .prepare(
+            &std::fs::read(std::env::var("PAPERPHASE_TEST_LUAS_PLUGIN").expect("build Luas guest"))
+                .unwrap(),
+        )
+        .unwrap();
+    let catalog: paperphase_core::ConnectorCatalog =
+        serde_json::from_str(include_str!("../../../examples/simulator/connectors.json")).unwrap();
+    let settings = catalog
+        .get("transport.luas")
+        .unwrap()
+        .resolve(
+            &serde_json::from_value(json!({"stop":"RAN"})).unwrap(),
+            None,
+        )
+        .unwrap();
+    let result = runtime
+        .run(
+            &module,
+            &RunConfig::new(&source.url)
+                .unwrap()
+                .with_settings(&settings)
+                .unwrap(),
+        )
+        .unwrap();
+    assert_eq!(result.dataset.rows[0]["stop-name"], "Ranelagh");
+    assert_eq!(result.dataset.rows[0]["arrival-count"], 6);
+    assert_eq!(result.additional_datasets[0].rows.len(), 6);
+    assert_eq!(result.observed_at, Some(1700000000));
+    assert_eq!(result.additional_observed_at["arrivals"], 1700000000);
+    assert_eq!(result.metrics.http_requests, 1);
+    assert!(result.metrics.fuel_consumed < 10_000_000);
+    let bad = Server::ok(b"<html>Provider error</html>");
+    assert!(
+        runtime
+            .run(
+                &module,
+                &RunConfig::new(&bad.url)
+                    .unwrap()
+                    .with_settings(&settings)
+                    .unwrap()
+            )
+            .is_err()
+    );
+}

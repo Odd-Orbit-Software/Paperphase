@@ -72,7 +72,16 @@ pub(super) fn validate_store(
                 .is_none_or(|message| message.len() <= 1024),
             "oversized connector error"
         );
-        if let Some(snapshot) = &data.snapshot {
+        anyhow::ensure!(
+            data.additional_snapshots.len() <= 7,
+            "dataset count exceeded"
+        );
+        let mut dataset_ids = BTreeSet::new();
+        for snapshot in data.snapshot.iter().chain(&data.additional_snapshots) {
+            anyhow::ensure!(
+                dataset_ids.insert(&snapshot.dataset.id),
+                "duplicate cached dataset"
+            );
             anyhow::ensure!(
                 &snapshot.connection_id == id,
                 "cache connection id mismatch"
@@ -101,12 +110,13 @@ pub(super) fn merge_snapshots(
     fixtures: &paperphase_core::SnapshotSet,
 ) -> paperphase_core::SnapshotSet {
     let mut data = fixtures.clone();
-    data.snapshots.extend(
-        store
-            .data
-            .values()
-            .filter_map(|state| state.snapshot.clone()),
-    );
+    data.snapshots.extend(store.data.values().flat_map(|state| {
+        state
+            .snapshot
+            .iter()
+            .chain(&state.additional_snapshots)
+            .cloned()
+    }));
     data
 }
 
@@ -190,6 +200,7 @@ pub(super) async fn save(
         let settings = definition.resolve(&request.settings, previous.map(|connection| &connection.settings)).map_err(invalid)?;
         let connection = ConnectionConfig { id: id.clone(), connector_id: request.connector_id, label: request.label.trim().into(), enabled: request.enabled, poll_interval_secs: request.poll_interval_secs, settings };
         connection.validate(&app.connector_catalog).map_err(invalid)?;
+        if let Some(registry) = &app.executors { registry.validate_connection(&connection).map_err(|_| invalid("Invalid connector source settings."))?; }
         let mut updated = store.clone();
         if let Some(index) = updated.connections.iter().position(|old| old.id == id) { updated.connections[index] = connection; }
         else {

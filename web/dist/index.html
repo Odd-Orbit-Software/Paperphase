@@ -20,6 +20,7 @@
       <div><div class="eyebrow">YOUR SPACE, AT A GLANCE</div><h1>A little less screen.</h1><p>Make room for the information that matters.</p></div>
       <div class="heading-actions"><span id="save-state" class="subtle">Loading workspace…</span><button id="refresh" disabled>↻ Refresh display</button><button id="discard" hidden>Discard</button><button id="save" class="primary" hidden>Save to display <span aria-hidden="true">↗</span></button><button id="edit" class="primary">Edit layout <span aria-hidden="true">↗</span></button></div>
     </section>
+    <div id="runtime-warning" class="runtime-warning" role="status" hidden></div>
     <div id="notice" role="status" aria-live="polite" hidden></div>
     <section class="studio" aria-label="Display editor">
       <aside class="library">
@@ -27,6 +28,7 @@
         <p class="panel-description" id="library-description">Your saved arrangement.</p>
         <div id="component-list" class="component-list"></div>
         <div id="add-tools" hidden><div class="section-label" id="add-target">ADD TO YOUR DISPLAY</div><button id="add-text" class="template"><span class="template-icon">Aa</span><span><strong>Text</strong><small>A note, heading, or quotation</small></span><span>+</span></button><button id="add-data" class="template"><span class="template-icon">≋</span><span><strong>Data field</strong><small>Connect a dataset value</small></span><span>+</span></button><button id="add-clock" class="template"><span class="template-icon">◷</span><span><strong>Time &amp; date</strong><small>Keep time in your timezone</small></span><span>+</span></button><button id="display-settings" class="wide-button">Display settings</button></div>
+        <div id="plugin-templates" hidden></div>
         <div class="library-note"><span class="tiny-orbit">◌</span><strong>A place for everything.</strong><p id="placement-note">Components sit side by side. Each one owns its space on the display.</p></div>
       </aside>
       <div class="canvas-panel">
@@ -44,8 +46,9 @@
   </main>
   <dialog id="connections-dialog" aria-labelledby="connections-title">
     <header class="connections-heading"><div><div class="eyebrow">YOUR DATA SOURCES</div><h2 id="connections-title">Connections</h2></div><button id="connections-close" aria-label="Close connections">×</button></header>
-    <p class="connections-scope">Settings only in this release. Connections do not fetch data or change the sample display yet.</p>
+    <p class="connections-scope">Load connections to check plugin and fetch status.</p>
     <div id="connections-notice" role="status" aria-live="polite" hidden></div>
+    <details id="fetch-setup" class="fetch-setup" hidden><summary>Enable fetching</summary><p>Load the compiled plugins when starting the service. For the bundled weather and RSS plugins, build them as described in the setup guide, then run from the repository root:</p><code>cargo run --locked -p paperphase -- serve --connector-bindings plugins/bindings.example.json</code><p>For live data, omit <code>--now</code>; that option fixes the clock for tests. Other plugins need their own registration file.</p></details>
     <div class="connections-workspace"><aside><button id="connection-new" class="wide-button">+ New connection</button><div id="connections-list"></div></aside><section id="connection-properties" aria-label="Connection settings"></section></div>
   </dialog>
 </body>

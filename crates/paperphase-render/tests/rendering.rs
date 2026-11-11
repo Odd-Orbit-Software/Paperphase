@@ -434,3 +434,16 @@ fn flow_reports_identify_elements_hidden_below_the_content_area() {
     assert!(result.components[0].blocks[0].rect.is_some());
     assert!(result.components[0].blocks[1].rect.is_none());
 }
+
+#[test]
+fn local_weather_symbols_use_the_bundled_monochrome_font() {
+    let result = Renderer::new()
+        .unwrap()
+        .render(&literal("☀ ☾ ☁ ≋ ☂ ❄ ⚡ ?", 24, "wrap"), &data(), 101)
+        .unwrap();
+    assert!(
+        !result.components[0]
+            .warnings
+            .contains(&RenderWarning::GlyphFallback)
+    );
+}

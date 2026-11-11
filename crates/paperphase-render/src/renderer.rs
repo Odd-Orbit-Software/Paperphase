@@ -9,12 +9,12 @@ use fontdue::{
     },
 };
 use paperphase_core::{
-    Align, Binding, Component, ContentLayout, FieldKind, Layout, Overflow, Rect, STATUS_HEIGHT,
-    Snapshot, SnapshotSet, TextBlock, TextSource,
+    Align, Binding, Component, ContentLayout, FieldKind, IconReference, Layout, Overflow, Rect,
+    STATUS_HEIGHT, Snapshot, SnapshotSet, TextBlock, TextSource,
 };
 use serde::Serialize;
 
-use crate::Frame;
+use crate::{Frame, IconPackInfo, IconStore};
 
 const FONT: &[u8] = include_bytes!("../../../assets/fonts/DejaVuSans.ttf");
 const CACHE_BYTES: usize = 2 * 1024 * 1024;
@@ -31,6 +31,7 @@ pub enum DataState {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RenderWarning {
+    MissingIcon,
     MissingDataset,
     MissingField,
     MissingRow,
@@ -81,6 +82,7 @@ pub struct RenderedFrame {
 }
 
 pub struct Renderer {
+    icons: IconStore,
     font: Font,
     flow: TextLayout,
     cache: HashMap<GlyphRasterConfig, (Metrics, Vec<u8>)>,
@@ -89,8 +91,17 @@ pub struct Renderer {
 
 impl Renderer {
     pub fn new() -> Result<Self> {
+        Self::with_icons(IconStore::default())
+    }
+
+    pub fn icon_catalog(&self) -> Vec<IconPackInfo> {
+        self.icons.catalog()
+    }
+
+    pub fn with_icons(icons: IconStore) -> Result<Self> {
         let font = Font::from_bytes(FONT, FontSettings::default()).map_err(|e| anyhow!(e))?;
         Ok(Self {
+            icons,
             font,
             flow: TextLayout::new(CoordinateSystem::PositiveYDown),
             cache: HashMap::new(),
@@ -141,6 +152,27 @@ impl Renderer {
                 .map(|block| match &block.source {
                     TextSource::Literal { text } => Ok(text.clone()),
                     TextSource::Field { binding } => Ok(resolve(binding, &index, now, &mut report)),
+                    TextSource::Icon { icon, .. } => Ok(match icon {
+                        IconReference::Literal { icon_id } => icon_id.clone(),
+                        IconReference::Field { binding } => {
+                            let value = resolve(binding, &index, now, &mut report);
+                            if let Some(snapshot) = index
+                                .get(&(binding.connection_id.as_str(), binding.dataset_id.as_str()))
+                            {
+                                if snapshot.dataset.rows.is_empty() {
+                                    String::new()
+                                } else if snapshot.dataset.fields.iter().any(|field| {
+                                    field.id == binding.field_id && field.kind != FieldKind::Text
+                                }) {
+                                    report.missing(RenderWarning::IncompatibleFormat)
+                                } else {
+                                    value
+                                }
+                            } else {
+                                value
+                            }
+                        }
+                    }),
                     TextSource::Clock { clock } => clock.format(now).map_err(Into::into),
                 })
                 .collect::<Result<_>>()?;
@@ -202,7 +234,41 @@ impl Renderer {
                     ..body
                 }
             };
-            let metrics = self.text(frame, value, block, clip);
+            let metrics = if let TextSource::Icon { pack_id, size, .. } = &block.source {
+                let size32 = u32::from(*size);
+                if !value.is_empty() {
+                    if let Some(sprite) = self.icons.get(pack_id, value, *size) {
+                        let offset = clip.width.saturating_sub(size32);
+                        let left = clip.x
+                            + match block.align {
+                                Align::Left => 0,
+                                Align::Center => offset / 2,
+                                Align::Right => offset,
+                            };
+                        for y in 0..size32.min(clip.height) {
+                            for x in 0..size32.min(clip.width) {
+                                if sprite.black(
+                                    x * u32::from(sprite.size) / size32,
+                                    y * u32::from(sprite.size) / size32,
+                                ) {
+                                    frame.ink(i64::from(left + x), i64::from(clip.y + y), clip);
+                                }
+                            }
+                        }
+                    } else {
+                        report.warn(RenderWarning::MissingIcon);
+                        self.text(frame, "?", block, clip);
+                    }
+                }
+                TextMetrics {
+                    flow_height: size32,
+                    visible_height: size32.min(clip.height),
+                    overflow: size32 > clip.width || size32 > clip.height,
+                    fallback: false,
+                }
+            } else {
+                self.text(frame, value, block, clip)
+            };
             report.blocks[index].rect =
                 Some(if component.content_layout == ContentLayout::Positioned {
                     block.rect.expect("validated")

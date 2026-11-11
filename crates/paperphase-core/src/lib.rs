@@ -3,12 +3,14 @@
 mod clock;
 mod dataset;
 mod layout;
+mod publication;
 mod refresh;
 mod settings;
 
 pub use clock::*;
 pub use dataset::{Dataset, Field, FieldKind};
 pub use layout::*;
+pub use publication::*;
 pub use refresh::*;
 pub use settings::*;
 

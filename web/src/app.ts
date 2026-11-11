@@ -1,17 +1,19 @@
-import type { Rect, Binding, ClockSpec, Block, Component, Layout, BlockPlacement } from './model';
+import type { Rect, Binding, ClockSpec, Block, Component, Layout, BlockPlacement, IconPack } from './model';
+import { sourceBinding } from './model';
 import { contentBounds, validElement, validElements, positioned, freeElementRect } from './elements';
 type Policy = { min_interval_ms: number; full_after_partials: number; full_after_secs: number; max_partial_area_percent: number };
 type Operation = { mode: 'partial' | 'full'; reason: string; region: Rect; revision: number };
 type RefreshStatus = { profile: { id: string; max_partials: number; max_full_age_secs: number; max_partial_area_percent: number; min_interval_ms: number }; active: Operation | null; last_completed: Operation | null; partial_count: number; baseline_known: boolean; failures: number; wait_ms: number };
 type RefreshSettings = { policy: Policy; quiet_hours: { timezone: string; start: string; end: string } | null };
-type Workspace = { refresh: RefreshStatus; last_error: string | null; revision: number; displayed_revision: number; data_revision: number; frame_id: string; clock_now: number; pending: boolean; phase: string; layout: Layout; refresh_settings: RefreshSettings; addresses: string[]; connector_execution: boolean; fixture_data: boolean };
+type Workspace = { clock_fixed: boolean; refresh: RefreshStatus; last_error: string | null; revision: number; displayed_revision: number; data_revision: number; frame_id: string; clock_now: number; pending: boolean; phase: string; layout: Layout; refresh_settings: RefreshSettings; addresses: string[]; connector_execution: boolean; fixture_data: boolean };
 type EditState = { layout: Layout; settings: RefreshSettings };
 type Dataset = { connection_id: string; connection_label?: string; dataset_id: string; fields: { id: string; kind: string; unit?: string }[]; rows: number; stale: boolean };
 type Report = { id: string; state: string; warnings: string[]; blocks: BlockPlacement[] };
 type Preview = { png_base64: string; components: Report[] };
-type SettingInput = { type: 'text'; max_bytes: number; default?: string | null } | { type: 'secret'; max_bytes: number } | { type: 'integer'; min: number; max: number; default?: number | null } | { type: 'boolean'; default?: boolean | null } | { type: 'choice'; options: { value: string; label: string }[]; default?: string | null };
+type ComponentTemplate = { id: string; name: string; component: Component };
+type SettingInput = { type: 'url'; default?: string | null } | { type: 'number'; min: number; max: number; default?: number | null } | { type: 'text'; max_bytes: number; default?: string | null } | { type: 'secret'; max_bytes: number } | { type: 'integer'; min: number; max: number; default?: number | null } | { type: 'boolean'; default?: boolean | null } | { type: 'choice'; options: { value: string; label: string }[]; default?: string | null };
 type SettingDefinition = { id: string; label: string; help: string; required: boolean; input: SettingInput };
-type ConnectorDefinition = { id: string; name: string; description: string; min_poll_secs: number; default_poll_secs: number; settings: SettingDefinition[] };
+type ConnectorDefinition = { id: string; name: string; description: string; min_poll_secs: number; default_poll_secs: number; templates?: ComponentTemplate[]; settings: SettingDefinition[] };
 type FetchStatus = { status: string; can_fetch: boolean; fetch_after: number; next_fetch_at: number; last_attempt_at: number | null; last_success_at: number | null; last_error: string | null };
 type Connection = { id: string; connector_id: string; label: string; enabled: boolean; poll_interval_secs: number; settings: Record<string, string | number | boolean | null>; secret_present: string[]; fetch?: FetchStatus };
 type Connections = { revision: number; connections: Connection[]; execution: string };
@@ -28,6 +30,7 @@ let draftSettings: RefreshSettings;
 let zones: string[] = [];
 let settingsSelected = false;
 let catalog: Dataset[] = [];
+let iconPacks: IconPack[] = [];
 let editing = false;
 let viewingDraft = false;
 let selected: string | null = null;
@@ -77,9 +80,10 @@ function active() { return editing && viewingDraft && !saving; }
 function component() { return draft.components.find(c => c.id === selected); }
 function editingContents() { return contentMode && editing && viewingDraft && !!component(); }
 function element() { return component()?.blocks.find(block => block.id === selectedElement); }
-function elementName(block: Block) { return block.source.kind === 'literal' ? block.source.text.trim().split('\n')[0]?.slice(0, 36) || 'Empty text' : block.source.kind === 'field' ? block.source.binding.field_id : 'Time & date'; }
+function elementName(block: Block) { return block.source.kind === 'literal' ? block.source.text.trim().split('\n')[0]?.slice(0, 36) || 'Empty text' : block.source.kind === 'field' ? block.source.binding.field_id : block.source.kind === 'icon' ? 'Icon' : 'Time & date'; }
 function name(c: Component): string {
-  const first = c.blocks.find(b => b.source.kind === 'literal');
+  if (c.label) return c.label;
+  const first = c.blocks[0];
   if (first?.source.kind === 'literal' && first.source.text.trim()) return first.source.text.trim().split('\n')[0]!.slice(0, 36);
   const field = c.blocks.find(b => b.source.kind === 'field');
   if (field?.source.kind === 'field') return `${field.source.binding.field_id} · ${field.source.binding.connection_id}`;
@@ -89,7 +93,7 @@ function name(c: Component): string {
 function validRect(rect: Rect, id: string, layout = draft): boolean {
   const target = layout.components.find(c => c.id === id);
   const padding = 2 * (target?.padding ?? 12);
-  const status = target?.blocks.some(b => b.source.kind === 'field') ? 18 : 0;
+  const status = target?.blocks.some(b => sourceBinding(b.source)) ? 18 : 0;
   return Object.values(rect).every(Number.isInteger)
     && rect.x >= 0 && rect.y >= 0 && rect.width >= 32 && rect.height >= 32
     && rect.width > padding && rect.height > padding + status
@@ -221,7 +225,9 @@ function render(rebuildInspector = true) {
   $('grid-overlay').style.display = viewingDraft && checked('grid') ? 'block' : 'none';
   if (viewingDraft && draftImage) $<HTMLImageElement>('frame').src = draftImage;
   if (!viewingDraft) setDisplayedImage();
+  renderRuntimeWarning();
   renderList();
+  renderTemplates();
   renderOverlays();
   if (rebuildInspector) renderInspector();
   fit();
@@ -245,7 +251,7 @@ function renderList() {
     for (const block of c.blocks) {
       const item = node('button', `component-item ${selectedElement === block.id ? 'selected' : ''}`);
       item.setAttribute('aria-label', `Select element ${block.id}`);
-      item.append(node('span', 'component-icon', block.source.kind === 'clock' ? '◷' : block.source.kind === 'field' ? '≋' : 'Aa'));
+      item.append(node('span', 'component-icon', block.source.kind === 'clock' ? '◷' : block.source.kind === 'icon' ? '▧' : block.source.kind === 'field' ? '≋' : 'Aa'));
       const text = node('span'); text.append(node('span', 'item-name', elementName(block)));
       if (block.rect) text.append(node('small', '', `${block.rect.width} × ${block.rect.height} · ${block.rect.x}, ${block.rect.y}`));
       item.append(text); item.disabled = !active(); item.onclick = () => { selectedElement = block.id; render(); }; list.append(item);
@@ -266,6 +272,51 @@ function renderList() {
     list.append(item);
   }
 }
+function renderRuntimeWarning() {
+  const configured = connectionStore.connections.filter(connection => connection.enabled && (connectorDefinitions.find(definition => definition.id === connection.connector_id)?.templates?.length ?? 0) > 0);
+  const missing = configured.filter(connection => connection.fetch?.status === 'settings_only');
+  const messages: string[] = [];
+  if (missing.length) messages.push('Some configured plugins are not loaded. Components can be arranged, but new data cannot be fetched. Open Connections for setup.');
+  if (configured.length && saved.clock_fixed) messages.push('The host clock is fixed for testing. Restart without --now for live data updates.');
+  $('runtime-warning').hidden = !messages.length;
+  $('runtime-warning').textContent = messages.join(' ');
+}
+
+function renderTemplates() {
+  const parent = $('plugin-templates'); parent.replaceChildren();
+  parent.hidden = !active() || editingContents();
+  if (parent.hidden) return;
+  const available = connectionStore.connections.flatMap(connection => {
+    const definition = connectorDefinitions.find(definition => definition.id === connection.connector_id);
+    return (definition?.templates ?? []).map(template => ({ connection, template }));
+  });
+  if (!available.length) return;
+  parent.append(node('div', 'section-label', 'FROM YOUR CONNECTIONS'));
+  for (const { connection, template } of available) {
+    const item = node('button', 'template plugin-template');
+    item.setAttribute('aria-label', `Add ${template.name} from ${connection.label}`);
+    const unloaded = connection.fetch?.status === 'settings_only';
+    const caption = node('span'); caption.append(node('strong', '', template.name), node('small', '', `${connection.label}${unloaded ? ' · plugin not loaded' : ''}`));
+    if (unloaded) item.title = 'The template can be edited, but live fetching needs its plugin loaded. Open Connections for setup.';
+    item.append(node('span', 'template-icon', '≋'), caption, node('span', '', '+'));
+    item.onclick = () => {
+      const component = clone(template.component); component.id = identifier('component'); component.label = `${connection.label} · ${template.name}`;
+      for (const block of component.blocks) { const binding = sourceBinding(block.source); if (binding) binding.connection_id = connection.id; }
+      for (let y = 16; y + component.rect.height <= draft.display.height; y += 8) {
+        for (let x = 16; x + component.rect.width <= draft.display.width; x += 8) {
+          component.rect.x = x; component.rect.y = y;
+          if (validRect(component.rect, component.id)) {
+            selected = component.id; settingsSelected = false;
+            change(layout => { layout.components.push(component); }); return;
+          }
+        }
+      }
+      notice(`No free ${component.rect.width} × ${component.rect.height} area is available. Make room for this template first.`);
+    };
+    parent.append(item);
+  }
+}
+
 function renderOverlays() {
   const overlays = $('overlays');
   overlays.replaceChildren();
@@ -316,7 +367,7 @@ function renderElementOverlays(overlays: HTMLElement) {
   const c = component()!; const bounds = contentBounds(c);
   const area = node('div', 'content-boundary');
   Object.assign(area.style, { left: `${c.padding}px`, top: `${c.padding}px`, width: `${bounds.width}px`, height: `${bounds.height}px` }); overlays.append(area);
-  if (c.blocks.some(block => block.source.kind === 'field')) {
+  if (c.blocks.some(block => sourceBinding(block.source))) {
     const band = node('div', 'reserved-area');
     Object.assign(band.style, { left: `${c.padding}px`, top: `${c.padding + bounds.height}px`, width: `${bounds.width}px`, height: '18px' });
     band.setAttribute('aria-label', 'Reserved data status area'); overlays.append(band);
@@ -402,6 +453,7 @@ function renderInspector() {
   }
   if (!editingContents()) {
     const placement = section('PLACEMENT · NATIVE PIXELS', inspector);
+    textField('Component name', c.label ?? '', placement, value => updateComponent(c => { c.label = value.trim() ? value : undefined; }, `${id}.label`, false), false, 96);
     const geometry = node('div', 'field-grid'); placement.append(geometry);
     for (const [key, title, min, max] of [['x', 'X', 0, draft.display.width - c.rect.width], ['y', 'Y', 0, draft.display.height - c.rect.height], ['width', 'Width', 32, draft.display.width], ['height', 'Height', 32, draft.display.height]] as const) {
       numeric(title, c.rect[key], min, max, geometry, n => updateComponent(c => { c.rect[key] = n; }));
@@ -436,9 +488,10 @@ function renderInspector() {
         numeric(title, block.rect[key], min, max, geometry, value => updateBlock(b => { b.rect![key] = value; }));
       }
     }
-    select('Content source', block.source.kind, [['literal', 'Text'], ['field', 'Dataset field'], ['clock', 'Time & date']], card, kind => updateBlock(b => {
+    select('Content source', block.source.kind, [['literal', 'Text'], ['field', 'Dataset field'], ['clock', 'Time & date'], ['icon', 'Icon']], card, kind => updateBlock(b => {
       if (kind === 'literal') b.source = { kind: 'literal', text: 'Your text' };
       else if (kind === 'clock') b.source = { kind: 'clock', clock: newClock('time') };
+      else if (kind === 'icon') b.source = { kind: 'icon', pack_id: iconPacks[0]?.id ?? 'missing', icon: { kind: 'literal', icon_id: iconPacks[0]?.icons[0] ?? 'unknown' }, size: 48 };
       else if (catalog[0]) b.source = { kind: 'field', binding: newBinding(catalog[0]) };
     }));
     if (block.source.kind === 'literal') {
@@ -450,6 +503,27 @@ function renderInspector() {
       select('Timezone', clock.timezone, zones.map(zone => [zone, zone]), card, value => updateClock(c => { c.timezone = value; }));
       if (clock.content !== 'date') select('Time format', clock.hour_cycle, [['twenty_four', '24-hour'], ['twelve', '12-hour']], card, value => updateClock(c => { c.hour_cycle = value as ClockSpec['hour_cycle']; }));
       if (clock.content !== 'time') select('Date format', clock.date_format, [['long', 'Tuesday, 10 November 2026'], ['short', '10 Nov 2026'], ['iso', '2026-11-10'], ['weekday', 'Tuesday']], card, value => updateClock(c => { c.date_format = value as ClockSpec['date_format']; }));
+    } else if (block.source.kind === 'icon') {
+      const source = block.source;
+      const updateIcon = (fn: (source: Extract<Block['source'], {kind: 'icon'}>) => void) => updateBlock(b => { if (b.source.kind === 'icon') fn(b.source); });
+      const pack = iconPacks.find(pack => pack.id === source.pack_id);
+      select('Icon pack', source.pack_id, iconPacks.map(pack => [pack.id, pack.name]), card, value => updateIcon(s => { s.pack_id = value; if (s.icon.kind === 'literal') s.icon.icon_id = iconPacks.find(p => p.id === value)!.icons[0]!; }));
+      if (!pack) card.append(node('p', 'render-report', 'Icon pack unavailable. Load its plugin asset manifest and restart the service.'));
+      numeric('Icon size (px)', source.size, 8, 256, card, value => updateIcon(s => { s.size = value; }));
+      select('Icon selection', source.icon.kind, [['literal', 'Choose an icon'], ['field', 'Dataset field']], card, value => updateIcon(s => {
+        if (value === 'literal') s.icon = { kind: 'literal', icon_id: pack?.icons[0] ?? 'unknown' };
+        else if (catalog[0]) s.icon = { kind: 'field', binding: newIconBinding(catalog[0]) };
+      }));
+      if (source.icon.kind === 'literal') {
+        select('Icon', source.icon.icon_id, pack?.icons.map(id => [id, id.replaceAll('_', ' ')]) ?? [], card, value => updateIcon(s => { s.icon = { kind: 'literal', icon_id: value }; }));
+      } else {
+        const binding = source.icon.binding;
+        const key = `${binding.connection_id}/${binding.dataset_id}`;
+        const dataset = catalog.find(d => `${d.connection_id}/${d.dataset_id}` === key);
+        select('Dataset', key, catalog.map(d => [`${d.connection_id}/${d.dataset_id}`, `${d.connection_label ?? d.connection_id} / ${d.dataset_id}`]), card, value => updateIcon(s => { s.icon = { kind: 'field', binding: newIconBinding(catalog.find(d => `${d.connection_id}/${d.dataset_id}` === value)!) }; }));
+        select('Field', binding.field_id, dataset?.fields.filter(f => f.kind === 'text').map(f => [f.id, f.id]) ?? [], card, value => updateIcon(s => { if (s.icon.kind === 'field') s.icon.binding.field_id = value; }));
+        numeric('Row (first row = 0)', binding.row ?? 0, 0, 511, card, value => updateIcon(s => { if (s.icon.kind === 'field') s.icon.binding.row = value; }));
+      }
     } else {
       const binding = block.source.binding;
       const updateBinding = (fn: (b: Binding) => void, key = '', rebuild = true) => updateBlock(b => { if (b.source.kind === 'field') fn(b.source.binding); }, key, rebuild);
@@ -468,9 +542,9 @@ function renderInspector() {
       textField('Suffix', binding.suffix ?? '', card, value => updateBinding(b => { b.suffix = value; }, `${id}.${block.id}.suffix`, false));
     }
     const typography = node('div', 'field-grid'); card.append(typography);
-    numeric('Font size (px)', block.font_size, 8, 256, typography, value => updateBlock(b => { b.font_size = value; }));
+    if (block.source.kind !== 'icon') numeric('Font size (px)', block.font_size, 8, 256, typography, value => updateBlock(b => { b.font_size = value; }));
     select('Alignment', block.align ?? 'left', [['left', 'Left'], ['center', 'Centre'], ['right', 'Right']], typography, value => updateBlock(b => { b.align = value; }));
-    select('Overflow', block.overflow ?? 'wrap', [['wrap', 'Wrap'], ['clip', 'Clip'], ['ellipsis', 'Ellipsis']], card, value => updateBlock(b => { b.overflow = value; }));
+    if (block.source.kind !== 'icon') select('Overflow', block.overflow ?? 'wrap', [['wrap', 'Wrap'], ['clip', 'Clip'], ['ellipsis', 'Ellipsis']], card, value => updateBlock(b => { b.overflow = value; }));
   });
   action(editingContents() ? '+ Add text element' : '+ Add text block', editingContents() ? 'Add text element' : 'Add text block', content, () => {
     if (c.content_layout === 'positioned') addElement('text'); else updateComponent(c => { c.blocks.push(newBlock()); });
@@ -481,6 +555,7 @@ function renderInspector() {
     action('Remove component', 'Remove component', remove, () => { change(l => { l.components = l.components.filter(c => c.id !== id); }); selected = null; render(); }).className = 'danger wide-button';
   }
 }
+function newIconBinding(dataset: Dataset): Binding { const binding = newBinding(dataset); binding.field_id = dataset.fields.find(f => f.kind === 'text')?.id ?? binding.field_id; return binding; }
 function newBinding(dataset: Dataset): Binding { return { connection_id: dataset.connection_id, dataset_id: dataset.dataset_id, field_id: dataset.fields[0]!.id, row: 0, decimals: null, prefix: '', suffix: '' }; }
 // getRandomValues also works over plain HTTP on a LAN; randomUUID requires HTTPS.
 function identifier(prefix: string) { return `${prefix}-${Array.from(crypto.getRandomValues(new Uint8Array(8)), n => n.toString(16).padStart(2, '0')).join('')}`; }
@@ -739,7 +814,7 @@ async function poll() {
     connected = true;
     if (editing) {
       if (current.revision !== saved.revision && !conflict) { conflict = true; notice('A newer layout was saved in another tab. Your draft is retained. Discard to load the newer layout.', true); }
-      saved.phase = current.phase; saved.displayed_revision = current.displayed_revision; saved.frame_id = current.frame_id; saved.clock_now = current.clock_now; saved.data_revision = current.data_revision;
+      saved.phase = current.phase; saved.displayed_revision = current.displayed_revision; saved.frame_id = current.frame_id; saved.clock_now = current.clock_now; saved.clock_fixed = current.clock_fixed; saved.data_revision = current.data_revision;
       saved.refresh = current.refresh; saved.last_error = current.last_error;
       saved.connector_execution = current.connector_execution; saved.fixture_data = current.fixture_data;
     } else { saved = current; draft = clone(current.layout); draftSettings = clone(current.refresh_settings); }
@@ -754,7 +829,9 @@ async function poll() {
 }
 async function start() {
   try {
-    [saved, catalog, zones] = await Promise.all([api<Workspace>('/api/state'), api<Dataset[]>('/api/catalog'), api<string[]>('/api/timezones')]);
+    const [workspace, datasets, timezones, definitions, connections, packs] = await Promise.all([api<Workspace>('/api/state'), api<Dataset[]>('/api/catalog'), api<string[]>('/api/timezones'), api<{ connectors: ConnectorDefinition[] }>('/api/connectors'), api<Connections>('/api/connections'), api<IconPack[]>('/api/icon-packs')]);
+    iconPacks = packs;
+    saved = workspace; catalog = datasets; zones = timezones; connectorDefinitions = definitions.connectors; connectionStore = connections;
     draft = clone(saved.layout); draftSettings = clone(saved.refresh_settings); updateStatus(); render();
     window.setInterval(() => { void poll(); }, 1000);
   } catch (error) { notice(`Cannot load the workspace. ${String(error)} Reload after the service is available.`, true); button('edit').disabled = true; }
@@ -784,9 +861,10 @@ function connectionButtons() {
 async function loadConnections() {
   const [catalog, store] = await Promise.all([api<{ connectors: ConnectorDefinition[] }>('/api/connectors'), api<Connections>('/api/connections')]);
   connectorDefinitions = catalog.connectors; connectionStore = store;
-  document.querySelector('.connections-scope')!.textContent = store.execution === 'compiled' ? 'Fetch now updates connection data. Refresh display applies the latest saved layout and data, subject to quiet hours.' : 'Settings only in this release. Connections do not fetch data or change the sample display yet.';
+  document.querySelector('.connections-scope')!.textContent = store.execution === 'compiled' ? 'Fetch now updates connection data. Refresh display applies the latest saved layout and data, subject to quiet hours.' : 'No fetch modules are loaded. Settings and templates are available, but connections cannot fetch data.';
+  $('fetch-setup').hidden = !store.connections.some(connection => connection.fetch?.status === 'settings_only' && (connectorDefinitions.find(definition => definition.id === connection.connector_id)?.templates?.length ?? 0) > 0);
   connectionDraft = undefined; connectionBaseline = ''; connectionConflict = false; connectionIsNew = false;
-  renderConnections();
+  renderConnections(); renderTemplates(); renderRuntimeWarning();
 }
 function beginConnection(connection?: Connection) {
   if (connectionDraft || connectionBusy) return;
@@ -809,11 +887,11 @@ function renderConnections() {
   for (const connection of connectionStore.connections) {
     const item = node('button', `connection-item ${connectionDraft?.id === connection.id ? 'selected' : ''}`);
     item.setAttribute('aria-label', `Configure ${connection.label}`);
-    item.append(node('strong', '', connection.label), node('small', '', `${connection.fetch?.status.replaceAll('_', ' ') ?? (connection.enabled ? 'Configured' : 'Disabled')} · ${connection.poll_interval_secs} s`));
+    item.append(node('strong', '', connection.label), node('small', '', `${connection.fetch?.status === 'settings_only' ? 'Plugin not loaded' : connection.fetch?.status.replaceAll('_', ' ') ?? (connection.enabled ? 'Configured' : 'Disabled')} · ${connection.poll_interval_secs} s`));
     item.disabled = !!connectionDraft;
     item.onclick = () => beginConnection(connection);
     list.append(item);
-    if (connection.fetch && connection.fetch.status !== 'settings_only') {
+    if (connection.fetch) {
       const status = node('div', 'connection-fetch'); status.dataset.fetchId = connection.id;
       const text = node('small', 'field-help'); text.dataset.fetchDetails = 'true'; status.append(text);
       const fetch = node('button', 'small', 'Fetch now'); fetch.dataset.fetchButton = 'true'; fetch.setAttribute('aria-label', `Fetch ${connection.label} now`);
@@ -860,8 +938,8 @@ function renderConnections() {
       if (inputDefinition.type === 'boolean') {
         input.type = 'checkbox'; input.checked = value === true;
         input.onchange = () => { current.settings[field.id] = (input as HTMLInputElement).checked; connectionButtons(); };
-      } else if (inputDefinition.type === 'integer') {
-        input.type = 'number'; input.min = String(inputDefinition.min); input.max = String(inputDefinition.max); input.step = '1'; input.required = field.required; input.value = typeof value === 'number' ? String(value) : '';
+      } else if (inputDefinition.type === 'integer' || inputDefinition.type === 'number') {
+        input.type = 'number'; input.min = String(inputDefinition.min); input.max = String(inputDefinition.max); input.step = inputDefinition.type === 'number' ? 'any' : '1'; input.required = field.required; input.value = typeof value === 'number' ? String(value) : '';
         input.oninput = () => { current.settings[field.id] = input.value === '' ? null : (input as HTMLInputElement).valueAsNumber; connectionButtons(); };
       } else if (inputDefinition.type === 'secret') {
         input.type = 'password'; input.autocomplete = 'new-password'; input.maxLength = inputDefinition.max_bytes;
@@ -885,7 +963,7 @@ function renderConnections() {
         group.append(node('small', 'field-help', `${present ? 'A value is saved. ' : ''}${field.help}`)); fields.append(group);
         continue;
       } else {
-        input.type = 'text'; input.maxLength = inputDefinition.max_bytes; input.required = field.required; input.value = typeof value === 'string' ? value : '';
+        input.type = inputDefinition.type === 'url' ? 'url' : 'text'; input.maxLength = inputDefinition.type === 'url' ? 2048 : inputDefinition.max_bytes; input.required = field.required; input.value = typeof value === 'string' ? value : '';
         input.oninput = () => { current.settings[field.id] = input.value; connectionButtons(); };
       }
     }
@@ -914,6 +992,11 @@ function updateFetchControl(container: HTMLElement, connection: Connection) {
   fetch.disabled = !status.can_fetch || connectionBusy;
   fetch.title = 'Fetch using saved connection settings.';
   const details = container.querySelector<HTMLElement>('[data-fetch-details]')!;
+  if (status.status === 'settings_only') {
+    details.textContent = 'Plugin not loaded by this service. Settings and components alone do not fetch data.';
+    fetch.title = 'Load the plugin and restart the service. See Enable fetching below.';
+    return;
+  }
   details.textContent = status.status === 'fetching' ? 'Fetching…' : status.last_error ?? (status.last_success_at ? `Last fetched ${new Date(status.last_success_at * 1000).toLocaleTimeString()}` : 'Waiting for the first fetch.');
   if (!status.can_fetch && status.fetch_after > 0) fetch.title = `Next eligible: ${new Date(status.fetch_after * 1000).toLocaleString()}`;
 }

@@ -1,0 +1,337 @@
+[
+  {
+    "code": "TPT",
+    "name": "The Point",
+    "line": "red"
+  },
+  {
+    "code": "SDK",
+    "name": "Spencer Dock",
+    "line": "red"
+  },
+  {
+    "code": "MYS",
+    "name": "Mayor Square - NCI",
+    "line": "red"
+  },
+  {
+    "code": "GDK",
+    "name": "George's Dock",
+    "line": "red"
+  },
+  {
+    "code": "CON",
+    "name": "Connolly",
+    "line": "red"
+  },
+  {
+    "code": "BUS",
+    "name": "Busáras",
+    "line": "red"
+  },
+  {
+    "code": "ABB",
+    "name": "Abbey Street",
+    "line": "red"
+  },
+  {
+    "code": "JER",
+    "name": "Jervis",
+    "line": "red"
+  },
+  {
+    "code": "FOU",
+    "name": "Four Courts",
+    "line": "red"
+  },
+  {
+    "code": "SMI",
+    "name": "Smithfield",
+    "line": "red"
+  },
+  {
+    "code": "MUS",
+    "name": "Museum",
+    "line": "red"
+  },
+  {
+    "code": "HEU",
+    "name": "Heuston",
+    "line": "red"
+  },
+  {
+    "code": "JAM",
+    "name": "James's",
+    "line": "red"
+  },
+  {
+    "code": "FAT",
+    "name": "Fatima",
+    "line": "red"
+  },
+  {
+    "code": "RIA",
+    "name": "Rialto",
+    "line": "red"
+  },
+  {
+    "code": "SUI",
+    "name": "Suir Road",
+    "line": "red"
+  },
+  {
+    "code": "GOL",
+    "name": "Goldenbridge",
+    "line": "red"
+  },
+  {
+    "code": "DRI",
+    "name": "Drimnagh",
+    "line": "red"
+  },
+  {
+    "code": "BLA",
+    "name": "Blackhorse",
+    "line": "red"
+  },
+  {
+    "code": "BLU",
+    "name": "Bluebell",
+    "line": "red"
+  },
+  {
+    "code": "KYL",
+    "name": "Kylemore",
+    "line": "red"
+  },
+  {
+    "code": "RED",
+    "name": "Red Cow",
+    "line": "red"
+  },
+  {
+    "code": "KIN",
+    "name": "Kingswood",
+    "line": "red"
+  },
+  {
+    "code": "BEL",
+    "name": "Belgard",
+    "line": "red"
+  },
+  {
+    "code": "COO",
+    "name": "Cookstown",
+    "line": "red"
+  },
+  {
+    "code": "HOS",
+    "name": "Hospital",
+    "line": "red"
+  },
+  {
+    "code": "TAL",
+    "name": "Tallaght",
+    "line": "red"
+  },
+  {
+    "code": "FET",
+    "name": "Fettercairn",
+    "line": "red"
+  },
+  {
+    "code": "CVN",
+    "name": "Cheeverstown",
+    "line": "red"
+  },
+  {
+    "code": "CIT",
+    "name": "Citywest Campus",
+    "line": "red"
+  },
+  {
+    "code": "FOR",
+    "name": "Fortunestown",
+    "line": "red"
+  },
+  {
+    "code": "SAG",
+    "name": "Saggart",
+    "line": "red"
+  },
+  {
+    "code": "BRO",
+    "name": "Broombridge",
+    "line": "green"
+  },
+  {
+    "code": "CAB",
+    "name": "Cabra",
+    "line": "green"
+  },
+  {
+    "code": "PHI",
+    "name": "Phibsborough",
+    "line": "green"
+  },
+  {
+    "code": "GRA",
+    "name": "Grangegorman",
+    "line": "green"
+  },
+  {
+    "code": "BRD",
+    "name": "Broadstone - University",
+    "line": "green"
+  },
+  {
+    "code": "DOM",
+    "name": "Dominick",
+    "line": "green"
+  },
+  {
+    "code": "PAR",
+    "name": "Parnell",
+    "line": "green"
+  },
+  {
+    "code": "OUP",
+    "name": "O'Connell - Upper",
+    "line": "green"
+  },
+  {
+    "code": "OGP",
+    "name": "O'Connell - GPO",
+    "line": "green"
+  },
+  {
+    "code": "MAR",
+    "name": "Marlborough",
+    "line": "green"
+  },
+  {
+    "code": "WES",
+    "name": "Westmoreland",
+    "line": "green"
+  },
+  {
+    "code": "TRY",
+    "name": "Trinity",
+    "line": "green"
+  },
+  {
+    "code": "DAW",
+    "name": "Dawson",
+    "line": "green"
+  },
+  {
+    "code": "STS",
+    "name": "St. Stephen's Green",
+    "line": "green"
+  },
+  {
+    "code": "HAR",
+    "name": "Harcourt",
+    "line": "green"
+  },
+  {
+    "code": "CHA",
+    "name": "Charlemont",
+    "line": "green"
+  },
+  {
+    "code": "RAN",
+    "name": "Ranelagh",
+    "line": "green"
+  },
+  {
+    "code": "BEE",
+    "name": "Beechwood",
+    "line": "green"
+  },
+  {
+    "code": "COW",
+    "name": "Cowper",
+    "line": "green"
+  },
+  {
+    "code": "MIL",
+    "name": "Milltown",
+    "line": "green"
+  },
+  {
+    "code": "WIN",
+    "name": "Windy Arbour",
+    "line": "green"
+  },
+  {
+    "code": "DUN",
+    "name": "Dundrum",
+    "line": "green"
+  },
+  {
+    "code": "BAL",
+    "name": "Balally",
+    "line": "green"
+  },
+  {
+    "code": "KIL",
+    "name": "Kilmacud",
+    "line": "green"
+  },
+  {
+    "code": "STI",
+    "name": "Stillorgan",
+    "line": "green"
+  },
+  {
+    "code": "SAN",
+    "name": "Sandyford",
+    "line": "green"
+  },
+  {
+    "code": "CPK",
+    "name": "Central Park",
+    "line": "green"
+  },
+  {
+    "code": "GLE",
+    "name": "Glencairn",
+    "line": "green"
+  },
+  {
+    "code": "GAL",
+    "name": "The Gallops",
+    "line": "green"
+  },
+  {
+    "code": "LEO",
+    "name": "Leopardstown Valley",
+    "line": "green"
+  },
+  {
+    "code": "BAW",
+    "name": "Ballyogan Wood",
+    "line": "green"
+  },
+  {
+    "code": "CCK",
+    "name": "Carrickmines",
+    "line": "green"
+  },
+  {
+    "code": "LAU",
+    "name": "Laughanstown",
+    "line": "green"
+  },
+  {
+    "code": "CHE",
+    "name": "Cherrywood",
+    "line": "green"
+  },
+  {
+    "code": "BRI",
+    "name": "Brides Glen",
+    "line": "green"
+  }
+]

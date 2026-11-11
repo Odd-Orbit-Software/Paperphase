@@ -1,0 +1,6 @@
+<?xml version="1.0"?>
+<a:feed xmlns:a="http://www.w3.org/2005/Atom" xmlns:x="http://www.w3.org/1999/xhtml" xml:base="https://example.org/blog/">
+<a:title>Sample Atom</a:title><a:id>sample</a:id><a:updated>2023-11-14T20:00:00Z</a:updated>
+<a:entry><a:title type="html">Tea &amp;amp; &lt;b&gt;cake&lt;/b&gt;</a:title><a:id>one</a:id><a:link rel="self" href="ignore"/><a:link href="one"/><a:updated>2023-11-14T20:00:00Z</a:updated><a:published>2023-11-14T19:00:00Z</a:published></a:entry>
+<a:entry><a:title type="xhtml"><x:div>A <x:strong>quiet</x:strong> afternoon</x:div></a:title><a:id>two</a:id><a:link href="javascript:alert(1)"/></a:entry>
+</a:feed>

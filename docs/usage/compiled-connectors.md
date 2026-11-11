@@ -92,7 +92,11 @@ pnpm --dir web test
 ```
 
 With custom output directories, set `PAPERPHASE_TEST_BINARY` and
-`PAPERPHASE_TEST_PLUGIN` to absolute artifact paths. The browser harness starts a
+`PAPERPHASE_TEST_PLUGIN`, `PAPERPHASE_TEST_WEATHER_PLUGIN`, and
+`PAPERPHASE_TEST_RSS_PLUGIN` to absolute artifact paths. The browser harness starts a
 private local source and registration, then stops them and removes their temporary
 files. `CAPTURE_SCREENSHOTS=1` updates the compiled-connector screenshot too.
 No real account credentials or Pi hardware are used by these checks.
+
+See [weather and RSS](weather-and-rss.md) for the first provider plugins, dynamic
+feed URL grants, multi-dataset results, and connection templates.

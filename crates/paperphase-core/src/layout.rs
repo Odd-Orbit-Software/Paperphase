@@ -79,6 +79,8 @@ pub struct Layout {
 #[serde(deny_unknown_fields)]
 pub struct Component {
     pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
     pub rect: Rect,
     #[serde(default = "default_padding")]
     pub padding: u16,
@@ -101,6 +103,10 @@ pub enum ContentLayout {
     Positioned,
 }
 
+fn default_font_size() -> u16 {
+    20
+}
+
 fn default_padding() -> u16 {
     12
 }
@@ -113,6 +119,7 @@ fn default_gap() -> u16 {
 pub struct TextBlock {
     pub id: String,
     pub source: TextSource,
+    #[serde(default = "default_font_size")]
     pub font_size: u16,
     #[serde(default)]
     pub align: Align,
@@ -144,9 +151,69 @@ pub enum Overflow {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum TextSource {
-    Literal { text: String },
+    Literal {
+        text: String,
+    },
+    Field {
+        binding: Binding,
+    },
+    Clock {
+        clock: ClockSpec,
+    },
+    Icon {
+        pack_id: String,
+        icon: IconReference,
+        size: u16,
+    },
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum IconReference {
+    Literal { icon_id: String },
     Field { binding: Binding },
-    Clock { clock: ClockSpec },
+}
+impl TextSource {
+    pub fn binding(&self) -> Option<&Binding> {
+        match self {
+            Self::Field { binding }
+            | Self::Icon {
+                icon: IconReference::Field { binding },
+                ..
+            } => Some(binding),
+            _ => None,
+        }
+    }
+}
+impl Binding {
+    fn validate(&self, path: &str) -> Result<()> {
+        for (name, id) in [
+            ("connection_id", &self.connection_id),
+            ("dataset_id", &self.dataset_id),
+            ("field_id", &self.field_id),
+        ] {
+            require(
+                valid_id(id),
+                format!("{path}.source.binding.{name}"),
+                "invalid identifier",
+            )?;
+        }
+        require(
+            self.row < 512,
+            format!("{path}.source.binding.row"),
+            "row index must be below 512",
+        )?;
+        require(
+            self.decimals.is_none_or(|n| n <= 6),
+            path,
+            "decimal precision must be at most six",
+        )?;
+        require(
+            self.prefix.len() <= 128 && self.suffix.len() <= 128,
+            path,
+            "format prefix/suffix byte limit exceeded",
+        )
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -185,7 +252,7 @@ impl Component {
     pub fn has_bindings(&self) -> bool {
         self.blocks
             .iter()
-            .any(|block| matches!(block.source, TextSource::Field { .. }))
+            .any(|block| block.source.binding().is_some())
     }
 }
 
@@ -215,6 +282,14 @@ impl Layout {
                 ids.insert(&component.id),
                 format!("{path}.id"),
                 "duplicate identifier",
+            )?;
+            require(
+                component
+                    .label
+                    .as_ref()
+                    .is_none_or(|label| !label.trim().is_empty() && label.len() <= 256),
+                format!("{path}.label"),
+                "component name must be 1–256 bytes",
             )?;
             let rect = component.rect;
             require(
@@ -317,33 +392,41 @@ impl Layout {
                         text_bytes += text.len();
                     }
                     TextSource::Field { binding } => {
-                        for (name, id) in [
-                            ("connection_id", &binding.connection_id),
-                            ("dataset_id", &binding.dataset_id),
-                            ("field_id", &binding.field_id),
-                        ] {
-                            require(
-                                valid_id(id),
-                                format!("{path}.source.binding.{name}"),
-                                "invalid identifier",
-                            )?;
-                        }
-                        require(
-                            binding.row < 512,
-                            format!("{path}.source.binding.row"),
-                            "row index must be below 512",
-                        )?;
-                        require(
-                            binding.decimals.is_none_or(|n| n <= 6),
-                            &path,
-                            "decimal precision must be at most six",
-                        )?;
-                        require(
-                            binding.prefix.len() <= 128 && binding.suffix.len() <= 128,
-                            &path,
-                            "format prefix/suffix byte limit exceeded",
-                        )?;
+                        binding.validate(&path)?;
                         text_bytes += binding.prefix.len() + binding.suffix.len();
+                    }
+                    TextSource::Icon {
+                        pack_id,
+                        icon,
+                        size,
+                    } => {
+                        require(
+                            valid_id(pack_id),
+                            format!("{path}.source.pack_id"),
+                            "invalid icon pack identifier",
+                        )?;
+                        require(
+                            (8..=256).contains(size),
+                            format!("{path}.source.size"),
+                            "icon size must be 8–256 pixels",
+                        )?;
+                        match icon {
+                            IconReference::Literal { icon_id } => require(
+                                valid_id(icon_id),
+                                format!("{path}.source.icon"),
+                                "invalid icon identifier",
+                            )?,
+                            IconReference::Field { binding } => {
+                                binding.validate(&path)?;
+                                require(
+                                    binding.decimals.is_none()
+                                        && binding.prefix.is_empty()
+                                        && binding.suffix.is_empty(),
+                                    format!("{path}.source.icon"),
+                                    "icon bindings cannot apply text formatting",
+                                )?;
+                            }
+                        }
                     }
                 }
             }

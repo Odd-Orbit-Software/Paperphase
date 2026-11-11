@@ -565,6 +565,13 @@ fn provider_cooldowns_survive_service_restart_and_empty_data_is_a_success() {
     server.stop();
     *source.reply.lock().unwrap() = (200, None, json!({"temperature_c":null}));
     server = Server::start_options(&path, None, Some(&bindings), Some(1700000330));
+    // The older unfetched connection gets the first available origin slot.
+    wait_connection(&server, "work", |connection| {
+        connection["fetch"]["status"] == "empty"
+    });
+    assert_eq!(source.hits.load(std::sync::atomic::Ordering::SeqCst), 3);
+    server.stop();
+    server = Server::start_options(&path, None, Some(&bindings), Some(1700000360));
     wait_connection(&server, "home", |connection| {
         connection["fetch"]["status"] == "empty"
     });
@@ -599,6 +606,7 @@ fn automatic_compiled_polling_keeps_fetching_during_quiet_hours() {
     catalog["connectors"][1]["default_poll_secs"] = json!(1);
     std::fs::write(&definitions, serde_json::to_vec(&catalog).unwrap()).unwrap();
     let server = Server::start_options(&path, Some(&definitions), Some(&bindings), None);
+    assert_eq!(server.state()["clock_fixed"], false);
     let state = server.state();
     let now = state["clock_now"].as_u64().unwrap();
     let clock = paperphase_core::ClockSpec {
@@ -837,6 +845,7 @@ fn clock_and_quiet_settings_preserve_older_workspaces_and_validate_before_persis
     )
     .unwrap();
     let mut server = Server::start(&path);
+    assert_eq!(server.state()["clock_fixed"], true);
     assert_eq!(
         server.state()["refresh_settings"],
         serde_json::to_value(paperphase_core::RefreshSettings::default()).unwrap()

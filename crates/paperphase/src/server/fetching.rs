@@ -37,17 +37,26 @@ pub(super) struct RegistrationFile {
 struct Registration {
     connector_id: String,
     wasm: PathBuf,
-    source_url: String,
+    #[serde(default)]
+    icon_manifest: Option<PathBuf>,
+    source_url: Option<String>,
+    #[serde(default)]
+    source_setting: Option<String>,
+    #[serde(default)]
+    origin_interval_secs: Option<u32>,
     stale_after_secs: u64,
 }
 
 pub(super) struct Binding {
     plugin: PreparedPlugin,
     config: RunConfig,
+    source_setting: Option<String>,
+    origin_interval_secs: u64,
     stale_after_secs: u64,
 }
 pub(super) struct Registry {
     runtime: PluginRuntime,
+    pub(super) icons: paperphase_render::IconStore,
     bindings: BTreeMap<String, Binding>,
     floors: BTreeMap<String, u64>,
 }
@@ -65,6 +74,7 @@ impl Registry {
         // Construct blocking HTTP and compile portable Wasm before entering Tokio.
         let runtime =
             PluginRuntime::new(limits.clone()).map_err(|error| anyhow::anyhow!("{error:#}"))?;
+        let mut icons = paperphase_render::IconStore::default();
         let mut bindings = BTreeMap::new();
         let mut floors = BTreeMap::new();
         for entry in file.bindings {
@@ -75,8 +85,39 @@ impl Registry {
                 entry.stale_after_secs > 0 && entry.stale_after_secs <= 604800,
                 "staleness interval must be 1–604800 seconds"
             );
-            let source = RunConfig::new(&entry.source_url)
-                .map_err(|_| anyhow::anyhow!("invalid source URL in connector registration"))?;
+            ensure!(
+                entry.source_url.is_some() != entry.source_setting.is_some(),
+                "registration requires exactly one fixed URL or URL setting"
+            );
+            if let Some(setting) = &entry.source_setting {
+                ensure!(
+                    definition.settings.iter().any(|field| &field.id == setting
+                        && field.required
+                        && matches!(field.input, paperphase_core::SettingInput::Url { .. })),
+                    "source setting must be a required URL field"
+                );
+            }
+            let origin_interval = entry
+                .origin_interval_secs
+                .unwrap_or(definition.min_poll_secs);
+            ensure!(
+                (1..=86400).contains(&origin_interval),
+                "origin interval must be 1–86400 seconds"
+            );
+            let source = RunConfig::new(
+                entry
+                    .source_url
+                    .as_deref()
+                    .unwrap_or("https://example.invalid/"),
+            )
+            .map_err(|_| anyhow::anyhow!("invalid source URL in connector registration"))?;
+            if let Some(manifest) = entry.icon_manifest {
+                let manifest = path.parent().unwrap_or(Path::new(".")).join(manifest);
+                icons.merge(paperphase_render::IconStore::load_pack(
+                    &manifest,
+                    &entry.connector_id,
+                )?)?;
+            }
             let module_path = if entry.wasm.is_absolute() {
                 entry.wasm
             } else {
@@ -89,12 +130,12 @@ impl Registry {
             let plugin = runtime
                 .prepare(&bytes)
                 .map_err(|error| anyhow::anyhow!("compiling registered module: {error:#}"))?;
-            floors
-                .entry(source.origin().to_owned())
-                .and_modify(|floor: &mut u64| {
-                    *floor = (*floor).max(u64::from(definition.min_poll_secs))
-                })
-                .or_insert(u64::from(definition.min_poll_secs));
+            if entry.source_setting.is_none() {
+                floors
+                    .entry(source.origin().to_owned())
+                    .and_modify(|floor: &mut u64| *floor = (*floor).max(u64::from(origin_interval)))
+                    .or_insert(u64::from(origin_interval));
+            }
             ensure!(
                 bindings
                     .insert(
@@ -102,6 +143,8 @@ impl Registry {
                         Binding {
                             plugin,
                             config: source,
+                            source_setting: entry.source_setting,
+                            origin_interval_secs: u64::from(origin_interval),
                             stale_after_secs: entry.stale_after_secs
                         }
                     )
@@ -110,6 +153,7 @@ impl Registry {
             );
         }
         Ok(Self {
+            icons,
             runtime,
             bindings,
             floors,
@@ -119,7 +163,50 @@ impl Registry {
         self.bindings.contains_key(id)
     }
     pub(super) fn prune_origins(&self, origins: &mut BTreeMap<String, u64>) {
-        origins.retain(|origin, _| self.floors.contains_key(origin));
+        if !self
+            .bindings
+            .values()
+            .any(|binding| binding.source_setting.is_some())
+        {
+            origins.retain(|origin, _| self.floors.contains_key(origin));
+        }
+    }
+}
+
+impl Binding {
+    fn run_config(&self, settings: &paperphase_core::SettingsValues) -> Result<RunConfig> {
+        let config = if let Some(setting) = &self.source_setting {
+            RunConfig::new(
+                settings
+                    .get(setting)
+                    .and_then(serde_json::Value::as_str)
+                    .context("source URL setting is missing")?,
+            )
+            .map_err(|_| anyhow::anyhow!("invalid source URL setting"))?
+        } else {
+            self.config.clone()
+        };
+        config
+            .with_settings(settings)
+            .map_err(|_| anyhow::anyhow!("invalid connector settings"))
+    }
+}
+impl Registry {
+    pub(super) fn validate_connection(&self, connection: &ConnectionConfig) -> Result<()> {
+        if let Some(binding) = self.bindings.get(&connection.connector_id) {
+            binding.run_config(&connection.settings)?;
+        }
+        Ok(())
+    }
+    fn floor(&self, origin: &str, connections: &[ConnectionConfig]) -> u64 {
+        connections
+            .iter()
+            .filter_map(|connection| {
+                let binding = self.bindings.get(&connection.connector_id)?;
+                let config = binding.run_config(&connection.settings).ok()?;
+                (config.origin() == origin).then_some(binding.origin_interval_secs)
+            })
+            .fold(self.floors.get(origin).copied().unwrap_or(1), u64::max)
     }
 }
 
@@ -128,6 +215,7 @@ impl Registry {
 pub(super) struct ConnectionData {
     pub(super) generation: u64,
     pub(super) snapshot: Option<Snapshot>,
+    pub(super) additional_snapshots: Vec<Snapshot>,
     pub(super) last_attempt_at: Option<u64>,
     pub(super) next_fetch_at: u64,
     pub(super) retry_not_before: u64,
@@ -150,7 +238,11 @@ impl ConnectionData {
             }
             .into(),
         );
-        if let Some(snapshot) = &mut self.snapshot {
+        for snapshot in self
+            .snapshot
+            .iter_mut()
+            .chain(&mut self.additional_snapshots)
+        {
             snapshot.last_error = self.last_error.clone();
         }
     }
@@ -166,8 +258,8 @@ pub(super) fn eligible_at(
         .executors
         .as_ref()
         .and_then(|registry| registry.bindings.get(&connection.connector_id))
-        .and_then(|binding| store.origin_deadlines.get(binding.config.origin()))
-        .copied()
+        .and_then(|binding| binding.run_config(&connection.settings).ok())
+        .and_then(|config| store.origin_deadlines.get(config.origin()).copied())
         .unwrap_or(0);
     data.retry_not_before.max(origin_until)
 }
@@ -223,12 +315,14 @@ pub(super) fn bump_epoch(epoch: &AtomicU64) {
 
 struct Claim {
     connection: ConnectionConfig,
+    run_config: RunConfig,
+    origin: String,
     generation: u64,
     failures: u8,
     _permit: OwnedSemaphorePermit,
 }
 enum Claimed {
-    Started(Claim),
+    Started(Box<Claim>),
     Wait(u64),
 }
 
@@ -284,6 +378,10 @@ async fn claim(app: &Shared, id: &str) -> ApiResult<Claimed> {
                 "This connector has no registered module.".into(),
             )
         })?;
+    let run_config = binding
+        .run_config(&connection.settings)
+        .map_err(invalid_source)?;
+    let origin = run_config.origin().to_owned();
     let now = (app.clock)();
     let data = store.data.get(id).cloned().unwrap_or_default();
     let after = eligible_at(app, &store, &connection, &data);
@@ -303,9 +401,10 @@ async fn claim(app: &Shared, id: &str) -> ApiResult<Claimed> {
     ));
     let generation = state.generation;
     let failures = state.failures;
+    updated.origin_deadlines.retain(|_, until| *until > now);
     updated.origin_deadlines.insert(
-        binding.config.origin().to_owned(),
-        now.saturating_add(registry.floors[binding.config.origin()]),
+        origin.clone(),
+        now.saturating_add(registry.floor(&origin, &store.connections)),
     );
     super::connections::validate_store(&updated, &app.connector_catalog).map_err(internal)?;
     let path = app.connections_file.clone();
@@ -315,28 +414,23 @@ async fn claim(app: &Shared, id: &str) -> ApiResult<Claimed> {
         .map_err(internal)?
         .map_err(internal)?;
     *store = updated;
-    Ok(Claimed::Started(Claim {
+    Ok(Claimed::Started(Box::new(Claim {
         connection,
+        run_config,
+        origin,
         generation,
         failures,
         _permit: permit,
-    }))
+    })))
 }
 
 async fn execute(app: Shared, claim: Claim) {
     let registry = Arc::clone(app.executors.as_ref().expect("claim requires registry"));
     let config = claim.connection.clone();
+    let run = claim.run_config.clone();
     let result = tokio::task::spawn_blocking(move || {
         let binding = &registry.bindings[&config.connector_id];
-        let run = binding.config.clone().with_settings(&config.settings);
-        match run {
-            Ok(run) => registry.runtime.run_observed(&binding.plugin, &run),
-            Err(error) => paperphase_runtime::RunAttempt {
-                result: Err(error),
-                retry_after_secs: None,
-                provider_backoff: false,
-            },
-        }
+        registry.runtime.run_observed(&binding.plugin, &run)
     })
     .await;
     let attempt = result.unwrap_or_else(|_| paperphase_runtime::RunAttempt {
@@ -357,8 +451,6 @@ async fn execute(app: Shared, claim: Claim) {
         // Editing/deleting a connection invalidates its data, not a provider's
         // response: Retry-After still applies to every user of that origin.
         if attempt.provider_backoff {
-            let binding =
-                &app.executors.as_ref().expect("registry").bindings[&claim.connection.connector_id];
             let until = (app.clock)().saturating_add(retry_delay(
                 u64::from(claim.connection.poll_interval_secs),
                 claim.failures.saturating_add(1),
@@ -366,7 +458,7 @@ async fn execute(app: Shared, claim: Claim) {
             ));
             store
                 .origin_deadlines
-                .entry(binding.config.origin().to_owned())
+                .entry(claim.origin.clone())
                 .and_modify(|deadline| *deadline = (*deadline).max(until))
                 .or_insert(until);
             store.dirty = true;
@@ -389,16 +481,38 @@ async fn execute(app: Shared, claim: Claim) {
             connection_id: claim.connection.id.clone(),
             dataset: result.dataset,
             last_success_at: now,
-            observed_at: None,
+            observed_at: result.observed_at,
             stale_after_secs: binding.stale_after_secs,
             last_error: None,
         });
+        data.additional_snapshots = result
+            .additional_datasets
+            .into_iter()
+            .map(|dataset| Snapshot {
+                connection_id: claim.connection.id.clone(),
+                observed_at: result.additional_observed_at.get(&dataset.id).copied(),
+                dataset,
+                last_success_at: now,
+                stale_after_secs: binding.stale_after_secs,
+                last_error: None,
+            })
+            .collect();
+        if let Some(seconds) = result.min_poll_secs {
+            data.retry_not_before = data
+                .retry_not_before
+                .max(now.saturating_add(u64::from(seconds)));
+            data.next_fetch_at = data.next_fetch_at.max(data.retry_not_before);
+        }
         data.failures = 0;
         data.last_error = None;
     } else {
         fail(data, &claim.connection, now, attempt.retry_after_secs);
     }
-    if super::connections::validate_store(&updated, &app.connector_catalog).is_err() {
+    if super::connections::validate_store(&updated, &app.connector_catalog).is_err()
+        || super::connections::merge_snapshots(&updated, &app.snapshots)
+            .validate()
+            .is_err()
+    {
         let data = updated
             .data
             .get_mut(&claim.connection.id)
@@ -407,7 +521,11 @@ async fn execute(app: Shared, claim: Claim) {
         data.in_flight = false;
         fail(data, &claim.connection, now, None);
         data.last_error = Some("Connector data exceeded the available cache budget.".into());
-        if let Some(snapshot) = &mut data.snapshot {
+        for snapshot in data
+            .snapshot
+            .iter_mut()
+            .chain(&mut data.additional_snapshots)
+        {
             snapshot.last_error = data.last_error.clone();
         }
     }
@@ -415,7 +533,7 @@ async fn execute(app: Shared, claim: Claim) {
         let until = updated.data[&claim.connection.id].retry_not_before;
         updated
             .origin_deadlines
-            .entry(binding.config.origin().to_owned())
+            .entry(claim.origin.clone())
             .and_modify(|deadline| *deadline = (*deadline).max(until))
             .or_insert(until);
     }
@@ -436,7 +554,11 @@ async fn execute(app: Shared, claim: Claim) {
             data.last_error = Some(
                 "Connector cache could not be saved. Fetching waits for storage recovery.".into(),
             );
-            if let Some(snapshot) = &mut data.snapshot {
+            for snapshot in data
+                .snapshot
+                .iter_mut()
+                .chain(&mut data.additional_snapshots)
+            {
                 snapshot.last_error = data.last_error.clone();
             }
         }
@@ -468,7 +590,11 @@ fn fail(
     data.retry_not_before = data.retry_not_before.max(now.saturating_add(delay));
     data.next_fetch_at = data.retry_not_before;
     data.last_error = Some("Connector fetch failed. Last good data is retained.".into());
-    if let Some(snapshot) = &mut data.snapshot {
+    for snapshot in data
+        .snapshot
+        .iter_mut()
+        .chain(&mut data.additional_snapshots)
+    {
         snapshot.last_error = data.last_error.clone();
     }
 }
@@ -483,7 +609,7 @@ async fn launch(app: Shared, id: String) -> ApiResult<Option<u64>> {
     match claim(&app, &id).await? {
         Claimed::Wait(seconds) => Ok(Some(seconds)),
         Claimed::Started(claim) => {
-            tokio::spawn(execute(app, claim));
+            tokio::spawn(execute(app, *claim));
             Ok(None)
         }
     }
@@ -540,7 +666,13 @@ pub(super) fn start(app: Shared) -> tokio::task::JoinHandle<()> {
                         let due = data
                             .next_fetch_at
                             .max(eligible_at(&app, &store, connection, data));
-                        (!data.in_flight && now >= due).then_some((due, connection.id.clone()))
+                        // Rank eligible work by its own schedule, before the
+                        // shared origin deadline. Otherwise equal deadlines can
+                        // let one fast-polling connection starve other stops.
+                        (!data.in_flight && now >= due).then_some((
+                            data.next_fetch_at.max(data.retry_not_before),
+                            connection.id.clone(),
+                        ))
                     })
                     .collect::<Vec<_>>()
             };
@@ -554,4 +686,11 @@ pub(super) fn start(app: Shared) -> tokio::task::JoinHandle<()> {
 
 pub(super) fn slots() -> Arc<Semaphore> {
     Arc::new(Semaphore::new(1))
+}
+
+fn invalid_source(_: anyhow::Error) -> ApiError {
+    ApiError(
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "Invalid connector source settings.".into(),
+    )
 }

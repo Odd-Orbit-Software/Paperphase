@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "bindings": [
+    {
+      "connector_id": "weather.open-meteo",
+      "icon_manifest": "weather/assets/icons.json",
+      "wasm": "../target/wasm32-unknown-unknown/release/paperphase_weather_plugin.wasm",
+      "source_url": "https://api.open-meteo.com/v1/forecast",
+      "origin_interval_secs": 30,
+      "stale_after_secs": 3600
+    },
+    {
+      "connector_id": "rss.headlines",
+      "wasm": "../target/wasm32-unknown-unknown/release/paperphase_rss_plugin.wasm",
+      "source_setting": "feed_url",
+      "origin_interval_secs": 2,
+      "stale_after_secs": 21600
+    },
+    {
+      "connector_id": "transport.luas",
+      "wasm": "../target/wasm32-unknown-unknown/release/paperphase_luas_plugin.wasm",
+      "source_url": "https://luasforecasts.rpa.ie/xml/get.ashx",
+      "origin_interval_secs": 60,
+      "stale_after_secs": 120
+    }
+  ]
+}

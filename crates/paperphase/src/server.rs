@@ -74,6 +74,7 @@ struct App {
     snapshots: SnapshotSet,
     state_file: PathBuf,
     clock: Arc<dyn Fn() -> u64 + Send + Sync>,
+    clock_fixed: bool,
     boot_id: String,
     tick_lock: AsyncMutex<()>,
     authorities: Vec<String>,
@@ -215,6 +216,9 @@ pub fn run(
         .transpose()?;
     if let Some(registry) = &executors {
         registry.prune_origins(&mut connection_store.origin_deadlines);
+        for connection in &connection_store.connections {
+            registry.validate_connection(connection)?;
+        }
     }
     let snapshots: SnapshotSet = if let Some(path) = data {
         read_json(&path)?
@@ -238,7 +242,12 @@ pub fn run(
     );
     let initial_data = connections::merge_snapshots(&connection_store, &snapshots);
     initial_data.validate()?;
-    let mut renderer = Renderer::new()?;
+    let mut renderer = Renderer::with_icons(
+        executors
+            .as_ref()
+            .map(|registry| registry.icons.clone())
+            .unwrap_or_default(),
+    )?;
     let initial_now = now(fixed_now);
     let frame = renderer.render(&saved.layout, &initial_data, initial_now)?;
     let mut png = Vec::new();
@@ -322,6 +331,7 @@ pub fn run(
             snapshots,
             state_file,
             clock: Arc::new(move || now(fixed_now)),
+            clock_fixed: fixed_now.is_some(),
             boot_id: format!(
                 "{}-{}",
                 std::process::id(),
@@ -363,6 +373,17 @@ pub fn run(
             )
             .route("/api/state", get(state))
             .route("/api/catalog", get(catalog))
+            .route(
+                "/api/icon-packs",
+                get(|State(app): State<Shared>| async move {
+                    Json(
+                        app.executors
+                            .as_ref()
+                            .map(|registry| registry.icons.catalog())
+                            .unwrap_or_default(),
+                    )
+                }),
+            )
             .route("/api/connectors", get(connections::catalog))
             .route("/api/connections", get(connections::list))
             .route("/api/connections/{id}/fetch", post(fetching::fetch))
@@ -464,7 +485,7 @@ async fn state(State(app): State<Shared>) -> Json<serde_json::Value> {
         "revision": ws.saved.revision, "layout": ws.saved.layout, "refresh_settings": ws.saved.refresh_settings,
         "displayed_revision": ws.displayed_revision,
         "phase": ws.phase(), "pending": ws.pending, "next_update_at": ws.next_due,
-        "frame_id": format!("{}-{}", app.boot_id, ws.frame_serial), "clock_now": (app.clock)(),
+        "frame_id": format!("{}-{}", app.boot_id, ws.frame_serial), "clock_now": (app.clock)(), "clock_fixed": app.clock_fixed,
         "last_error": ws.last_error,
         "refresh": {"profile": ws.controller.profile, "active": ws.controller.active,
             "last_completed": ws.controller.completed, "partial_count": ws.controller.partials,

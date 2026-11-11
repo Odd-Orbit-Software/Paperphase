@@ -23,6 +23,7 @@ struct Reply {
     status: u16,
     retry: Option<u64>,
     body: Value,
+    raw: Option<Vec<u8>>,
     delay: Duration,
 }
 struct Source {
@@ -41,6 +42,7 @@ impl Source {
             status: 200,
             retry: None,
             body: dataset(18.5),
+            raw: None,
             delay: Duration::ZERO,
         }));
         let hits = Arc::new(AtomicUsize::new(0));
@@ -61,7 +63,9 @@ impl Source {
                         if !reply.delay.is_zero() {
                             thread::sleep(reply.delay);
                         }
-                        let body = serde_json::to_vec(&reply.body).unwrap();
+                        let body = reply
+                            .raw
+                            .unwrap_or_else(|| serde_json::to_vec(&reply.body).unwrap());
                         let retry = reply.retry.map_or(String::new(), |seconds| {
                             format!("Retry-After: {seconds}\r\n")
                         });
@@ -128,12 +132,15 @@ fn setup(source: &Source, quiet: bool) -> (Shared, Arc<AtomicU64>, tempfile::Tem
     let origin = config.origin().to_owned();
     let plugin = runtime.prepare(&wasm).unwrap();
     let registry = Registry {
+        icons: paperphase_render::IconStore::default(),
         runtime,
         bindings: BTreeMap::from([(
             "example.temperature".into(),
             Binding {
                 plugin,
                 config,
+                source_setting: None,
+                origin_interval_secs: 5,
                 stale_after_secs: 60,
             },
         )]),
@@ -443,4 +450,267 @@ fn an_oversized_serialized_state_cannot_replace_a_reloadable_file() {
     let oversized = json!({"value":"x".repeat(crate::simulator::MAX_JSON_BYTES)});
     assert!(crate::server::persist(&file, &oversized).is_err());
     assert_eq!(std::fs::read(&file).unwrap(), b"{\"previous\":true}\n");
+}
+
+fn provider_app(
+    source: &Source,
+    id: &str,
+    variable: &str,
+) -> (Shared, Arc<AtomicU64>, tempfile::TempDir) {
+    let (mut app, clock, dir) = support::app(
+        support::scene(),
+        RefreshSettings::default(),
+        support::empty(),
+        START + 20,
+    );
+    let wasm = std::env::var(variable).expect("scripts/check.sh builds provider guests");
+    let registration = if id == "rss.headlines" {
+        json!({"connector_id":id,"wasm":wasm,"source_setting":"feed_url","origin_interval_secs":2,"stale_after_secs":21600})
+    } else {
+        json!({"connector_id":id,"wasm":wasm,"source_url":source.url,"origin_interval_secs":2,"stale_after_secs":3600})
+    };
+    let path = dir.path().join("bindings.json");
+    std::fs::write(
+        &path,
+        serde_json::to_vec(&json!({"schema_version":1,"bindings":[registration]})).unwrap(),
+    )
+    .unwrap();
+    let registry = Registry::load(&path, &app.connector_catalog).unwrap();
+    Arc::get_mut(&mut app).unwrap().executors = Some(Arc::new(registry));
+    (app, clock, dir)
+}
+async fn configure_provider(app: &Shared, id: &str, connector: &str, settings: Value) {
+    let revision = app.connections.lock().await.revision;
+    let request = serde_json::from_value(json!({"base_revision":revision,"connector_id":connector,"label":"Provider test","enabled":true,"poll_interval_secs":1800,"settings":settings})).unwrap();
+    let _ = connections::save(State(Arc::clone(app)), RoutePath(id.into()), Json(request))
+        .await
+        .unwrap();
+}
+
+#[test]
+fn compiled_weather_results_cache_all_forecasts_and_failures_mark_every_dataset_stale() {
+    let source = Source::new();
+    source.reply.lock().unwrap().body = serde_json::from_slice(include_bytes!(
+        "../../../../../plugins/weather/fixtures/forecast.json"
+    ))
+    .unwrap();
+    let (app, clock, _dir) = provider_app(
+        &source,
+        "weather.open-meteo",
+        "PAPERPHASE_TEST_WEATHER_PLUGIN",
+    );
+    run(async {
+        configure_provider(&app, "weather.home", "weather.open-meteo", json!({})).await;
+        launch(Arc::clone(&app), "weather.home".into())
+            .await
+            .unwrap();
+        complete(&app).await;
+        {
+            let store = app.connections.lock().await;
+            let data = &store.data["weather.home"];
+            assert!(data.last_error.is_none(), "{:?}", data.last_error);
+            assert_eq!(
+                data.snapshot.as_ref().unwrap().observed_at,
+                Some(1700000000)
+            );
+            assert_eq!(data.additional_snapshots.len(), 2);
+            let persisted: connections::ConnectionStore =
+                super::super::read_json(&app.connections_file).unwrap();
+            assert_eq!(persisted.data["weather.home"].additional_snapshots.len(), 2);
+            assert_eq!(
+                connections::merge_snapshots(&store, &app.snapshots)
+                    .snapshots
+                    .len(),
+                3
+            );
+        }
+        clock.store(1700001800, Ordering::SeqCst);
+        source.reply.lock().unwrap().body = json!({"error":true});
+        launch(Arc::clone(&app), "weather.home".into())
+            .await
+            .unwrap();
+        complete(&app).await;
+        let store = app.connections.lock().await;
+        let data = &store.data["weather.home"];
+        assert_eq!(
+            data.snapshot.as_ref().unwrap().dataset.rows[0]["temperature"],
+            12.5
+        );
+        assert!(data.snapshot.as_ref().unwrap().last_error.is_some());
+        assert!(
+            data.additional_snapshots
+                .iter()
+                .all(|snapshot| snapshot.last_error.is_some())
+        );
+    });
+}
+
+#[test]
+fn compiled_rss_grants_each_saved_origin_and_keeps_ttl_across_manual_fetch_and_restart() {
+    let first = Source::new();
+    let second = Source::new();
+    first.reply.lock().unwrap().raw =
+        Some(include_bytes!("../../../../../plugins/rss/fixtures/headlines.xml").to_vec());
+    second.reply.lock().unwrap().raw =
+        Some(include_bytes!("../../../../../plugins/rss/fixtures/atom.xml").to_vec());
+    let (app, clock, _dir) = provider_app(&first, "rss.headlines", "PAPERPHASE_TEST_RSS_PLUGIN");
+    run(async {
+        configure_provider(
+            &app,
+            "rss.first",
+            "rss.headlines",
+            json!({"feed_url":first.url}),
+        )
+        .await;
+        launch(Arc::clone(&app), "rss.first".into()).await.unwrap();
+        complete(&app).await;
+        {
+            let store = app.connections.lock().await;
+            assert!(
+                store.data["rss.first"].last_error.is_none(),
+                "{:?}",
+                store.data["rss.first"].last_error
+            );
+            assert_eq!(
+                store.data["rss.first"]
+                    .snapshot
+                    .as_ref()
+                    .unwrap()
+                    .dataset
+                    .rows
+                    .len(),
+                3
+            );
+        }
+        assert_eq!(
+            launch(Arc::clone(&app), "rss.first".into()).await.unwrap(),
+            Some(3600)
+        );
+        let persisted: connections::ConnectionStore =
+            super::super::read_json(&app.connections_file).unwrap();
+        assert_eq!(persisted.data["rss.first"].retry_not_before, 1700003600);
+        configure_provider(
+            &app,
+            "rss.second",
+            "rss.headlines",
+            json!({"feed_url":second.url}),
+        )
+        .await;
+        launch(Arc::clone(&app), "rss.second".into()).await.unwrap();
+        complete(&app).await;
+        assert_eq!(
+            app.connections.lock().await.data["rss.second"]
+                .snapshot
+                .as_ref()
+                .unwrap()
+                .dataset
+                .rows[0]["title"],
+            "Tea & cake"
+        );
+        clock.store(1700003600, Ordering::SeqCst);
+        first.reply.lock().unwrap().raw = Some(b"<rss version=\"2.0\"><channel/></rss>".to_vec());
+        launch(Arc::clone(&app), "rss.first".into()).await.unwrap();
+        complete(&app).await;
+        let store = app.connections.lock().await;
+        assert!(
+            store.data["rss.first"]
+                .snapshot
+                .as_ref()
+                .unwrap()
+                .dataset
+                .rows
+                .is_empty()
+        );
+        assert!(store.data["rss.first"].last_error.is_none());
+        assert_eq!(first.hits.load(Ordering::SeqCst), 2);
+        assert_eq!(second.hits.load(Ordering::SeqCst), 1);
+    });
+}
+
+#[test]
+fn compiled_luas_caches_empty_forecasts_and_keeps_provider_observation_age() {
+    let source = Source::new();
+    source.reply.lock().unwrap().raw =
+        Some(include_bytes!("../../../../../plugins/luas/fixtures/forecast.xml").to_vec());
+    let (app, clock, _dir) = provider_app(&source, "transport.luas", "PAPERPHASE_TEST_LUAS_PLUGIN");
+    run(async {
+        configure_provider(&app, "luas.home", "transport.luas", json!({"stop":"RAN"})).await;
+        launch(Arc::clone(&app), "luas.home".into()).await.unwrap();
+        complete(&app).await;
+        {
+            let store = app.connections.lock().await;
+            let d = &store.data["luas.home"];
+            assert!(d.last_error.is_none(), "{:?}", d.last_error);
+            assert_eq!(
+                d.snapshot.as_ref().unwrap().dataset.rows[0]["arrival-count"],
+                6
+            );
+            assert_eq!(d.additional_snapshots[0].observed_at, Some(1700000000));
+            let persisted: connections::ConnectionStore =
+                super::super::read_json(&app.connections_file).unwrap();
+            assert_eq!(
+                persisted.data["luas.home"].additional_snapshots[0].observed_at,
+                Some(1700000000)
+            );
+        }
+        clock.store(1700000060, Ordering::SeqCst);
+        // A newly fetched old payload must remain stale in both datasets.
+        source.reply.lock().unwrap().raw = Some(
+            include_str!("../../../../../plugins/luas/fixtures/empty.xml")
+                .replace("22:13:20", "20:13:20")
+                .into_bytes(),
+        );
+        launch(Arc::clone(&app), "luas.home".into()).await.unwrap();
+        complete(&app).await;
+        {
+            let store = app.connections.lock().await;
+            let d = &store.data["luas.home"];
+            assert!(d.last_error.is_none(), "{:?}", d.last_error);
+            assert_eq!(
+                d.snapshot.as_ref().unwrap().dataset.rows[0]["arrival-count"],
+                0
+            );
+            assert!(d.additional_snapshots[0].dataset.rows.is_empty());
+            assert!(d.snapshot.as_ref().unwrap().is_stale(1700000060));
+            assert!(d.additional_snapshots[0].is_stale(1700000060));
+        }
+        clock.store(1700000120, Ordering::SeqCst);
+        source.reply.lock().unwrap().raw = Some(b"<error/>".to_vec());
+        launch(Arc::clone(&app), "luas.home".into()).await.unwrap();
+        complete(&app).await;
+        let store = app.connections.lock().await;
+        let d = &store.data["luas.home"];
+        assert!(d.snapshot.as_ref().unwrap().last_error.is_some());
+        assert!(d.additional_snapshots[0].last_error.is_some());
+        assert_eq!(
+            d.snapshot.as_ref().unwrap().dataset.rows[0]["service-message"],
+            "No services operating"
+        );
+    });
+}
+
+#[test]
+fn automatic_connections_share_a_busy_origin_without_starving_later_ids() {
+    let source = Source::new();
+    let (app, clock, _dir) = setup(&source, false);
+    run(async {
+        configure(&app, "a").await;
+        configure(&app, "b").await;
+        let worker = start(Arc::clone(&app));
+        hit(&source, 1).await;
+        complete(&app).await;
+        assert!(app.connections.lock().await.data["a"].snapshot.is_some());
+        clock.store(START + 5, Ordering::SeqCst);
+        hit(&source, 2).await;
+        complete(&app).await;
+        assert!(app.connections.lock().await.data["b"].snapshot.is_some());
+        clock.store(START + 10, Ordering::SeqCst);
+        hit(&source, 3).await;
+        complete(&app).await;
+        assert_eq!(
+            app.connections.lock().await.data["a"].last_attempt_at,
+            Some(START + 10)
+        );
+        worker.abort();
+    });
 }

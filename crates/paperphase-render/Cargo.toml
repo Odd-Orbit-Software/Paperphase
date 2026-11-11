@@ -13,9 +13,10 @@ fontdue.workspace = true
 paperphase-core = { path = "../paperphase-core" }
 png.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 
 [dev-dependencies]
-serde_json.workspace = true
+tempfile.workspace = true
 
 [lints]
 workspace = true
