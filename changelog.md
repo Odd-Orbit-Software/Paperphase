@@ -5,6 +5,32 @@
 Current development version: `0.1.0`. The earliest stable stage has not been
 reached; minor-version increments per commit begin after that milestone.
 
+### Simulated refresh controller
+
+- Added component refresh requests and a saved, validated refresh policy.
+  Host-owned synthetic capabilities, alignment, and hard maintenance limits
+  decide partial/full mode independently of component requests.
+- Compare completed and desired packed pixels, align dirty bounds outward,
+  include moved/removed content, skip unchanged frames, and promote updates for
+  baseline recovery, count, age, area, or explicit full requests.
+- Batch queued frames, serialize active operations, enforce monotonic minimum
+  intervals/backoff, and preserve the exact completed revision when newer work
+  arrives. Quiet hours prevent new starts while active operations finish.
+- Retain completed pixels after failure, retry with a full refresh, and wake
+  waiting work when saved intervals change. Added UI mode/reason reporting,
+  policy controls, design/operator documentation, and browser coverage.
+- Updated delivery order to build initial real-source plugins in the simulator
+  before physical hardware. Weather/RSS are the default next candidates.
+
+Validation: the complete Rust check script passed on x86-64 Linux with 89 tests,
+formatting, host/guest Clippy, and the compiled guest build. TypeScript and
+frontend builds passed; all 11 Chromium flows passed, including policy promotion,
+persistence, unchanged manual refresh, and error/recovery status presentation.
+Updated Mermaid diagrams rendered successfully and the UI screenshot was reviewed.
+Synthetic profile values do not establish physical panel capabilities or safe
+maintenance settings. Pi, Google account, and physical display validation remain
+pending. Version stays `0.1.0`.
+
 ### Internal element editor
 
 - Added optional positioned text/data/clock boxes, with vertical flow retained

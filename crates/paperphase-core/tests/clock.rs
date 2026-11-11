@@ -101,6 +101,7 @@ fn quiet_hours_are_half_open_and_follow_repeated_local_hours() {
             start: "22:00".into(),
             end: "07:00".into(),
         }),
+        ..RefreshSettings::default()
     };
     for (time, expected) in [
         ("2026-11-10T21:59:59Z", false),

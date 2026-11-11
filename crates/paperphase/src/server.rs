@@ -23,7 +23,7 @@ use axum::{
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
 use paperphase_core::{ConnectorCatalog, Layout, RefreshSettings, SnapshotSet};
-use paperphase_render::{ComponentReport, Renderer};
+use paperphase_render::{ComponentReport, Frame, Renderer};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::sync::{Mutex as AsyncMutex, Semaphore};
@@ -48,7 +48,12 @@ struct Workspace {
     displayed_revision: u64,
     png: Vec<u8>,
     frame_serial: u64,
-    render_token: u64,
+    completed_frame: Frame,
+    completed_layout: Layout,
+    controller: crate::display::Controller,
+    desired: Option<scheduling::PreparedFrame>,
+    worker_running: bool,
+    refresh_wake: Arc<tokio::sync::Notify>,
     refreshing: bool,
     quiet: bool,
     pending: bool,
@@ -306,7 +311,13 @@ pub fn run(
             connector_catalog,
             connections: AsyncMutex::new(connection_store),
             connections_file,
-            workspace: AsyncMutex::new(Workspace::new(saved, png, &initial_data, initial_now)?),
+            workspace: AsyncMutex::new(Workspace::new(
+                saved,
+                png,
+                frame.frame,
+                &initial_data,
+                initial_now,
+            )?),
             renderer: Mutex::new(renderer),
             snapshots,
             state_file,
@@ -455,6 +466,10 @@ async fn state(State(app): State<Shared>) -> Json<serde_json::Value> {
         "phase": ws.phase(), "pending": ws.pending, "next_update_at": ws.next_due,
         "frame_id": format!("{}-{}", app.boot_id, ws.frame_serial), "clock_now": (app.clock)(),
         "last_error": ws.last_error,
+        "refresh": {"profile": ws.controller.profile, "active": ws.controller.active,
+            "last_completed": ws.controller.completed, "partial_count": ws.controller.partials,
+            "baseline_known": ws.controller.baseline_known, "failures": ws.controller.failures,
+            "wait_ms": ws.controller.ready_at(&ws.saved.refresh_settings.policy, tokio::time::Instant::now()).saturating_duration_since(tokio::time::Instant::now()).as_millis()},
         "data_revision": app.data_epoch.load(Ordering::SeqCst),
         "mode": "simulated", "addresses": app.addresses, "fixture_data": !app.snapshots.snapshots.is_empty(), "connector_execution": app.executors.is_some(),
     }))
@@ -489,6 +504,8 @@ struct Preview {
     #[serde(skip)]
     data_epoch: u64,
     #[serde(skip)]
+    frame: Frame,
+    #[serde(skip)]
     next_due: Option<u64>,
 }
 
@@ -519,6 +536,7 @@ async fn render(app: Shared, layout: Layout, at: u64) -> ApiResult<Preview> {
         Ok(Preview {
             png_base64: STANDARD.encode(png),
             components: rendered.components,
+            frame: rendered.frame,
             data_epoch,
             next_due,
         })

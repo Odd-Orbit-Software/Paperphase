@@ -1,6 +1,7 @@
 # Delivery plan
 
-Status: delivery order agreed. The criteria below make each stage reviewable;
+Status: delivery order agreed, with initial plugin work before physical hardware.
+The criteria below make each stage reviewable;
 they do not by themselves report completed work. Stage 1 is in progress: the
 [plugin harness](../design/plugin-foundation.md) is implemented, with current
 [validation results](../usage/foundation-harness.md#foundation-progress).
@@ -27,7 +28,7 @@ budget from measurements before declaring the runtime suitable; no memory or
 latency target is claimed as already achievable.
 
 Do not require the panel to be available for simulator/editor work. Its exact
-identity is required before physical driver validation in stage 3. Desktop-only
+identity is required before physical driver validation in stage 4. Desktop-only
 measurements do not substitute for the plugin evaluation on a Zero 2 W.
 
 ## 2. Build the editor against a simulated display
@@ -43,8 +44,10 @@ are implemented. [Compiled connection execution, shared polling/backoff, cached
 datasets, and Fetch now](../design/compiled-connectors.md) are exercised with the
 Rust temperature example and local sources. [Direct internal text/data/clock
 positioning](../design/internal-editor.md) now supports element geometry and
-flow conversion. Real provider policy/account checks,
-fuller builder nodes, and panel-aware refresh policy
+flow conversion. The [simulated refresh controller](../design/refresh-controller.md)
+now exercises region alignment, partial/full decisions, maintenance, serialized
+operations, and retries. Real provider policy/account checks,
+fuller builder nodes, and validated panel profiles
 remain pending; stage 2 is not complete.
 
 Deliver a usable desktop workflow backed by the real rendering and scheduling
@@ -70,7 +73,30 @@ host-rendered preview/frame pixels. Check geometry validation, draft isolation,
 and pending/completed state handling with meaningful integration tests. Review
 desktop interactions and include screenshots in implementation documentation.
 
-## 3. Connect the physical display
+## 3. Build initial plugins against the simulator
+
+Build useful plugins before requiring the Pi or panel. Weather and RSS are the
+default next candidates; the user's preferred plugin order can refine this.
+Luas follows once provider polling/attribution requirements are checked. Google
+Calendar setup feasibility remains a parallel foundation task when credentials
+are available.
+
+- Use the shared host HTTP client, scheduler, settings, and dataset publication.
+- Verify provider access, polling allowances, attribution, and error responses
+  before treating an integration as supported.
+- Supply useful initial component layouts and adjustable presentation settings.
+- Exercise normal, stale, missing, empty, and failed-source states through the
+  editor and simulated refresh controller.
+- Establish any missing host API needed by these plugins before finalising the
+  community package contract or writing the AI authoring skill.
+
+Completion: at least two useful real-source plugins can be configured and shown
+together in the desktop simulator, with repeatable fixture tests and operator
+instructions. Hardware measurements and physical display behaviour remain
+separate checks and are not implied by this milestone. Finish the remaining
+integrations and distribution work in stage 5.
+
+## 4. Connect the physical display
 
 Implement and validate the driver/profile for the identified panel using the
 same compositor and refresh-controller interfaces as the simulator.
@@ -89,7 +115,7 @@ photographs where useful to compare the physical panel with the saved frame.
 Other Waveshare panels remain separate driver-validation work; one working
 panel does not establish compatibility with the whole family.
 
-## 4. Complete integrations and plugin distribution
+## 5. Complete integrations and plugin distribution
 
 Finish weather, combined multi-account Google Calendar, Luas arrivals, RSS
 headlines, and quote-of-the-day plugins. Early feasibility code is not a finished

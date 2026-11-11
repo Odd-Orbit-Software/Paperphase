@@ -402,3 +402,75 @@ test('internal editing rejects hidden flow blocks and protects the data status s
   await expect(page.locator('.element-box')).toHaveCount(0);
   await page.getByRole('button', { name: 'Discard', exact: true }).click();
 });
+
+test('refresh requests and maintenance settings persist while host policy controls the mode', async ({ page, request }) => {
+  const waitIdle = async () => {
+    await expect(page.getByRole('button', { name: 'Edit layout' })).toBeVisible();
+    await expect.poll(async () => (await (await request.get('/api/state')).json()).phase).toBe('idle');
+    return (await request.get('/api/state')).json();
+  };
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Edit layout' }).click();
+  await page.getByRole('button', { name: 'Select header', exact: true }).click();
+  await page.getByLabel('Refresh request', { exact: true }).selectOption('full');
+  await page.getByLabel('Text', { exact: true }).first().fill('Controller ready');
+  await page.getByRole('button', { name: 'Save to display' }).click();
+  let state = await waitIdle();
+  expect(state.refresh.last_completed.mode).toBe('full');
+  expect(state.refresh.last_completed.reason).toBe('component_request');
+  expect(state.refresh.partial_count).toBe(0);
+  await page.getByRole('button', { name: 'Edit layout' }).click();
+  await page.getByRole('button', { name: 'Display settings', exact: true }).click();
+  await page.getByLabel('Full refresh after partial updates', { exact: true }).fill('1');
+  await page.getByLabel('Full refresh after partial updates', { exact: true }).press('Tab');
+  await page.getByLabel('Minimum refresh interval (ms)', { exact: true }).fill('1000');
+  await page.getByLabel('Minimum refresh interval (ms)', { exact: true }).press('Tab');
+  await page.getByRole('button', { name: 'Select header', exact: true }).click();
+  await page.getByLabel('Refresh request', { exact: true }).selectOption('partial');
+  await page.getByLabel('Text', { exact: true }).first().fill('One small update');
+  await page.getByRole('button', { name: 'Save to display' }).click();
+  state = await waitIdle();
+  expect(state.refresh.last_completed.mode).toBe('partial');
+  expect(state.refresh.partial_count).toBe(1);
+  await page.getByRole('button', { name: 'Edit layout' }).click();
+  await page.getByRole('button', { name: 'Select header', exact: true }).click();
+  await page.getByLabel('Text', { exact: true }).first().fill('Two small updates');
+  await page.getByRole('button', { name: 'Save to display' }).click();
+  state = await waitIdle();
+  expect(state.refresh.last_completed.mode).toBe('full');
+  expect(state.refresh.last_completed.reason).toBe('partial_limit');
+  await expect(page.locator('#refresh-mode')).toContainText('Full refresh completed');
+  await expect(page.locator('#refresh-detail')).toContainText('Partial update limit');
+  const frame = state.frame_id;
+  await page.getByRole('button', { name: 'Refresh display' }).click();
+  expect((await (await request.get('/api/state')).json()).frame_id).toBe(frame);
+  await page.reload();
+  await page.getByRole('button', { name: 'Edit layout' }).click();
+  await page.getByRole('button', { name: 'Display settings', exact: true }).click();
+  await expect(page.getByLabel('Full refresh after partial updates', { exact: true })).toHaveValue('1');
+  await expect(page.getByLabel('Minimum refresh interval (ms)', { exact: true })).toHaveValue('1000');
+  if (process.env.CAPTURE_SCREENSHOTS === '1') await page.screenshot({ path: '../docs/design/images/refresh-policy.png' });
+  await page.getByRole('button', { name: 'Discard', exact: true }).click();
+});
+
+test('refresh status distinguishes failure backoff from an active recovery operation', async ({ page, request }) => {
+  // Feed the UI realistic error/recovery metadata; driver fault handling is
+  // independently exercised by the Rust scheduler tests.
+  const state = await (await request.get('/api/state')).json();
+  state.phase = 'error'; state.pending = true;
+  state.last_error = 'Display update failed; last completed frame retained.';
+  state.refresh.baseline_known = false; state.refresh.failures = 1;
+  state.refresh.wait_ms = 1000; state.refresh.active = null;
+  await page.route('**/api/state', route => route.fulfill({ json: state }));
+  await page.goto('/');
+  await expect(page.locator('#refresh-mode')).toHaveText('Display update failed');
+  await expect(page.locator('#refresh-detail')).toContainText('Retry in 1 s');
+  await expect(page.locator('#frame')).toHaveJSProperty('naturalWidth', 800);
+  state.phase = 'refreshing'; state.refresh.wait_ms = 0;
+  state.refresh.active = { mode: 'full', reason: 'unknown_baseline', region: { x: 0, y: 0, width: 800, height: 480 }, revision: state.revision };
+  await expect(page.locator('#refresh-mode')).toHaveText('Full refresh in progress');
+  await expect(page.locator('#refresh-detail')).toContainText('Recovering display state');
+  await expect(page.locator('#device-status')).toHaveText('Simulator refreshing');
+  state.revision += 1;
+  await expect(page.locator('#refresh-detail')).toContainText('Newer saved layout queued');
+});

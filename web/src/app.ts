@@ -1,7 +1,10 @@
 import type { Rect, Binding, ClockSpec, Block, Component, Layout, BlockPlacement } from './model';
 import { contentBounds, validElement, validElements, positioned, freeElementRect } from './elements';
-type RefreshSettings = { quiet_hours: { timezone: string; start: string; end: string } | null };
-type Workspace = { revision: number; displayed_revision: number; data_revision: number; frame_id: string; clock_now: number; pending: boolean; phase: string; layout: Layout; refresh_settings: RefreshSettings; addresses: string[]; connector_execution: boolean; fixture_data: boolean };
+type Policy = { min_interval_ms: number; full_after_partials: number; full_after_secs: number; max_partial_area_percent: number };
+type Operation = { mode: 'partial' | 'full'; reason: string; region: Rect; revision: number };
+type RefreshStatus = { profile: { id: string; max_partials: number; max_full_age_secs: number; max_partial_area_percent: number; min_interval_ms: number }; active: Operation | null; last_completed: Operation | null; partial_count: number; baseline_known: boolean; failures: number; wait_ms: number };
+type RefreshSettings = { policy: Policy; quiet_hours: { timezone: string; start: string; end: string } | null };
+type Workspace = { refresh: RefreshStatus; last_error: string | null; revision: number; displayed_revision: number; data_revision: number; frame_id: string; clock_now: number; pending: boolean; phase: string; layout: Layout; refresh_settings: RefreshSettings; addresses: string[]; connector_execution: boolean; fixture_data: boolean };
 type EditState = { layout: Layout; settings: RefreshSettings };
 type Dataset = { connection_id: string; connection_label?: string; dataset_id: string; fields: { id: string; kind: string; unit?: string }[]; rows: number; stale: boolean };
 type Report = { id: string; state: string; warnings: string[]; blocks: BlockPlacement[] };
@@ -408,6 +411,9 @@ function renderInspector() {
     numeric('Block gap', c.gap, 0, 64, spacing, n => updateComponent(c => { c.gap = n; }));
     const borderLabel = node('label', 'check'); const border = node('input'); border.type = 'checkbox'; border.checked = c.border;
     border.onchange = () => updateComponent(c => { c.border = border.checked; }); borderLabel.append(border, document.createTextNode('Draw component border')); placement.append(borderLabel);
+    const refresh = section('DISPLAY UPDATES', inspector);
+    select('Refresh request', c.refresh_hint ?? 'automatic', [['automatic', 'Automatic'], ['partial', 'Prefer partial'], ['full', 'Request full']], refresh, value => updateComponent(c => { c.refresh_hint = value as Component['refresh_hint']; }));
+    refresh.append(node('p', 'render-report', 'The host may require a full refresh to respect display limits.'));
     const layout = section('INTERNAL LAYOUT', inspector);
     select('Content layout', c.content_layout ?? 'flow', [['flow', 'Vertical flow'], ['positioned', 'Positioned elements']], layout, value => { if (value === 'flow') useFlow(); else void enterContents(); });
     action('Edit contents ↗', 'Edit contents', layout, () => { void enterContents(); }, converting).className = 'wide-button';
@@ -487,6 +493,14 @@ function renderSettings(parent: HTMLElement) {
   input.onchange = () => change(() => { draftSettings.quiet_hours = input.checked ? { timezone: 'Europe/Dublin', start: '22:00', end: '07:00' } : null; });
   toggle.append(input, document.createTextNode('Enable quiet hours')); panel.append(toggle);
   panel.append(node('p', 'render-report', 'During quiet hours the displayed frame stays still. The clock continues; the latest saved layout is rendered when quiet hours end.'));
+  const policy = section('REFRESH POLICY', parent);
+  policy.append(node('p', 'render-report', 'Software simulator only. These example limits are not validated for a physical panel. Profile limits always apply.'));
+  const settings = draftSettings.policy;
+  const profile = saved.refresh.profile;
+  policy.append(node('p', 'render-report', `Simulator limits: at least ${profile.min_interval_ms} ms between completed updates and the next start, at most ${profile.max_partials} partial updates, ${profile.max_full_age_secs} seconds between full updates when content changes, and ${profile.max_partial_area_percent}% partial area.`));
+  for (const [key, title, min, max] of [['min_interval_ms', 'Minimum refresh interval (ms)', 0, 3600000], ['full_after_partials', 'Full refresh after partial updates', 1, 1000], ['full_after_secs', 'Maintenance interval (seconds)', 1, 604800], ['max_partial_area_percent', 'Largest partial area (%)', 1, 100]] as const) {
+    numeric(title, settings[key], min, max, policy, value => change(() => { draftSettings.policy[key] = value; }));
+  }
   const quiet = draftSettings.quiet_hours;
   if (quiet) {
     select('Quiet hours timezone', quiet.timezone, zones.map(zone => [zone, zone]), panel, value => change(() => { draftSettings.quiet_hours!.timezone = value; }));
@@ -690,7 +704,16 @@ document.addEventListener('keydown', event => {
     }, `move.${c.id}.${editingContents() ? selectedElement : ''}`);
   }
 });
+function renderRefreshStatus() {
+  const refresh = saved.refresh; const operation = refresh.active ?? refresh.last_completed;
+  const reasons: Record<string, string> = { changed_area: 'Changed area', partial_unsupported: 'Full refresh required by display', unknown_baseline: 'Recovering display state', component_request: 'Requested by component', partial_limit: 'Partial update limit', maintenance_due: 'Maintenance interval reached', large_area: 'Large changed area' };
+  const waitingAfterError = saved.last_error && !refresh.active;
+  $('refresh-mode').textContent = !connected ? 'Refresh status unavailable' : waitingAfterError ? 'Display update failed' : operation ? `${operation.mode === 'full' ? 'Full' : 'Partial'} refresh${refresh.active ? ' in progress' : ' completed'}` : 'Software simulator';
+  $('refresh-detail').textContent = !connected ? 'Last completed frame retained.' : waitingAfterError ? `${saved.last_error}${refresh.wait_ms > 0 ? ` Retry in ${Math.ceil(refresh.wait_ms / 1000)} s.` : ''}` : saved.phase === 'paused' ? 'Quiet hours · Latest content waits until updates resume.' : saved.pending && !refresh.active ? `Latest content queued${refresh.wait_ms > 0 ? ` · Eligible in ${Math.ceil(refresh.wait_ms / 1000)} s` : ''}.` : operation ? `${refresh.active && operation.revision < saved.revision ? 'Newer saved layout queued · ' : ''}${reasons[operation.reason] ?? operation.reason} · ${refresh.partial_count} partial updates since full refresh` : 'No refresh operation since startup.';
+  $('refresh-mode').title = operation ? `${operation.region.width} × ${operation.region.height} pixels at ${operation.region.x}, ${operation.region.y} · revision ${operation.revision}` : '';
+}
 function updateStatus() {
+  renderRefreshStatus();
   $('device-status').textContent = !connected ? 'Service unavailable' : saved.phase === 'paused' ? 'Quiet hours · paused' : saved.phase === 'pending' ? 'Display update pending' : saved.phase === 'error' ? 'Display update failed' : saved.phase === 'refreshing' ? 'Simulator refreshing' : 'Simulator idle';
   const dot = document.querySelector('.device .status-dot')!;
   dot.classList.toggle('busy', connected && saved.phase === 'refreshing'); dot.classList.toggle('offline', !connected);
@@ -717,6 +740,7 @@ async function poll() {
     if (editing) {
       if (current.revision !== saved.revision && !conflict) { conflict = true; notice('A newer layout was saved in another tab. Your draft is retained. Discard to load the newer layout.', true); }
       saved.phase = current.phase; saved.displayed_revision = current.displayed_revision; saved.frame_id = current.frame_id; saved.clock_now = current.clock_now; saved.data_revision = current.data_revision;
+      saved.refresh = current.refresh; saved.last_error = current.last_error;
       saved.connector_execution = current.connector_execution; saved.fixture_data = current.fixture_data;
     } else { saved = current; draft = clone(current.layout); draftSettings = clone(current.refresh_settings); }
     if (!viewingDraft && displayedFrame !== current.frame_id) { displayedFrame = current.frame_id; setDisplayedImage(true); }

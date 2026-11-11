@@ -78,6 +78,9 @@ These records save independently of layout drafts. The Demo weather settings
 descriptor is settings-only; the Temperature connector can
 [run through a registered compiled module](compiled-connectors.md).
 
+Refresh mode and its reason appear below the canvas. Configure component
+requests and maintenance thresholds using the [refresh policy guide](refresh-controller.md).
+
 ## Edit inside a component
 
 Select a component in **Edit layout**, then choose **Edit contents** in its
@@ -152,7 +155,7 @@ CAPTURE_SCREENSHOTS=1 pnpm --dir web test
 ```
 
 This updates screenshots under `docs/design/images`, including the editor,
-quiet hours, connection settings, compiled data, and internal element editing. Playwright
+quiet hours, connection settings, compiled data, internal element editing, and refresh policy. Playwright
 failure traces and local workspaces are ignored by Git. Rust checks need the
 compiled guest target and loopback access as described in
 [foundation-harness.md](foundation-harness.md). These are desktop checks; they do

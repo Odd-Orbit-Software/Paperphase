@@ -149,6 +149,8 @@ impl ClockSpec {
 pub struct RefreshSettings {
     #[serde(default)]
     pub quiet_hours: Option<QuietHours>,
+    #[serde(default)]
+    pub policy: crate::RefreshPolicy,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -180,6 +182,7 @@ fn wall_minute(value: &str) -> Result<u32> {
 
 impl RefreshSettings {
     pub fn validate(&self) -> Result<()> {
+        self.policy.validate()?;
         if let Some(quiet) = &self.quiet_hours {
             zone(&quiet.timezone)?;
             require(

@@ -213,8 +213,8 @@ pub(super) fn public_status(
 
 pub(super) async fn changed(app: &Shared) {
     let mut workspace = app.workspace.lock().await;
-    workspace.render_token = workspace.render_token.wrapping_add(1);
-    workspace.refreshing = false;
+    workspace.desired = None;
+    workspace.refresh_wake.notify_one();
     workspace.pending = true;
 }
 pub(super) fn bump_epoch(epoch: &AtomicU64) {

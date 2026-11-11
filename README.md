@@ -31,6 +31,9 @@ with private-value handling. Registered compiled connectors now fetch and cache
 data through shared host networking, with polling, backoff, and Fetch now.
 The internal editor supports direct positioning of text, data, and clock elements
 inside each component, alongside the original vertical flow.
+The simulator now exercises partial/full refresh decisions, batching, maintenance
+thresholds, and serialized completion/retry behaviour. Initial real-source plugin
+work is planned before physical hardware.
 Real provider integrations, Pi measurements, and hardware validation are pending.
 The initial target is a Raspberry Pi Zero 2 W running 64-bit Raspberry
 Pi OS Lite with a Waveshare 7.5-inch monochrome e-paper HAT. The exact panel
@@ -47,6 +50,8 @@ revision and resolution remain to be confirmed.
 - [Desktop editor design](docs/design/desktop-editor.md)
 - [Internal element editor](docs/design/internal-editor.md)
 - [Clock and refresh scheduling](docs/design/clock-and-refresh.md)
+- [Refresh controller design](docs/design/refresh-controller.md)
+- [Configure simulated refresh policy](docs/usage/refresh-controller.md)
 - [Configure connections](docs/usage/connections.md)
 - [Connector settings design](docs/design/connector-settings.md)
 - [Run a compiled connector](docs/usage/compiled-connectors.md)

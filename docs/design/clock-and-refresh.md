@@ -2,9 +2,10 @@
 
 The built-in time/date template uses the host clock. It needs no plugin, HTTP
 request, credentials, or browser timer for its displayed values. Quiet hours gate
-completed display updates while saving and draft previews remain available.
-This is a simulator implementation; physical panel refresh modes, maintenance
-limits, and retained-frame recovery are still separate work.
+the start of display updates while saving and draft previews remain available.
+The [refresh controller](refresh-controller.md) now adds synthetic partial/full
+policy, batching, serialized active operations, and retry recovery. Validated
+physical profiles and retained-frame recovery remain separate work.
 
 ![Clock draft and saved quiet-hours settings in the running editor](images/clock-quiet-hours.png)
 
@@ -71,8 +72,8 @@ blocking workers, as described in [desktop-editor.md](desktop-editor.md).
 | --- | --- |
 | Saved revision | Changes only when a layout/settings transaction is persisted |
 | Displayed revision | Last saved revision acknowledged by the completed frame |
-| Frame serial | Advances only when completed pixels change, including clock-only changes |
-| Render token | Cancels completion of an older queued frame |
+| Frame serial | Advances after each successful operation, including clock-only changes and baseline recovery |
+| Desired frame | Replaceable queued content, separate from an active operation |
 | `next_due` | Earliest known clock/freshness change |
 | `pending` | A newer display evaluation/completion is still needed |
 | `quiet`, `refreshing`, `pending`, `last_error` | Determine `paused`, `refreshing`, `pending`, `idle`, or `error` status |
@@ -89,19 +90,19 @@ flowchart TD
     Quiet -->|No| Due{Due, pending, resumed, or forced?}
     Due -->|No| Wait[Wait for next tick]
     Due -->|Yes| Render[Render newest saved layout at current time]
-    Render --> Same{Pixels unchanged?}
-    Same -->|Yes| Ack[Acknowledge revision without refreshing]
-    Same -->|No| Queue[Queue simulated completion with render token]
-    Queue --> Check{Token, revision, time and quiet gate still valid?}
-    Check -->|Yes| Complete[Publish pixels and increment frame serial]
+    Render --> Queue[Replace queued desired frame]
+    Queue --> Check{Revision, data, time and quiet gate valid?}
+    Check -->|Yes| Controller[Refresh controller applies policy and timing]
+    Controller --> Complete[Complete exact sent frame or retry failure]
     Check -->|No| Hold
 ```
 
-Changed pixels complete after the existing 180 ms simulator delay. Before
-publishing, completion rechecks its token, saved revision, quiet hours, and time
-boundary. It cannot publish an older frame over a newer save, cross into quiet
-hours, or display a frame that became outdated during the delay. A subsequent
-tick regenerates outdated work.
+The [refresh controller](refresh-controller.md) now owns batching, unchanged-frame
+checks, partial/full decisions, minimum intervals, and simulated execution.
+Revision, data, clock, and quiet-hours checks happen before an operation starts.
+An active operation finishes even if newer content arrives or quiet hours begin;
+its exact frame is recorded, and newer content remains pending. A later tick
+regenerates obsolete queued work. This replaces the earlier render-token delay.
 
 ## Quiet hours and persistence
 
@@ -134,8 +135,8 @@ it directly, without a production endpoint that changes the system clock.
 Tests cover time/date formats, midnight/noon, timezone date changes, daylight
 saving, civil-time gaps, invalid input, literal/clock pixel equality, minute and
 stale-data deadlines, missed ticks, backward adjustments, quiet pause/resume,
-multiple saves during a pause, quiet-hour entry during pending completion,
-superseded completions, and skipped unchanged frames. API tests cover old-file
+multiple saves during a pause, quiet-hour entry before and during an operation,
+superseded queued frames, and skipped unchanged frames. API tests cover old-file
 compatibility, settings validation/persistence, and refresh gating. Chromium
 checks clock properties, settings history, paused displayed pixels, reload, and
 resuming through a saved settings change. Pi resource and physical-panel checks

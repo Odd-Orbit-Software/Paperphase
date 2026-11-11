@@ -154,6 +154,10 @@ Manual "Fetch now" and "Refresh display now" actions enter their respective
 schedulers. Neither bypasses provider limits or the panel refresh policy.
 Quiet hours still freeze the physical display while allowing data fetching.
 
+The [simulated refresh controller](../design/refresh-controller.md) implements
+these decisions with a synthetic profile. Validated physical profiles remain
+separate work.
+
 The host compares desired content with its completed frame, identifies changes,
 and chooses partial or full refresh according to panel capabilities and health
 policy. Moving or removing a component also invalidates its former rectangle.

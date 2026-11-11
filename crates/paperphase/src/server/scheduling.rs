@@ -1,7 +1,10 @@
 //! Clock/freshness deadlines and the simulated refresh gate. No provider polling.
 use std::time::Duration;
 
+use crate::display::{Controller, Operation};
 use paperphase_core::{Layout, RefreshSettings, SnapshotSet, TextSource};
+use paperphase_render::Frame;
+use tokio::time::Instant;
 
 use super::{ApiResult, Engine, STANDARD, Saved, Shared, Workspace, internal, invalid, render};
 
@@ -9,6 +12,7 @@ impl Workspace {
     pub(super) fn new(
         saved: Saved,
         png: Vec<u8>,
+        frame: Frame,
         snapshots: &SnapshotSet,
         at: u64,
     ) -> anyhow::Result<Self> {
@@ -16,10 +20,15 @@ impl Workspace {
         let next_due = next_due(&saved.layout, snapshots, at)?;
         Ok(Self {
             displayed_revision: saved.revision,
+            completed_layout: saved.layout.clone(),
             saved,
             png,
+            completed_frame: frame,
+            controller: Controller::new(),
+            desired: None,
+            worker_running: false,
+            refresh_wake: std::sync::Arc::new(tokio::sync::Notify::new()),
             frame_serial: 0,
-            render_token: 0,
             refreshing: false,
             quiet,
             pending: false,
@@ -30,10 +39,10 @@ impl Workspace {
     }
 
     pub(super) fn phase(&self) -> &'static str {
-        if self.quiet {
-            "paused"
-        } else if self.refreshing {
+        if self.refreshing {
             "refreshing"
+        } else if self.quiet {
+            "paused"
         } else if self.last_error.is_some() {
             "error"
         } else if self.pending {
@@ -91,6 +100,9 @@ pub(super) fn next_due(
 
 pub(super) struct PreparedFrame {
     data_epoch: u64,
+    revision: u64,
+    layout: Layout,
+    frame: Frame,
     png: Vec<u8>,
     next_due: Option<u64>,
     quiet: bool,
@@ -107,6 +119,9 @@ pub(super) async fn prepare(
     let preview = render(app, layout.clone(), at).await?;
     Ok(PreparedFrame {
         png: STANDARD.decode(preview.png_base64).map_err(internal)?,
+        revision: 0,
+        layout: layout.clone(),
+        frame: preview.frame,
         next_due: preview.next_due,
         data_epoch: preview.data_epoch,
         quiet,
@@ -114,58 +129,155 @@ pub(super) async fn prepare(
     })
 }
 
-pub(super) fn queue(app: &Shared, ws: &mut Workspace, frame: PreparedFrame) {
-    ws.render_token = ws.render_token.wrapping_add(1);
+pub(super) fn queue(app: &Shared, ws: &mut Workspace, mut frame: PreparedFrame) {
     ws.last_tick = frame.at;
     ws.next_due = frame.next_due;
-    ws.last_error = None;
     ws.quiet = frame.quiet;
-    ws.refreshing = false;
     ws.pending = true;
     if frame.data_epoch != app.data_epoch.load(std::sync::atomic::Ordering::SeqCst) {
         return;
     }
-    if ws.quiet {
-        return;
-    }
-    if frame.png == ws.png {
+    // A metadata-only save can acknowledge the completed frame immediately.
+    if !ws.worker_running
+        && ws.controller.baseline_known
+        && frame.frame == ws.completed_frame
+        && !ws.quiet
+    {
+        ws.completed_layout = frame.layout;
         ws.displayed_revision = ws.saved.revision;
+        ws.desired = None;
         ws.pending = false;
+        ws.last_error = None;
         return;
     }
-    ws.refreshing = true;
-    let token = ws.render_token;
-    let revision = ws.saved.revision;
+    frame.revision = ws.saved.revision;
+    ws.desired = Some(frame);
+    ws.refresh_wake.notify_one();
+    if ws.quiet || ws.worker_running {
+        return;
+    }
+    ws.worker_running = true;
     let app = std::sync::Arc::clone(app);
     tokio::spawn(async move {
-        tokio::time::sleep(Duration::from_millis(180)).await;
-        let mut ws = app.workspace.lock().await;
-        if ws.render_token != token || ws.saved.revision != revision {
-            return;
-        }
-        ws.refreshing = false;
-        let now = (app.clock)();
-        match ws.saved.refresh_settings.is_quiet(now) {
-            Ok(quiet) => ws.quiet = quiet,
-            Err(error) => {
-                ws.last_error = Some(error.to_string());
+        drive(app).await;
+    });
+}
+
+fn current(app: &Shared, ws: &Workspace, frame: &PreparedFrame, now: u64) -> bool {
+    frame.revision == ws.saved.revision
+        && frame.data_epoch == app.data_epoch.load(std::sync::atomic::Ordering::SeqCst)
+        && now >= frame.at
+        && frame.next_due.is_none_or(|due| now < due)
+}
+
+async fn drive(app: Shared) {
+    // Collect a burst of edits before starting the single simulated operation.
+    tokio::time::sleep(Duration::from_millis(180)).await;
+    loop {
+        let (frame, operation) = {
+            let mut ws = app.workspace.lock().await;
+            ws.quiet = ws
+                .saved
+                .refresh_settings
+                .is_quiet((app.clock)())
+                .unwrap_or(true);
+            if ws.quiet {
+                ws.worker_running = false;
                 return;
             }
+            let Some(frame) = ws.desired.take() else {
+                ws.worker_running = false;
+                return;
+            };
+            if !current(&app, &ws, &frame, (app.clock)()) {
+                ws.worker_running = false;
+                ws.pending = true;
+                return;
+            }
+            let now = Instant::now();
+            let plan = ws.controller.plan(
+                &ws.completed_frame,
+                &frame.frame,
+                &ws.completed_layout,
+                &frame.layout,
+                &ws.saved.refresh_settings.policy,
+                now,
+            );
+            let plan = match plan {
+                Ok(Some(plan)) => plan,
+                Ok(None) => {
+                    ws.displayed_revision = frame.revision;
+                    ws.completed_layout = frame.layout;
+                    ws.pending = false;
+                    ws.last_error = None;
+                    ws.worker_running = false;
+                    return;
+                }
+                Err(error) => {
+                    eprintln!("refresh planning failed: {error}");
+                    ws.last_error = Some("Could not plan a display update.".into());
+                    ws.worker_running = false;
+                    return;
+                }
+            };
+            let ready = ws
+                .controller
+                .ready_at(&ws.saved.refresh_settings.policy, now);
+            if ready > now {
+                ws.desired = Some(frame);
+                let wake = std::sync::Arc::clone(&ws.refresh_wake);
+                drop(ws);
+                tokio::select! {
+                    _ = tokio::time::sleep_until(ready) => {},
+                    _ = wake.notified() => {},
+                }
+                continue;
+            }
+            let operation = Operation {
+                plan,
+                revision: frame.revision,
+            };
+            ws.controller.active = Some(operation.clone());
+            ws.refreshing = true;
+            (frame, operation)
+        };
+        // The simulated driver owns this frame until completion. Newer desired
+        // frames cannot cancel it or start a second operation concurrently.
+        tokio::time::sleep(Duration::from_millis(180)).await;
+        let mut ws = app.workspace.lock().await;
+        ws.refreshing = false;
+        ws.quiet = ws
+            .saved
+            .refresh_settings
+            .is_quiet((app.clock)())
+            .unwrap_or(true);
+        #[cfg(test)]
+        let failed = std::mem::take(&mut ws.controller.fail_next);
+        #[cfg(not(test))]
+        let failed = false;
+        if failed {
+            ws.controller.failed(Instant::now());
+            ws.last_error = Some("Display update failed; retrying with a full refresh. Last completed frame is shown.".into());
+            ws.pending = true;
+            if ws.desired.is_none() {
+                ws.desired = Some(frame);
+            }
+        } else {
+            let up_to_date = current(&app, &ws, &frame, (app.clock)());
+            ws.controller.complete(operation, Instant::now());
+            ws.png = frame.png;
+            ws.completed_frame = frame.frame;
+            ws.completed_layout = frame.layout;
+            ws.displayed_revision = frame.revision;
+            ws.frame_serial = ws.frame_serial.wrapping_add(1);
+            ws.pending = !up_to_date || ws.desired.is_some();
+            ws.last_error = None;
         }
-        // Never publish a frame from before a minute/date/freshness boundary,
-        // a backward clock adjustment, or the start of quiet hours.
-        if ws.quiet
-            || now < frame.at
-            || frame.next_due.is_some_and(|due| now >= due)
-            || frame.data_epoch != app.data_epoch.load(std::sync::atomic::Ordering::SeqCst)
-        {
+        if ws.desired.is_none() || ws.quiet {
+            ws.worker_running = false;
             return;
         }
-        ws.png = frame.png;
-        ws.displayed_revision = revision;
-        ws.frame_serial = ws.frame_serial.wrapping_add(1);
-        ws.pending = false;
-    });
+    }
 }
 
 pub(super) async fn tick(app: Shared, force: bool) -> ApiResult<()> {
@@ -180,13 +292,11 @@ pub(super) async fn tick(app: Shared, force: bool) -> ApiResult<()> {
         let due = ws.next_due.is_some_and(|due| now >= due);
         if ws.quiet {
             ws.pending |= force || due || backwards || ws.refreshing;
-            if ws.refreshing {
-                ws.render_token = ws.render_token.wrapping_add(1);
-                ws.refreshing = false;
-            }
+            ws.desired = None;
+            ws.refresh_wake.notify_one();
             return Ok(());
         }
-        if !force && !was_quiet && !backwards && (ws.refreshing || (!due && !ws.pending)) {
+        if !force && !was_quiet && !backwards && (ws.worker_running || (!due && !ws.pending)) {
             return Ok(());
         }
         ws.saved.clone()
@@ -273,7 +383,7 @@ pub(super) mod tests {
         let rendered = renderer.render(&saved.layout, &snapshots, at).unwrap();
         let mut png = Vec::new();
         rendered.frame.write_png(&mut png).unwrap();
-        let workspace = Workspace::new(saved, png, &snapshots, at).unwrap();
+        let workspace = Workspace::new(saved, png, rendered.frame, &snapshots, at).unwrap();
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("workspace.json");
         persist(&path, &workspace.saved).unwrap();
@@ -308,8 +418,8 @@ pub(super) mod tests {
         }
     }
     pub(in crate::server) async fn settle(app: &Shared) {
-        for _ in 0..100 {
-            if !app.workspace.lock().await.refreshing {
+        for _ in 0..250 {
+            if !app.workspace.lock().await.worker_running {
                 return;
             }
             tokio::time::sleep(Duration::from_millis(5)).await;
@@ -398,12 +508,12 @@ pub(super) mod tests {
     }
 
     #[tokio::test]
-    async fn a_pending_completion_cannot_cross_into_quiet_hours() {
+    async fn a_queued_frame_cannot_start_in_quiet_hours() {
         let (app, clock, _dir) = app(scene(), quiet(), empty(), START + 59);
         let original = app.workspace.lock().await.png.clone();
         assert_eq!(
             edit(&app, "Queued before quiet hours").await["phase"],
-            "refreshing"
+            "pending"
         );
         clock.store(START + 60, Ordering::SeqCst);
         settle(&app).await;
@@ -448,5 +558,138 @@ pub(super) mod tests {
         assert_ne!(ws.png, original);
         assert_eq!(ws.frame_serial, 1);
         assert_eq!(ws.next_due, None);
+    }
+    async fn wait_for(app: &Shared, ready: impl Fn(&Workspace) -> bool) {
+        for _ in 0..1000 {
+            if ready(&*app.workspace.lock().await) {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        panic!("refresh state did not arrive");
+    }
+
+    #[tokio::test]
+    async fn running_operations_finish_serially_while_pending_saves_are_batched() {
+        let (app, _clock, _dir) = app(scene(), RefreshSettings::default(), empty(), START);
+        let original = app.workspace.lock().await.png.clone();
+        edit(&app, "First running update").await;
+        wait_for(&app, |ws| ws.refreshing).await;
+        edit(&app, "Superseded pending update").await;
+        edit(&app, "Newest pending update").await;
+        {
+            let ws = app.workspace.lock().await;
+            assert_eq!(ws.controller.active.as_ref().unwrap().revision, 1);
+            assert_eq!(ws.png, original);
+            assert_eq!(ws.displayed_revision, 0);
+        }
+        wait_for(&app, |ws| ws.frame_serial == 1).await;
+        {
+            let ws = app.workspace.lock().await;
+            assert_eq!(ws.displayed_revision, 1);
+            assert_eq!(ws.saved.revision, 3);
+            assert!(ws.pending);
+            assert!(!ws.refreshing);
+        }
+        settle(&app).await;
+        assert_current_pixels(&app).await;
+        let ws = app.workspace.lock().await;
+        assert_eq!(ws.frame_serial, 2);
+        assert_eq!(ws.displayed_revision, 3);
+    }
+
+    #[tokio::test]
+    async fn a_running_refresh_finishes_in_quiet_hours_but_no_next_operation_starts() {
+        let (app, clock, _dir) = app(scene(), quiet(), empty(), START + 59);
+        edit(&app, "Started before quiet hours").await;
+        wait_for(&app, |ws| ws.refreshing).await;
+        clock.store(START + 60, Ordering::SeqCst);
+        tick(Arc::clone(&app), false).await.unwrap();
+        assert_eq!(app.workspace.lock().await.phase(), "refreshing");
+        edit(&app, "Saved during quiet hours").await;
+        settle(&app).await;
+        {
+            let ws = app.workspace.lock().await;
+            assert_eq!(ws.displayed_revision, 1);
+            assert_eq!(ws.saved.revision, 2);
+            assert_eq!(ws.phase(), "paused");
+            assert!(ws.pending);
+            assert_eq!(ws.frame_serial, 1);
+        }
+        clock.store(START + 240, Ordering::SeqCst);
+        tick(Arc::clone(&app), false).await.unwrap();
+        settle(&app).await;
+        assert_current_pixels(&app).await;
+    }
+
+    #[tokio::test]
+    async fn failed_updates_keep_completed_pixels_obey_backoff_and_recover_with_full_refresh() {
+        let (app, _clock, _dir) = app(scene(), RefreshSettings::default(), empty(), START);
+        let original = app.workspace.lock().await.png.clone();
+        app.workspace.lock().await.controller.fail_next = true;
+        edit(&app, "An update that fails once").await;
+        wait_for(&app, |ws| ws.controller.failures == 1).await;
+        {
+            let ws = app.workspace.lock().await;
+            assert_eq!(ws.png, original);
+            assert_eq!(ws.displayed_revision, 0);
+            assert_eq!(ws.frame_serial, 0);
+            assert_eq!(ws.controller.partials, 0);
+            assert!(!ws.controller.baseline_known);
+            assert_eq!(ws.phase(), "error");
+        }
+        tick(Arc::clone(&app), true).await.unwrap();
+        assert!(app.workspace.lock().await.controller.active.is_none());
+        settle(&app).await;
+        assert_current_pixels(&app).await;
+        let ws = app.workspace.lock().await;
+        assert!(ws.last_error.is_none());
+        assert_eq!(
+            ws.controller.completed.as_ref().unwrap().plan.reason,
+            crate::display::Reason::UnknownBaseline
+        );
+        assert_eq!(ws.frame_serial, 1);
+    }
+
+    #[tokio::test]
+    async fn reducing_a_saved_interval_wakes_the_pending_worker() {
+        let (app, _clock, _dir) = app(scene(), RefreshSettings::default(), empty(), START);
+        edit(&app, "First").await;
+        settle(&app).await;
+        let saved = app.workspace.lock().await.saved.clone();
+        let mut slow = saved.refresh_settings.clone();
+        slow.policy.min_interval_ms = 60000;
+        let mut layout = serde_json::to_value(saved.layout).unwrap();
+        layout["components"][0]["blocks"][1]["source"]["text"] =
+            json!("Waiting for a long interval");
+        let layout: Layout = serde_json::from_value(layout).unwrap();
+        let _ = save(
+            State(Arc::clone(&app)),
+            Json(SaveRequest {
+                base_revision: saved.revision,
+                layout: layout.clone(),
+                refresh_settings: Some(slow),
+            }),
+        )
+        .await
+        .unwrap();
+        tokio::time::sleep(Duration::from_millis(220)).await;
+        assert!(app.workspace.lock().await.controller.active.is_none());
+        let _ = save(
+            State(Arc::clone(&app)),
+            Json(SaveRequest {
+                base_revision: saved.revision + 1,
+                layout,
+                refresh_settings: Some(RefreshSettings::default()),
+            }),
+        )
+        .await
+        .unwrap();
+        settle(&app).await;
+        assert_current_pixels(&app).await;
+        assert_eq!(
+            app.workspace.lock().await.displayed_revision,
+            saved.revision + 2
+        );
     }
 }

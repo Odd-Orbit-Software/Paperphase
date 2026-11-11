@@ -694,7 +694,7 @@ fn draft_save_conflict_and_restart_preserve_the_display_contract() {
         .send()
         .unwrap();
     assert_eq!(response.status(), 200);
-    assert_eq!(response.json::<Value>().unwrap()["phase"], "refreshing");
+    assert_eq!(response.json::<Value>().unwrap()["phase"], "pending");
     assert_eq!(
         server
             .client
@@ -839,7 +839,7 @@ fn clock_and_quiet_settings_preserve_older_workspaces_and_validate_before_persis
     let mut server = Server::start(&path);
     assert_eq!(
         server.state()["refresh_settings"],
-        json!({"quiet_hours":null})
+        serde_json::to_value(paperphase_core::RefreshSettings::default()).unwrap()
     );
     let zones: Vec<String> = server
         .client
@@ -901,7 +901,11 @@ fn clock_and_quiet_settings_preserve_older_workspaces_and_validate_before_persis
     let restarted = Server::start(&path);
     assert_eq!(restarted.state()["revision"], 8);
     assert_eq!(
-        restarted.state()["refresh_settings"],
-        request["refresh_settings"]
+        restarted.state()["refresh_settings"]["quiet_hours"],
+        request["refresh_settings"]["quiet_hours"]
+    );
+    assert_eq!(
+        restarted.state()["refresh_settings"]["policy"],
+        serde_json::to_value(paperphase_core::RefreshPolicy::default()).unwrap()
     );
 }

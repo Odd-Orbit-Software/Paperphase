@@ -103,9 +103,10 @@ An OS file lock prevents a second service from using the same workspace path.
 Startup rejects malformed, oversized, or unsupported saved state and prevents
 workspace/lock paths from replacing explicitly supplied fixture inputs.
 
-After a successful commit, changed pixels wait 180 ms before replacing the
-completed PNG, subject to quiet hours. Unchanged pixels need no refresh. A later
-save supersedes an older pending completion. Until then,
+The [refresh controller](refresh-controller.md) batches pending frames for 180 ms,
+then applies policy and simulates a serialized operation. Unchanged pixels need
+no refresh. A later save replaces queued content; active operations finish before
+newer work starts. Until completion,
 the displayed revision and image remain distinct from the saved revision. On
 restart, the simulator immediately renders the saved layout from the supplied
 snapshots; it does not claim to recover a physical panel's retained pixels.

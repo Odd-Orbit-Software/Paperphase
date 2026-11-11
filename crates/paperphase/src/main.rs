@@ -16,6 +16,7 @@ use clap::{Parser, Subcommand};
 use paperphase_runtime::{Dataset, Limits, PluginRuntime, RunConfig, RunMetrics};
 use serde::Serialize;
 
+mod display;
 mod server;
 mod simulator;
 

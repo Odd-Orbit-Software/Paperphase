@@ -823,3 +823,7 @@ body.dragging * {
     padding: 21px 23px;
   }
 }
+
+.refresh-summary { display: flex; gap: 12px; align-items: baseline; padding: 10px 20px; border-top: 1px solid var(--line); font-size: 10px; color: #78836c; background: #f7f8f1; }
+.refresh-summary strong { color: #4d6755; white-space: nowrap; font-weight: 550; }
+.refresh-summary span { line-height: 1.5; }

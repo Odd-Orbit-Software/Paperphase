@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{ClockSpec, Dataset, Result, require, valid_id};
+use crate::{ClockSpec, Dataset, RefreshHint, Result, require, valid_id};
 
 pub const MAX_PIXELS: u64 = 4_194_304;
 pub const STATUS_HEIGHT: u32 = 18;
@@ -88,6 +88,8 @@ pub struct Component {
     pub border: bool,
     #[serde(default)]
     pub content_layout: ContentLayout,
+    #[serde(default)]
+    pub refresh_hint: RefreshHint,
     pub blocks: Vec<TextBlock>,
 }
 
