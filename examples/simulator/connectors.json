@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "connectors": [{
+    "id": "demo.weather",
+    "name": "Demo weather settings",
+    "description": "A settings-only example. Saving a connection does not fetch weather or change the sample datasets yet.",
+    "min_poll_secs": 30,
+    "default_poll_secs": 300,
+    "settings": [
+      { "id": "location", "label": "Location", "help": "A label for this weather location.", "required": true, "input": { "type": "text", "max_bytes": 128, "default": "Dublin" } },
+      { "id": "units", "label": "Units", "input": { "type": "choice", "default": "metric", "options": [{ "value": "metric", "label": "Metric" }, { "value": "imperial", "label": "Imperial" }] } },
+      { "id": "forecast_days", "label": "Forecast days", "input": { "type": "integer", "min": 1, "max": 7, "default": 3 } },
+      { "id": "include_summary", "label": "Include summary", "input": { "type": "boolean", "default": true } },
+      { "id": "test_secret", "label": "Test secret", "help": "Optional private value for exercising secret settings. It is never sent to an API.", "input": { "type": "secret", "max_bytes": 256 } }
+    ]
+  }]
+}

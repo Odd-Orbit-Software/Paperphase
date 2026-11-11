@@ -264,6 +264,12 @@ mod tests {
         let path = dir.path().join("workspace.json");
         persist(&path, &workspace.saved).unwrap();
         let app = Arc::new(App {
+            connector_catalog: serde_json::from_str(include_str!(
+                "../../../../examples/simulator/connectors.json"
+            ))
+            .unwrap(),
+            connections: AsyncMutex::new(super::super::connections::ConnectionStore::default()),
+            connections_file: dir.path().join("connections.json"),
             workspace: AsyncMutex::new(workspace),
             renderer: Mutex::new(renderer),
             snapshots,

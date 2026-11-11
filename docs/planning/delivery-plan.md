@@ -38,8 +38,10 @@ implemented, including text/data templates, a block builder, draft isolation,
 non-overlapping geometry, undo/redo, durable revision-checked saves, and simulated
 completion state. [Time/date blocks, clock/freshness deadlines, quiet hours, and
 explicit simulated refresh](../design/clock-and-refresh.md) are also implemented.
-Plugin settings, provider scheduling, direct internal positioning, fuller builder
-nodes, and panel-aware refresh policy remain pending; stage 2 is not complete.
+[Generated connector settings and persistent connection records](../design/connector-settings.md)
+are implemented against a settings-only demo descriptor. Compiled-plugin connection
+execution, provider scheduling, direct internal positioning, fuller builder nodes,
+and panel-aware refresh policy remain pending; stage 2 is not complete.
 
 Deliver a usable desktop workflow backed by the real rendering and scheduling
 boundaries, with deterministic sample datasets and simulated display operations.

@@ -12,6 +12,7 @@
   <header class="topbar">
     <a class="brand" href="/" aria-label="Paperphase home"><span class="brand-mark" aria-hidden="true">◒</span> paperphase<span class="experimental">LAB</span></a>
     <span class="product-label">DISPLAY STUDIO</span>
+    <button id="connections-open" class="small">Connections</button>
     <div class="device"><span class="status-dot"></span><strong id="device-status">Connecting</strong><span class="divider"></span><span id="host-address">—</span></div>
   </header>
   <main>
@@ -39,5 +40,11 @@
     </section>
     <footer class="page-footer"><span>ODD ORBIT SOFTWARE <span class="footer-orbit">◌</span> Small tools. Considered spaces.</span><span id="keyboard-hint">Paperphase 0.1.0 · Experimental</span></footer>
   </main>
+  <dialog id="connections-dialog" aria-labelledby="connections-title">
+    <header class="connections-heading"><div><div class="eyebrow">YOUR DATA SOURCES</div><h2 id="connections-title">Connections</h2></div><button id="connections-close" aria-label="Close connections">×</button></header>
+    <p class="connections-scope">Settings only in this release. Connections do not fetch data or change the sample display yet.</p>
+    <div id="connections-notice" role="status" aria-live="polite" hidden></div>
+    <div class="connections-workspace"><aside><button id="connection-new" class="wide-button">+ New connection</button><div id="connections-list"></div></aside><section id="connection-properties" aria-label="Connection settings"></section></div>
+  </dialog>
 </body>
 </html>

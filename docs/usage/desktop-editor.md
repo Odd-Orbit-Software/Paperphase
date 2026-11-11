@@ -72,6 +72,10 @@ startup, so it does not preserve pre-restart pixels during a quiet period.
 See the [clock and refresh design](../design/clock-and-refresh.md) for state and
 boundary behaviour. Panel-specific refresh budgets and maintenance are pending.
 
+Use **Connections** in the top bar for [connector-defined settings forms](connections.md).
+These records save independently of layout drafts. The bundled demonstration
+defines settings only; it does not fetch new display data.
+
 ## Alternate layouts, fixtures, and backup
 
 ```sh

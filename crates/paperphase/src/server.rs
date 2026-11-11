@@ -19,13 +19,14 @@ use axum::{
     routing::{get, post, put},
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
-use paperphase_core::{Layout, RefreshSettings, SnapshotSet};
+use paperphase_core::{ConnectorCatalog, Layout, RefreshSettings, SnapshotSet};
 use paperphase_render::{ComponentReport, Renderer};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::sync::{Mutex as AsyncMutex, Semaphore};
 
 use crate::simulator::read_json;
+mod connections;
 mod scheduling;
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -53,6 +54,9 @@ struct Workspace {
 }
 
 struct App {
+    connector_catalog: ConnectorCatalog,
+    connections: AsyncMutex<connections::ConnectionStore>,
+    connections_file: PathBuf,
     workspace: AsyncMutex<Workspace>,
     renderer: Mutex<Renderer>,
     snapshots: SnapshotSet,
@@ -88,7 +92,7 @@ fn internal(error: impl std::fmt::Display) -> ApiError {
     )
 }
 
-fn persist(path: &Path, saved: &Saved) -> Result<()> {
+fn persist(path: &Path, saved: &impl Serialize) -> Result<()> {
     let parent = path
         .parent()
         .context("workspace requires a parent directory")?;
@@ -110,13 +114,23 @@ pub fn run(
     state_file: PathBuf,
     seed_layout: Option<PathBuf>,
     data: Option<PathBuf>,
+    connector_definitions: Option<PathBuf>,
     fixed_now: Option<u64>,
 ) -> Result<()> {
     let state_file = std::path::absolute(state_file)?;
     let parent = state_file.parent().context("invalid workspace path")?;
     std::fs::create_dir_all(parent)?;
     let lock_path = state_file.with_extension("json.lock");
-    for source in seed_layout.iter().chain(data.iter()) {
+    let connections_file = state_file.with_extension("connections.json");
+    ensure!(
+        !crate::simulator::same_file(&state_file, &connections_file)?,
+        "workspace and connections paths must differ"
+    );
+    for source in seed_layout
+        .iter()
+        .chain(data.iter())
+        .chain(connector_definitions.iter())
+    {
         ensure!(
             !crate::simulator::same_file(&state_file, source)?,
             "workspace must not replace a fixture input"
@@ -124,6 +138,10 @@ pub fn run(
         ensure!(
             !crate::simulator::same_file(&lock_path, source)?,
             "workspace lock must not replace a fixture input"
+        );
+        ensure!(
+            !crate::simulator::same_file(&connections_file, source)?,
+            "connection storage must not replace an input"
         );
     }
     let file_lock = OpenOptions::new()
@@ -160,6 +178,18 @@ pub fn run(
     );
     saved.layout.validate()?;
     saved.refresh_settings.validate()?;
+    let connector_catalog: ConnectorCatalog = if let Some(path) = connector_definitions {
+        read_json(&path)?
+    } else {
+        serde_json::from_str(include_str!("../../../examples/simulator/connectors.json"))?
+    };
+    connector_catalog.validate()?;
+    let connection_store = if connections_file.try_exists()? {
+        read_json(&connections_file)?
+    } else {
+        connections::ConnectionStore::default()
+    };
+    connections::validate_store(&connection_store, &connector_catalog)?;
     let snapshots: SnapshotSet = if let Some(path) = data {
         read_json(&path)?
     } else {
@@ -233,6 +263,9 @@ pub fn run(
             })
             .collect();
         let app = Arc::new(App {
+            connector_catalog,
+            connections: AsyncMutex::new(connection_store),
+            connections_file,
             workspace: AsyncMutex::new(Workspace::new(saved, png, &snapshots, initial_now)?),
             renderer: Mutex::new(renderer),
             snapshots,
@@ -279,6 +312,12 @@ pub fn run(
             )
             .route("/api/state", get(state))
             .route("/api/catalog", get(catalog))
+            .route("/api/connectors", get(connections::catalog))
+            .route("/api/connections", get(connections::list))
+            .route(
+                "/api/connections/{id}",
+                put(connections::save).delete(connections::remove),
+            )
             .route(
                 "/api/timezones",
                 get(|| async { Json(paperphase_core::timezones()) }),

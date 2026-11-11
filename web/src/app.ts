@@ -12,6 +12,12 @@ type EditState = { layout: Layout; settings: RefreshSettings };
 type Dataset = { connection_id: string; dataset_id: string; fields: { id: string; kind: string; unit?: string }[]; rows: number; stale: boolean };
 type Report = { id: string; state: string; warnings: string[] };
 type Preview = { png_base64: string; components: Report[] };
+type SettingInput = { type: 'text'; max_bytes: number; default?: string | null } | { type: 'secret'; max_bytes: number } | { type: 'integer'; min: number; max: number; default?: number | null } | { type: 'boolean'; default?: boolean | null } | { type: 'choice'; options: { value: string; label: string }[]; default?: string | null };
+type SettingDefinition = { id: string; label: string; help: string; required: boolean; input: SettingInput };
+type ConnectorDefinition = { id: string; name: string; description: string; min_poll_secs: number; default_poll_secs: number; settings: SettingDefinition[] };
+type Connection = { id: string; connector_id: string; label: string; enabled: boolean; poll_interval_secs: number; settings: Record<string, string | number | boolean | null>; secret_present: string[] };
+type Connections = { revision: number; connections: Connection[] };
+class ApiFailure extends Error { constructor(message: string, readonly status: number) { super(message); } }
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const clone = <T>(value: T): T => structuredClone(value);
@@ -53,8 +59,8 @@ async function api<T>(path: string, options?: RequestInit): Promise<T> {
   if (!response.ok) {
     let message = `Request failed (${response.status}).`;
     try { const body = await response.json(); message = body.error || message; } catch { /* plain framework error */ }
-    if (response.status === 409) conflict = true;
-    throw new Error(message);
+    if (response.status === 409 && path === '/api/layout') conflict = true;
+    throw new ApiFailure(message, response.status);
   }
   return response.json() as Promise<T>;
 }
@@ -514,8 +520,9 @@ button('zoom-fit').onclick = () => { autoFit = true; fit(); };
 button('zoom-in').onclick = () => { autoFit = false; zoom += .1; fit(); };
 button('zoom-out').onclick = () => { autoFit = false; zoom -= .1; fit(); };
 new ResizeObserver(() => { if (!drag) fit(); }).observe($('viewport'));
-window.addEventListener('beforeunload', event => { if (dirty()) { event.preventDefault(); event.returnValue = ''; } });
+window.addEventListener('beforeunload', event => { if (dirty() || connectionDirty()) { event.preventDefault(); event.returnValue = ''; } });
 document.addEventListener('keydown', event => {
+  if ($<HTMLDialogElement>('connections-dialog').open) return;
   const typing = (event.target as HTMLElement).closest('input,textarea,select,[contenteditable=true]');
   const mod = event.ctrlKey || event.metaKey;
   if (mod && event.key.toLowerCase() === 's') { event.preventDefault(); void save(); return; }
@@ -568,3 +575,174 @@ async function start() {
   } catch (error) { notice(`Cannot load the workspace. ${String(error)} Reload after the service is available.`, true); button('edit').disabled = true; }
 }
 void start();
+
+let connectorDefinitions: ConnectorDefinition[] = [];
+let connectionStore: Connections = { revision: 0, connections: [] };
+let connectionDraft: Connection | undefined;
+let connectionBaseline = '';
+let connectionBusy = false;
+let connectionConflict = false;
+let connectionIsNew = false;
+const connectionDialog = () => $<HTMLDialogElement>('connections-dialog');
+function connectionDirty() { return !!connectionDraft && JSON.stringify(connectionDraft) !== connectionBaseline; }
+function connectionNotice(message = '', error = false) {
+  const target = $('connections-notice'); target.hidden = !message; target.textContent = message; target.classList.toggle('error', error);
+}
+function connectionButtons() {
+  const save = $('connection-save') as HTMLButtonElement | null;
+  if (save) save.disabled = connectionBusy || connectionConflict || (!connectionIsNew && !connectionDirty());
+  button('connection-new').disabled = connectionBusy || !!connectionDraft || !connectorDefinitions.length;
+  button('connections-close').disabled = connectionBusy;
+  $('connection-properties').inert = connectionBusy;
+  $('connections-list').inert = connectionBusy;
+}
+async function loadConnections() {
+  const [catalog, store] = await Promise.all([api<{ connectors: ConnectorDefinition[] }>('/api/connectors'), api<Connections>('/api/connections')]);
+  connectorDefinitions = catalog.connectors; connectionStore = store;
+  connectionDraft = undefined; connectionBaseline = ''; connectionConflict = false; connectionIsNew = false;
+  renderConnections();
+}
+function beginConnection(connection?: Connection) {
+  if (connectionDraft || connectionBusy) return;
+  const definition = connectorDefinitions[0];
+  if (!connection && !definition) return;
+  connectionIsNew = !connection;
+  connectionDraft = connection ? clone(connection) : newConnection(definition!);
+  // Treat setting IDs as literal keys, including names inherited by plain objects.
+  connectionDraft.settings = Object.assign(Object.create(null), connectionDraft.settings);
+  connectionBaseline = connection ? JSON.stringify(connectionDraft) : '';
+  connectionConflict = false; connectionNotice(); renderConnections();
+}
+function newConnection(definition: ConnectorDefinition): Connection {
+  const settings: Connection['settings'] = Object.create(null);
+  for (const field of definition.settings) if ('default' in field.input && field.input.default != null) settings[field.id] = field.input.default;
+  return { id: identifier('connection'), connector_id: definition.id, label: definition.name, enabled: true, poll_interval_secs: definition.default_poll_secs, settings, secret_present: [] };
+}
+function renderConnections() {
+  const list = $('connections-list'); list.replaceChildren();
+  for (const connection of connectionStore.connections) {
+    const item = node('button', `connection-item ${connectionDraft?.id === connection.id ? 'selected' : ''}`);
+    item.setAttribute('aria-label', `Configure ${connection.label}`);
+    item.append(node('strong', '', connection.label), node('small', '', `${connection.enabled ? 'Configured' : 'Disabled'} · ${connection.poll_interval_secs} s`));
+    item.disabled = !!connectionDraft;
+    item.onclick = () => beginConnection(connection);
+    list.append(item);
+  }
+  const parent = $('connection-properties'); parent.replaceChildren();
+  const current = connectionDraft;
+  if (!current) {
+    const empty = node('div', 'empty-properties');
+    empty.append(node('span', '', '≋'), node('h3', '', connectionStore.connections.length ? 'Choose a connection.' : 'Start with a data source.'), node('p', '', 'Keep each location or account in its own connection. The settings form comes from its connector definition.'));
+    parent.append(empty); connectionButtons(); return;
+  }
+  const definition = connectorDefinitions.find(d => d.id === current.connector_id)!;
+  const form = node('form', 'connection-form'); form.id = 'connection-form'; parent.append(form);
+  const fields = node('div', 'connection-fields'); form.append(fields);
+  fields.append(node('h3', '', connectionIsNew ? 'New connection' : current.label), node('p', 'connection-description', definition.description));
+  if (connectionIsNew) select('Connector', definition.id, connectorDefinitions.map(d => [d.id, d.name]), fields, value => {
+    const next = newConnection(connectorDefinitions.find(d => d.id === value)!); next.id = current.id;
+    connectionDraft = next; renderConnections();
+  });
+  const labelInput = node('input'); labelInput.value = current.label; labelInput.required = true; labelInput.maxLength = 96;
+  labelInput.oninput = () => { current.label = labelInput.value; connectionButtons(); };
+  label('Connection name', labelInput, fields);
+  const enabledLabel = node('label', 'check'); const enabled = node('input'); enabled.type = 'checkbox'; enabled.checked = current.enabled;
+  enabled.onchange = () => { current.enabled = enabled.checked; connectionButtons(); }; enabledLabel.append(enabled, document.createTextNode('Enabled')); fields.append(enabledLabel);
+  const interval = node('input'); interval.type = 'number'; interval.min = String(definition.min_poll_secs); interval.max = '86400'; interval.step = '1'; interval.required = true; interval.value = String(current.poll_interval_secs);
+  interval.oninput = () => { current.poll_interval_secs = interval.valueAsNumber; connectionButtons(); };
+  label('Polling interval (seconds)', interval, fields);
+  for (const field of definition.settings) {
+    const inputDefinition = field.input;
+    const value = current.settings[field.id];
+    let input: HTMLInputElement | HTMLSelectElement;
+    if (inputDefinition.type === 'choice') {
+      input = node('select');
+      if (!field.required) { const option = node('option', '', 'Not set'); option.value = ''; input.append(option); }
+      for (const choice of inputDefinition.options) { const option = node('option', '', choice.label); option.value = choice.value; input.append(option); }
+      input.value = typeof value === 'string' ? value : '';
+      input.onchange = () => { current.settings[field.id] = input.value === '' ? null : input.value; connectionButtons(); };
+      input.required = field.required;
+    } else {
+      input = node('input');
+      if (inputDefinition.type === 'boolean') {
+        input.type = 'checkbox'; input.checked = value === true;
+        input.onchange = () => { current.settings[field.id] = (input as HTMLInputElement).checked; connectionButtons(); };
+      } else if (inputDefinition.type === 'integer') {
+        input.type = 'number'; input.min = String(inputDefinition.min); input.max = String(inputDefinition.max); input.step = '1'; input.required = field.required; input.value = typeof value === 'number' ? String(value) : '';
+        input.oninput = () => { current.settings[field.id] = input.value === '' ? null : (input as HTMLInputElement).valueAsNumber; connectionButtons(); };
+      } else if (inputDefinition.type === 'secret') {
+        input.type = 'password'; input.autocomplete = 'new-password'; input.maxLength = inputDefinition.max_bytes;
+        const present = current.secret_present.includes(field.id);
+        input.placeholder = present ? 'Saved · leave blank to keep' : 'Not set';
+        input.required = field.required && !present;
+        input.value = typeof value === 'string' ? value : '';
+        const clear = node('input'); clear.type = 'checkbox'; clear.checked = value === null;
+        input.oninput = () => {
+          clear.checked = false; input.required = field.required && !present;
+          if (input.value) { current.settings[field.id] = input.value; }
+          else delete current.settings[field.id];
+          connectionButtons();
+        };
+        clear.onchange = () => {
+          if (clear.checked) current.settings[field.id] = null; else delete current.settings[field.id];
+          input.value = ''; input.required = field.required && (!present || clear.checked); connectionButtons();
+        };
+        const group = node('div', 'secret-setting'); label(field.label, input, group);
+        const clearLabel = node('label', 'check'); clearLabel.append(clear, document.createTextNode(`Clear ${field.label}`)); group.append(clearLabel);
+        group.append(node('small', 'field-help', `${present ? 'A value is saved. ' : ''}${field.help}`)); fields.append(group);
+        continue;
+      } else {
+        input.type = 'text'; input.maxLength = inputDefinition.max_bytes; input.required = field.required; input.value = typeof value === 'string' ? value : '';
+        input.oninput = () => { current.settings[field.id] = input.value; connectionButtons(); };
+      }
+    }
+    label(field.label, input, fields);
+    if (inputDefinition.type === 'boolean') input.parentElement!.classList.add('boolean-setting');
+    if (field.help) fields.append(node('small', 'field-help', field.help));
+  }
+  const actions = node('div', 'connection-actions'); form.append(actions);
+  const discard = node('button', '', 'Discard form'); discard.type = 'button'; discard.onclick = async () => {
+    connectionDraft = undefined; connectionBaseline = ''; connectionConflict = false;
+    $('connection-properties').replaceChildren(); connectionBusy = true; connectionButtons();
+    try { await loadConnections(); connectionNotice(); } catch (error) { connectionNotice(String(error), true); }
+    finally { connectionBusy = false; connectionButtons(); }
+  };
+  const save = node('button', 'primary', 'Save connection'); save.type = 'submit'; save.id = 'connection-save'; actions.append(discard, save);
+  if (!connectionIsNew) {
+    const remove = node('button', 'danger', 'Delete connection'); remove.type = 'button';
+    remove.onclick = () => { void writeConnection(true); }; actions.prepend(remove);
+  }
+  form.onsubmit = event => { event.preventDefault(); if (form.reportValidity()) void writeConnection(false); };
+  connectionButtons();
+}
+async function writeConnection(remove: boolean) {
+  if (!connectionDraft || connectionBusy || connectionConflict) return;
+  connectionBusy = true; connectionNotice(); connectionButtons();
+  const current = connectionDraft;
+  try {
+    const request = remove ? { base_revision: connectionStore.revision } : { base_revision: connectionStore.revision, connector_id: current.connector_id, label: current.label, enabled: current.enabled, poll_interval_secs: current.poll_interval_secs, settings: current.settings };
+    await api(`/api/connections/${encodeURIComponent(current.id)}`, { method: remove ? 'DELETE' : 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request) });
+    // Wipe the form's secret inputs before any subsequent request can fail.
+    connectionDraft = undefined; connectionBaseline = ''; $('connection-properties').replaceChildren();
+    await loadConnections(); connectionNotice(remove ? 'Connection deleted.' : 'Connection settings saved.');
+  } catch (error) { if (error instanceof ApiFailure && error.status === 409) connectionConflict = true; connectionNotice(String(error), true); }
+  finally { connectionBusy = false; connectionButtons(); }
+}
+button('connections-open').onclick = async () => {
+  connectionDialog().showModal(); connectionNotice('Loading connections…'); connectionBusy = true; connectionButtons();
+  try { await loadConnections(); connectionNotice(); } catch (error) { connectionNotice(String(error), true); }
+  finally { connectionBusy = false; connectionButtons(); }
+};
+button('connection-new').onclick = () => beginConnection();
+function closeConnections(event?: Event) {
+  if (connectionBusy || connectionDirty()) { event?.preventDefault(); connectionNotice('Save or discard your form before closing connections.'); return; }
+  connectionDraft = undefined; connectionBaseline = ''; $('connection-properties').replaceChildren(); connectionDialog().close();
+}
+button('connections-close').onclick = () => closeConnections();
+connectionDialog().addEventListener('cancel', event => closeConnections(event));
+connectionDialog().addEventListener('keydown', event => {
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+    event.preventDefault();
+    if (!connectionBusy && !connectionConflict && (connectionIsNew || connectionDirty())) $<HTMLFormElement>('connection-form')?.requestSubmit();
+  }
+});

@@ -3,10 +3,12 @@
 mod clock;
 mod dataset;
 mod layout;
+mod settings;
 
 pub use clock::*;
 pub use dataset::{Dataset, Field, FieldKind};
 pub use layout::*;
+pub use settings::*;
 
 pub type Result<T> = std::result::Result<T, ValidationError>;
 

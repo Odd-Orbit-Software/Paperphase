@@ -27,7 +27,8 @@ data/layout contracts, a monochrome renderer with PNG/PBM simulator exports,
 and a desktop layout editor served by Rust with durable saves and a simulated
 display. Built-in time/date blocks, clock/freshness scheduling, and quiet hours
 work in the simulator. Live integrations, provider scheduling, and hardware
-validation are pending.
+validation are pending. Connector definitions now generate persistent settings
+forms with private-value handling; the bundled demo does not fetch provider data.
 The initial target is a Raspberry Pi Zero 2 W running 64-bit Raspberry
 Pi OS Lite with a Waveshare 7.5-inch monochrome e-paper HAT. The exact panel
 revision and resolution remain to be confirmed.
@@ -42,6 +43,8 @@ revision and resolution remain to be confirmed.
 - [Run the desktop editor](docs/usage/desktop-editor.md)
 - [Desktop editor design](docs/design/desktop-editor.md)
 - [Clock and refresh scheduling](docs/design/clock-and-refresh.md)
+- [Configure connections](docs/usage/connections.md)
+- [Connector settings design](docs/design/connector-settings.md)
 - [Changelog](changelog.md)
 
 Implemented features will be documented in `docs/design`, with setup and

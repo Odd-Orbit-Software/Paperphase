@@ -124,10 +124,14 @@ the draft, and disables Save until polling reconnects.
 The fixtures are fixed at startup. The [clock and refresh layer](clock-and-refresh.md)
 now adds time/date blocks, automatic clock/freshness deadlines, quiet hours, and
 Refresh display. The clock can be pinned with `--now`. Automatic fetching,
-plugin settings/installation, historical storage, refresh budgets, and physical
+Executable plugin integration/installation, historical storage, refresh budgets, and physical
 refresh policy remain subsequent work. There is no hardware status
 disguised as an attached display, and the short simulator delay is not a panel
 timing claim.
+
+[Connector-defined settings forms](connector-settings.md) now provide separate
+connection records and private values. The settings-only demo does not replace
+the startup snapshots or fetch provider data.
 
 Desktop validation covers the API's preview isolation, CAS conflicts, concurrent
 saves, restart persistence, failed storage, workspace locking, origin/host/body

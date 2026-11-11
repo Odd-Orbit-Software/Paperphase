@@ -40,6 +40,9 @@ enum Command {
         /// Snapshot fixtures; no external APIs are fetched by this editor slice.
         #[arg(long)]
         data: Option<PathBuf>,
+        /// Experimental settings descriptors; does not load executable plugins.
+        #[arg(long)]
+        connector_definitions: Option<PathBuf>,
         /// Unix seconds; omit to evaluate snapshot freshness using the host clock.
         #[arg(long)]
         now: Option<u64>,
@@ -98,9 +101,17 @@ fn main() -> Result<()> {
             state_file,
             seed_layout,
             data,
+            connector_definitions,
             now,
         } => {
-            return server::run(listen, state_file, seed_layout, data, now);
+            return server::run(
+                listen,
+                state_file,
+                seed_layout,
+                data,
+                connector_definitions,
+                now,
+            );
         }
         Command::Simulate {
             layout,

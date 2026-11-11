@@ -16,8 +16,15 @@ struct Server {
 }
 impl Server {
     fn start(state: &std::path::Path) -> Self {
+        Self::start_with_definitions(state, None)
+    }
+    fn start_with_definitions(
+        state: &std::path::Path,
+        definitions: Option<&std::path::Path>,
+    ) -> Self {
         let _ = rustls::crypto::ring::default_provider().install_default();
-        let mut child = Command::new(env!("CARGO_BIN_EXE_paperphase"))
+        let mut command = Command::new(env!("CARGO_BIN_EXE_paperphase"));
+        command
             .args([
                 "serve",
                 "--listen",
@@ -26,7 +33,11 @@ impl Server {
                 "1700000000",
                 "--state-file",
             ])
-            .arg(state)
+            .arg(state);
+        if let Some(path) = definitions {
+            command.arg("--connector-definitions").arg(path);
+        }
+        let mut child = command
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
             .spawn()
@@ -81,6 +92,265 @@ impl Server {
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
+}
+
+fn connection_request(revision: u64) -> Value {
+    json!({"base_revision":revision,"connector_id":"demo.weather","label":"Home","enabled":true,"poll_interval_secs":300,"settings":{"location":"Dublin","test_secret":"session-private-value"}})
+}
+
+#[test]
+fn connection_settings_secrets_and_removal_survive_restart_without_affecting_layouts() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("workspace.json");
+    let file = path.with_extension("connections.json");
+    let mut server = Server::start(&path);
+    let original = server.png();
+    let url = format!("{}/api/connections/home", server.url);
+    let response = server
+        .client
+        .put(&url)
+        .json(&connection_request(0))
+        .send()
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    let public = response.text().unwrap();
+    assert!(!public.contains("session-private-value"));
+    let public: Value = serde_json::from_str(&public).unwrap();
+    assert_eq!(
+        public["connection"]["secret_present"],
+        json!(["test_secret"])
+    );
+    assert!(
+        public["connection"]["settings"]
+            .get("test_secret")
+            .is_none()
+    );
+    for endpoint in [
+        "/api/state",
+        "/api/connections",
+        "/api/connectors",
+        "/api/catalog",
+    ] {
+        assert!(
+            !server
+                .client
+                .get(format!("{}{endpoint}", server.url))
+                .send()
+                .unwrap()
+                .text()
+                .unwrap()
+                .contains("session-private-value")
+        );
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            std::fs::metadata(&file).unwrap().permissions().mode() & 0o077,
+            0
+        );
+    }
+    server.stop();
+    server = Server::start(&path);
+    let mut request = connection_request(1);
+    request["settings"] = json!({"location":"Cork"});
+    assert_eq!(
+        server
+            .client
+            .put(format!("{}/api/connections/home", server.url))
+            .json(&request)
+            .send()
+            .unwrap()
+            .status(),
+        200
+    );
+    let disk: Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+    assert_eq!(
+        disk["connections"][0]["settings"]["test_secret"],
+        "session-private-value"
+    );
+    request["base_revision"] = json!(2);
+    request["settings"]["test_secret"] = json!("replacement-value");
+    assert_eq!(
+        server
+            .client
+            .put(format!("{}/api/connections/home", server.url))
+            .json(&request)
+            .send()
+            .unwrap()
+            .status(),
+        200
+    );
+    request["base_revision"] = json!(3);
+    request["settings"]["test_secret"] = Value::Null;
+    let cleared: Value = server
+        .client
+        .put(format!("{}/api/connections/home", server.url))
+        .json(&request)
+        .send()
+        .unwrap()
+        .json()
+        .unwrap();
+    assert_eq!(cleared["connection"]["secret_present"], json!([]));
+    assert_eq!(server.state()["revision"], 0);
+    assert_eq!(server.png(), original);
+    let removed = server
+        .client
+        .delete(format!("{}/api/connections/home", server.url))
+        .json(&json!({"base_revision":4}))
+        .send()
+        .unwrap();
+    assert_eq!(removed.status(), 200);
+    let list: Value = server
+        .client
+        .get(format!("{}/api/connections", server.url))
+        .send()
+        .unwrap()
+        .json()
+        .unwrap();
+    assert_eq!(list["revision"], 5);
+    assert_eq!(list["connections"], json!([]));
+}
+
+#[test]
+fn connection_conflicts_validation_and_failed_storage_leave_the_previous_record_intact() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("workspace.json");
+    let file = path.with_extension("connections.json");
+    let server = Server::start(&path);
+    let mut workers = Vec::new();
+    for _ in 0..2 {
+        let client = server.client.clone();
+        let url = format!("{}/api/connections/home", server.url);
+        workers.push(std::thread::spawn(move || {
+            client
+                .put(url)
+                .json(&connection_request(0))
+                .send()
+                .unwrap()
+                .status()
+                .as_u16()
+        }));
+    }
+    let mut statuses: Vec<_> = workers
+        .into_iter()
+        .map(|worker| worker.join().unwrap())
+        .collect();
+    statuses.sort();
+    assert_eq!(statuses, [200, 409]);
+    let disk = std::fs::read(&file).unwrap();
+    for (field, value) in [
+        ("poll_interval_secs", json!(29)),
+        ("connector_id", json!("unknown")),
+        ("label", json!(" ")),
+    ] {
+        let mut request = connection_request(1);
+        request[field] = value;
+        assert_eq!(
+            server
+                .client
+                .put(format!("{}/api/connections/home", server.url))
+                .json(&request)
+                .send()
+                .unwrap()
+                .status(),
+            422
+        );
+    }
+    let mut request = connection_request(1);
+    request["settings"]["test_secret"] = json!(["never-echo-private"]);
+    let error = server
+        .client
+        .put(format!("{}/api/connections/home", server.url))
+        .json(&request)
+        .send()
+        .unwrap();
+    assert_eq!(error.status(), 422);
+    assert!(!error.text().unwrap().contains("never-echo-private"));
+    assert_eq!(std::fs::read(&file).unwrap(), disk);
+    assert_eq!(
+        server
+            .client
+            .put(format!("{}/api/connections/home", server.url))
+            .header("Origin", "https://unrelated.example")
+            .json(&connection_request(1))
+            .send()
+            .unwrap()
+            .status(),
+        403
+    );
+    let backup = file.with_extension("backup");
+    std::fs::rename(&file, &backup).unwrap();
+    std::fs::create_dir(&file).unwrap();
+    assert_eq!(
+        server
+            .client
+            .put(format!("{}/api/connections/home", server.url))
+            .json(&connection_request(1))
+            .send()
+            .unwrap()
+            .status(),
+        500
+    );
+    let list: Value = server
+        .client
+        .get(format!("{}/api/connections", server.url))
+        .send()
+        .unwrap()
+        .json()
+        .unwrap();
+    assert_eq!(list["revision"], 1);
+    assert_eq!(std::fs::read(&backup).unwrap(), disk);
+    std::fs::remove_dir(&file).unwrap();
+    std::fs::rename(backup, &file).unwrap();
+}
+
+#[test]
+fn alternate_connector_definitions_are_loaded_and_stored_records_are_validated_against_them() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("workspace.json");
+    let definitions = dir.path().join("descriptors.json");
+    let descriptor = json!({"schema_version":1,"connectors":[{"id":"example.rss","name":"Example feed","description":"Settings for a custom source","min_poll_secs":60,"default_poll_secs":600,"settings":[{"id":"feed_name","label":"Feed name","required":true,"input":{"type":"text","max_bytes":64}}]}]});
+    std::fs::write(&definitions, serde_json::to_vec(&descriptor).unwrap()).unwrap();
+    let mut server = Server::start_with_definitions(&path, Some(&definitions));
+    let catalog: Value = server
+        .client
+        .get(format!("{}/api/connectors", server.url))
+        .send()
+        .unwrap()
+        .json()
+        .unwrap();
+    assert_eq!(
+        catalog,
+        serde_json::to_value(
+            serde_json::from_value::<paperphase_core::ConnectorCatalog>(descriptor).unwrap()
+        )
+        .unwrap()
+    );
+    let request = json!({"base_revision":0,"connector_id":"example.rss","label":"News","enabled":true,"poll_interval_secs":600,"settings":{"feed_name":"Local headlines"}});
+    assert_eq!(
+        server
+            .client
+            .put(format!("{}/api/connections/news", server.url))
+            .json(&request)
+            .send()
+            .unwrap()
+            .status(),
+        200
+    );
+    server.stop();
+    let restarted = Server::start_with_definitions(&path, Some(&definitions));
+    let list: Value = restarted
+        .client
+        .get(format!("{}/api/connections", restarted.url))
+        .send()
+        .unwrap()
+        .json()
+        .unwrap();
+    assert_eq!(
+        list["connections"][0]["settings"]["feed_name"],
+        "Local headlines"
+    );
 }
 impl Drop for Server {
     fn drop(&mut self) {

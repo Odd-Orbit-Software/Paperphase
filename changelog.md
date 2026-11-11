@@ -122,3 +122,29 @@ persistence. Frontend type checking/build and all four desktop Chromium workflow
 passed. Both updated Mermaid diagrams rendered to SVG in Chromium. The compiled
 temperature guest is 89,886 bytes (previously 89,882). Version remains `0.1.0`; Pi measurements,
 provider scheduling, Google linking, and physical refresh validation remain pending.
+
+### Connector settings and connection records
+
+- Added bounded, typed connector definitions for text, integers, booleans,
+  choices, and write-only secrets, with defaults, required values, UTF-8 limits,
+  polling bounds, and field-specific errors that do not quote submitted values.
+- Added generated Connections forms with independent Save/Discard/Delete,
+  retained forms after conflicts, secret presence/replace/clear controls, and
+  keyboard handling that preserves an underlying layout draft.
+- Added a separate revisioned connection store with atomic persistence,
+  owner-only Unix file permissions, restart validation, and no secret values
+  returned by the API. Omitted secrets retain their saved value; explicit null
+  clears an optional secret. Secrets are plaintext in the private runtime file.
+- Added a labelled settings-only demonstration catalog and optional
+  `--connector-definitions` input. This slice does not execute connectors, fetch
+  provider data, or install plugins. Added design/usage notes and an actual UI
+  screenshot; the public plugin/SDK contract remains experimental.
+
+Validation: `sh scripts/check.sh` passed with 61 Rust tests, including definition/
+value bounds, secret handling, old-workspace coexistence, restart persistence,
+custom descriptors, competing saves, failed writes, and layout independence.
+Frontend type checking/build and all six Chromium workflows passed, including
+generated fields, secret placeholders, discard/clear, independent conflicts, and
+retained layout drafts. Version remains `0.1.0`; compiled connector integration,
+provider scheduling, Pi measurements, Google linking, and physical display
+validation remain pending.
