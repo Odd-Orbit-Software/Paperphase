@@ -5,6 +5,25 @@
 Current development version: `0.1.0`. The earliest stable stage has not been
 reached; minor-version increments per commit begin after that milestone.
 
+### Internal element editor
+
+- Added optional positioned text/data/clock boxes, with vertical flow retained
+  for existing layouts. Rust validates minimum size, bounds, and non-overlap
+  inside padding and the reserved host data-status strip.
+- Added renderer-measured flow conversion, a cropped component canvas, element
+  selection, drag/resize, numeric and keyboard placement, adding/removing
+  elements, and flow restoration through the existing history and save paths.
+- Preserved explicit font sizes and clipped each element independently. Outer
+  resizing and source/padding changes reject arrangements that would cut off
+  positioned contents. Added design/operator guidance and an actual screenshot.
+
+Validation: the complete Rust check script passed on x86-64 Linux with 79 tests,
+host/guest formatting and Clippy, and the compiled guest build. TypeScript and
+frontend builds passed; all nine Chromium flows passed, including measured
+conversion pixel equality, collision recovery, internal history, persistence,
+hidden-content feedback, and status-strip protection. Pi performance, Google
+accounts, and physical display validation remain pending. Version stays `0.1.0`.
+
 ### Compiled plugin foundation
 
 - Created the Paperphase Rust workspace, CLI, experimental guest SDK, and a Rust

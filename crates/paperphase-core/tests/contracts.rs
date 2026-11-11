@@ -136,3 +136,64 @@ fn snapshot_dataset_validation_preserves_source_provenance() {
         "snapshots[0].dataset.rows[0].temperature"
     );
 }
+
+#[test]
+fn positioned_elements_require_explicit_non_overlapping_content_local_boxes() {
+    use paperphase_core::ContentLayout;
+    let mut scene = layout();
+    assert_eq!(scene.components[0].content_layout, ContentLayout::Flow);
+    scene.components[0].content_layout = ContentLayout::Positioned;
+    assert!(scene.validate().unwrap_err().message.contains("require"));
+    scene.components[0].blocks[0].rect = Some(Rect {
+        x: 0,
+        y: 0,
+        width: 32,
+        height: 32,
+    });
+    let mut second = scene.components[0].blocks[0].clone();
+    second.id = "second".into();
+    second.rect.as_mut().unwrap().x = 32;
+    scene.components[0].blocks.push(second);
+    scene.validate().unwrap();
+    let saved: Layout = serde_json::from_slice(&serde_json::to_vec(&scene).unwrap()).unwrap();
+    assert_eq!(saved.components[0].blocks[1].rect.unwrap().x, 32);
+    scene.components[0].blocks[1].rect.as_mut().unwrap().x = 31;
+    assert!(scene.validate().unwrap_err().message.contains("overlaps"));
+    scene.components[0].blocks.pop();
+    scene.components[0].blocks[0].rect.as_mut().unwrap().width = 7;
+    assert!(scene.validate().unwrap_err().message.contains("8 × 8"));
+    scene.components[0].blocks[0].rect.as_mut().unwrap().width = 32;
+    scene.components[0].blocks[0].rect.as_mut().unwrap().x = u32::MAX;
+    assert!(scene.validate().unwrap_err().message.contains("outside"));
+    scene.components[0].content_layout = ContentLayout::Flow;
+    assert!(
+        scene
+            .validate()
+            .unwrap_err()
+            .message
+            .contains("flow elements")
+    );
+}
+
+#[test]
+fn element_bounds_follow_padding_size_and_the_host_status_reservation() {
+    let mut value = serde_json::to_value(layout()).unwrap();
+    value["components"][0]["content_layout"] = json!("positioned");
+    value["components"][0]["padding"] = json!(4);
+    value["components"][0]["blocks"][0]["rect"] = json!({"x":0,"y":0,"width":56,"height":56});
+    let literal: Layout = serde_json::from_value(value.clone()).unwrap();
+    literal.validate().unwrap();
+    value["components"][0]["blocks"][0]["source"] = json!({"kind":"field","binding":{
+        "connection_id":"home","dataset_id":"current","field_id":"temperature"
+    }});
+    let mut bound: Layout = serde_json::from_value(value).unwrap();
+    assert_eq!(bound.components[0].content_bounds().height, 38);
+    assert!(bound.validate().unwrap_err().message.contains("outside"));
+    bound.components[0].blocks[0].rect.as_mut().unwrap().height = 38;
+    bound.validate().unwrap();
+    bound.components[0].padding = 5;
+    assert!(bound.validate().is_err());
+    bound.components[0].padding = 4;
+    bound.components[0].rect.width -= 1;
+    assert!(bound.validate().is_err());
+}

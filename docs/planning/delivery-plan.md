@@ -41,8 +41,10 @@ explicit simulated refresh](../design/clock-and-refresh.md) are also implemented
 [Generated connector settings and persistent connection records](../design/connector-settings.md)
 are implemented. [Compiled connection execution, shared polling/backoff, cached
 datasets, and Fetch now](../design/compiled-connectors.md) are exercised with the
-Rust temperature example and local sources. Real provider policy/account checks,
-direct internal positioning, fuller builder nodes, and panel-aware refresh policy
+Rust temperature example and local sources. [Direct internal text/data/clock
+positioning](../design/internal-editor.md) now supports element geometry and
+flow conversion. Real provider policy/account checks,
+fuller builder nodes, and panel-aware refresh policy
 remain pending; stage 2 is not complete.
 
 Deliver a usable desktop workflow backed by the real rendering and scheduling

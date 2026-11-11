@@ -1,16 +1,10 @@
-export {};
-type Rect = { x: number; y: number; width: number; height: number };
-type Binding = { connection_id: string; dataset_id: string; field_id: string; row: number; decimals: number | null; prefix: string; suffix: string };
-type ClockSpec = { timezone: string; content: 'time' | 'date' | 'date_time'; hour_cycle: 'twenty_four' | 'twelve'; date_format: 'long' | 'short' | 'iso' | 'weekday' };
+import type { Rect, Binding, ClockSpec, Block, Component, Layout, BlockPlacement } from './model';
+import { contentBounds, validElement, validElements, positioned, freeElementRect } from './elements';
 type RefreshSettings = { quiet_hours: { timezone: string; start: string; end: string } | null };
-type Source = { kind: 'literal'; text: string } | { kind: 'field'; binding: Binding } | { kind: 'clock'; clock: ClockSpec };
-type Block = { id: string; source: Source; font_size: number; align: string; overflow: string };
-type Component = { id: string; rect: Rect; padding: number; gap: number; border: boolean; blocks: Block[] };
-type Layout = { schema_version: number; display: { id: string; width: number; height: number }; components: Component[] };
 type Workspace = { revision: number; displayed_revision: number; data_revision: number; frame_id: string; clock_now: number; pending: boolean; phase: string; layout: Layout; refresh_settings: RefreshSettings; addresses: string[]; connector_execution: boolean; fixture_data: boolean };
 type EditState = { layout: Layout; settings: RefreshSettings };
 type Dataset = { connection_id: string; connection_label?: string; dataset_id: string; fields: { id: string; kind: string; unit?: string }[]; rows: number; stale: boolean };
-type Report = { id: string; state: string; warnings: string[] };
+type Report = { id: string; state: string; warnings: string[]; blocks: BlockPlacement[] };
 type Preview = { png_base64: string; components: Report[] };
 type SettingInput = { type: 'text'; max_bytes: number; default?: string | null } | { type: 'secret'; max_bytes: number } | { type: 'integer'; min: number; max: number; default?: number | null } | { type: 'boolean'; default?: boolean | null } | { type: 'choice'; options: { value: string; label: string }[]; default?: string | null };
 type SettingDefinition = { id: string; label: string; help: string; required: boolean; input: SettingInput };
@@ -34,6 +28,9 @@ let catalog: Dataset[] = [];
 let editing = false;
 let viewingDraft = false;
 let selected: string | null = null;
+let contentMode = false;
+let selectedElement: string | null = null;
+let converting = false;
 let undo: EditState[] = [];
 let redo: EditState[] = [];
 let reports: Report[] = [];
@@ -52,7 +49,7 @@ let coalescedKey = '';
 let lastEdit = 0;
 let connected = true;
 let lastInspectedId: string | null = null;
-let drag: { id: string; startX: number; startY: number; original: Rect; last: Rect; baseline: EditState; resize: boolean; pointerId: number; invalid: boolean } | undefined;
+let drag: { id: string; blockId?: string; startX: number; startY: number; original: Rect; last: Rect; baseline: EditState; resize: boolean; pointerId: number; invalid: boolean } | undefined;
 function capture(): EditState { return { layout: clone(draft), settings: clone(draftSettings) }; }
 function restore(state: EditState) { draft = clone(state.layout); draftSettings = clone(state.settings); }
 
@@ -75,6 +72,9 @@ function notice(message = '', error = false) {
 function dirty() { return editing && (!equal(draft, saved.layout) || !equal(draftSettings, saved.refresh_settings)); }
 function active() { return editing && viewingDraft && !saving; }
 function component() { return draft.components.find(c => c.id === selected); }
+function editingContents() { return contentMode && editing && viewingDraft && !!component(); }
+function element() { return component()?.blocks.find(block => block.id === selectedElement); }
+function elementName(block: Block) { return block.source.kind === 'literal' ? block.source.text.trim().split('\n')[0]?.slice(0, 36) || 'Empty text' : block.source.kind === 'field' ? block.source.binding.field_id : 'Time & date'; }
 function name(c: Component): string {
   const first = c.blocks.find(b => b.source.kind === 'literal');
   if (first?.source.kind === 'literal' && first.source.text.trim()) return first.source.text.trim().split('\n')[0]!.slice(0, 36);
@@ -94,7 +94,7 @@ function validRect(rect: Rect, id: string, layout = draft): boolean {
     && !layout.components.some(c => c.id !== id && rect.x < c.rect.x + c.rect.width && rect.x + rect.width > c.rect.x && rect.y < c.rect.y + c.rect.height && rect.y + rect.height > c.rect.y);
 }
 function locallyValid(layout: Layout) {
-  return layout.components.length <= 64 && layout.components.every(c => validRect(c.rect, c.id, layout));
+  return layout.components.length <= 64 && layout.components.every(c => validRect(c.rect, c.id, layout) && validElements(c));
 }
 function remember(before: EditState, key = '') {
   const now = Date.now();
@@ -112,7 +112,7 @@ function change(update: (layout: Layout) => void, key = '', rebuild = true) {
   update(draft);
   if (!locallyValid(draft)) {
     restore(before);
-    notice('That change leaves too little space or overlaps another component. The previous position is kept.', true);
+    notice('That change overlaps another item or leaves too little content space. The previous valid arrangement is kept.', true);
     renderInspector();
     return;
   }
@@ -122,9 +122,35 @@ function change(update: (layout: Layout) => void, key = '', rebuild = true) {
   }
   if (equal(before, capture())) return;
   remember(before, key);
+  normaliseSelection();
   notice();
   render(rebuild);
   queuePreview();
+}
+function normaliseSelection() {
+  if (!component() || component()?.content_layout !== 'positioned') { contentMode = false; selectedElement = null; }
+  if (selectedElement && !element()) selectedElement = null;
+}
+async function enterContents() {
+  const current = component(); if (!current || converting || !active()) return;
+  if (current.content_layout === 'positioned') { contentMode = true; selectedElement = current.blocks[0]?.id ?? null; autoFit = true; render(); return; }
+  const baseline = clone(draft); const id = current.id;
+  converting = true;
+  try {
+    const preview = await api<Preview>('/api/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(baseline) });
+    if (!active() || selected !== id || !equal(baseline, draft)) { notice('The draft changed. Choose Edit contents again.'); return; }
+    const report = preview.components.find(report => report.id === id);
+    const replacement = positioned(current, report?.blocks ?? []);
+    change(layout => { layout.components[layout.components.findIndex(c => c.id === id)] = replacement; });
+    contentMode = true; selectedElement = current.blocks[0]?.id ?? null; autoFit = true; render();
+  } catch (error) { notice(String(error), true); }
+  finally { converting = false; if (selected === id && active()) renderInspector(); }
+}
+function leaveContents() { if (drag) endDrag(); contentMode = false; selectedElement = null; autoFit = true; render(); }
+function useFlow() {
+  const id = selected; if (!id) return;
+  change(layout => { const c = layout.components.find(c => c.id === id)!; c.content_layout = 'flow'; for (const block of c.blocks) delete block.rect; });
+  contentMode = false; selectedElement = null; autoFit = true; render();
 }
 function queuePreview() {
   window.clearTimeout(previewTimer);
@@ -176,12 +202,18 @@ function render(rebuildInspector = true) {
   button('undo').disabled = !active() || !undo.length;
   button('redo').disabled = !active() || !redo.length;
   $('add-tools').hidden = !active();
-  $('library-description').textContent = active() ? 'Select a component to make it yours.' : 'Your saved arrangement.';
-  $('canvas-title').textContent = viewingDraft ? 'Draft preview' : 'Last completed frame';
-  $('canvas-caption').textContent = viewingDraft ? 'Rust-rendered pixels · Drag to move, corner to resize.' : 'Exactly the pixels sent to the simulated display.';
+  button('display-settings').hidden = editingContents();
+  $('add-target').textContent = editingContents() ? 'ADD INSIDE THIS COMPONENT' : 'ADD TO YOUR DISPLAY';
+  $('placement-note').textContent = editingContents() ? 'Elements each own a box. Padding and data status stay outside their space.' : 'Components sit side by side. Each one owns its space on the display.';
+  $('library-title').textContent = editingContents() ? 'Elements' : 'Components';
+  $('library-description').textContent = editingContents() ? `Inside ${name(component()!)}` : active() ? 'Select a component to make it yours.' : 'Your saved arrangement.';
+  $('canvas-title').textContent = editingContents() ? `Content · ${name(component()!)}` : viewingDraft ? 'Draft preview' : 'Last completed frame';
+  $('canvas-caption').textContent = editingContents() ? 'Element boxes reflow text at fixed font sizes. Data status stays reserved.' : viewingDraft ? 'Rust-rendered pixels · Drag to move, corner to resize.' : 'Exactly the pixels sent to the simulated display.';
+  $('content-mode-bar').hidden = !editingContents();
   $('revision-label').textContent = `Displayed ${saved.displayed_revision} / saved ${saved.revision}`;
   $('data-mode').textContent = saved.connector_execution ? (saved.fixture_data ? 'Monochrome · Connectors + fixtures' : 'Monochrome · Connector data') : 'Monochrome · Sample data';
-  $('dimensions').textContent = `${draft.display.width} × ${draft.display.height} px`;
+  const view = editingContents() ? component()!.rect : draft.display;
+  $('dimensions').textContent = `${view.width} × ${view.height} px${editingContents() ? ' · component' : ''}`;
   $('keyboard-hint').textContent = active() ? 'Arrow keys: move · Shift: 8 px · Ctrl/Cmd Z: undo · Ctrl/Cmd S: save' : 'Paperphase 0.1.0 · Experimental';
   $('grid-overlay').style.display = viewingDraft && checked('grid') ? 'block' : 'none';
   if (viewingDraft && draftImage) $<HTMLImageElement>('frame').src = draftImage;
@@ -205,6 +237,18 @@ function node<K extends keyof HTMLElementTagNameMap>(tag: K, className = '', con
 function renderList() {
   const list = $('component-list');
   list.replaceChildren();
+  if (editingContents()) {
+    const c = component()!; $('component-count').textContent = String(c.blocks.length);
+    for (const block of c.blocks) {
+      const item = node('button', `component-item ${selectedElement === block.id ? 'selected' : ''}`);
+      item.setAttribute('aria-label', `Select element ${block.id}`);
+      item.append(node('span', 'component-icon', block.source.kind === 'clock' ? '◷' : block.source.kind === 'field' ? '≋' : 'Aa'));
+      const text = node('span'); text.append(node('span', 'item-name', elementName(block)));
+      if (block.rect) text.append(node('small', '', `${block.rect.width} × ${block.rect.height} · ${block.rect.x}, ${block.rect.y}`));
+      item.append(text); item.disabled = !active(); item.onclick = () => { selectedElement = block.id; render(); }; list.append(item);
+    }
+    return;
+  }
   const layout = viewingDraft ? draft : saved.layout;
   $('component-count').textContent = String(layout.components.length);
   for (const c of layout.components) {
@@ -215,7 +259,7 @@ function renderList() {
     text.append(node('span', 'item-name', name(c)), node('small', '', `${c.rect.width} × ${c.rect.height} · ${c.rect.x}, ${c.rect.y}`));
     item.append(text);
     item.disabled = !active();
-    item.onclick = () => { selected = c.id; settingsSelected = false; render(); };
+    item.onclick = () => { selected = c.id; contentMode = false; selectedElement = null; settingsSelected = false; render(); };
     list.append(item);
   }
 }
@@ -223,6 +267,7 @@ function renderOverlays() {
   const overlays = $('overlays');
   overlays.replaceChildren();
   if (!active()) return;
+  if (editingContents()) { renderElementOverlays(overlays); return; }
   for (const c of draft.components) {
     const box = node('div', `component-box ${selected === c.id ? 'selected' : ''} ${drag?.id === c.id && drag.invalid ? 'invalid' : ''}`);
     box.dataset.component = c.id;
@@ -253,11 +298,43 @@ function renderOverlays() {
 function fit() {
   if (!draft) return;
   const viewport = $('viewport');
-  if (autoFit) zoom = Math.min(1, (viewport.clientWidth - 68) / draft.display.width, (viewport.clientHeight - 68) / draft.display.height);
+  const view = editingContents() ? component()!.rect : { x: 0, y: 0, width: draft.display.width, height: draft.display.height };
+  if (autoFit) zoom = Math.min(editingContents() ? 2 : 1, (viewport.clientWidth - 68) / view.width, (viewport.clientHeight - 68) / view.height);
   zoom = Math.max(.1, Math.min(2, zoom));
-  Object.assign($('board').style, { width: `${draft.display.width}px`, height: `${draft.display.height}px`, transform: `scale(${zoom})` });
-  Object.assign($('board-wrap').style, { width: `${draft.display.width * zoom}px`, height: `${draft.display.height * zoom}px` });
+  Object.assign($('board').style, { width: `${view.width}px`, height: `${view.height}px`, transform: `scale(${zoom})` });
+  Object.assign($('frame').style, { width: `${draft.display.width}px`, height: `${draft.display.height}px`, position: 'absolute', left: `${-view.x}px`, top: `${-view.y}px` });
+  Object.assign($('board-wrap').style, { width: `${view.width * zoom}px`, height: `${view.height * zoom}px` });
+  const pad = editingContents() ? component()!.padding : 0;
+  $('grid-overlay').style.backgroundPosition = `${pad}px ${pad}px`;
   $('zoom-label').textContent = `${Math.round(zoom * 100)}%`;
+}
+
+function renderElementOverlays(overlays: HTMLElement) {
+  const c = component()!; const bounds = contentBounds(c);
+  const area = node('div', 'content-boundary');
+  Object.assign(area.style, { left: `${c.padding}px`, top: `${c.padding}px`, width: `${bounds.width}px`, height: `${bounds.height}px` }); overlays.append(area);
+  if (c.blocks.some(block => block.source.kind === 'field')) {
+    const band = node('div', 'reserved-area');
+    Object.assign(band.style, { left: `${c.padding}px`, top: `${c.padding + bounds.height}px`, width: `${bounds.width}px`, height: '18px' });
+    band.setAttribute('aria-label', 'Reserved data status area'); overlays.append(band);
+  }
+  for (const block of c.blocks) {
+    if (!block.rect) continue;
+    const box = node('div', `element-box ${selectedElement === block.id ? 'selected' : ''} ${drag?.blockId === block.id && drag.invalid ? 'invalid' : ''}`);
+    box.dataset.element = block.id; box.tabIndex = 0; box.setAttribute('role', 'button'); box.setAttribute('aria-label', `Move element ${block.id}`); box.setAttribute('aria-pressed', String(selectedElement === block.id));
+    const rect = drag?.blockId === block.id && drag.invalid ? proposedRect(drag, lastPointerX, lastPointerY) : block.rect;
+    Object.assign(box.style, { left: `${c.padding + rect.x}px`, top: `${c.padding + rect.y}px`, width: `${rect.width}px`, height: `${rect.height}px` });
+    if (selectedElement === block.id) {
+      const tag = node('span', 'element-tag', elementName(block)); if (c.padding + rect.y < 22) tag.style.top = '1px';
+      const handle = node('span', 'resize-handle'); handle.dataset.resize = 'true'; handle.setAttribute('aria-hidden', 'true'); box.append(tag, handle);
+    }
+    box.onfocus = () => {
+      if (selectedElement !== block.id) { selectedElement = block.id; renderInspector(); renderList(); renderOverlays();
+        for (const next of overlays.querySelectorAll<HTMLElement>('[data-element]')) if (next.dataset.element === block.id) next.focus();
+      }
+    };
+    overlays.append(box);
+  }
 }
 
 function label(title: string, input: HTMLElement, parent: HTMLElement) {
@@ -302,9 +379,10 @@ function section(title: string, parent: HTMLElement) {
 }
 function renderInspector() {
   const inspector = $('inspector-body');
-  if (lastInspectedId !== selected) {
+  const inspected = editingContents() ? `${selected}/${selectedElement}` : selected;
+  if (lastInspectedId !== inspected) {
     inspector.parentElement!.scrollTop = 0;
-    lastInspectedId = selected;
+    lastInspectedId = inspected;
   }
   inspector.replaceChildren();
   if (active() && settingsSelected) { renderSettings(inspector); return; }
@@ -316,25 +394,42 @@ function renderInspector() {
   }
   const id = c.id;
   const updateComponent = (fn: (c: Component) => void, key = '', rebuild = true) => change(l => fn(l.components.find(c => c.id === id)!), key, rebuild);
-  const placement = section('PLACEMENT · NATIVE PIXELS', inspector);
-  const geometry = node('div', 'field-grid'); placement.append(geometry);
-  for (const [key, title, min, max] of [['x', 'X', 0, draft.display.width - c.rect.width], ['y', 'Y', 0, draft.display.height - c.rect.height], ['width', 'Width', 32, draft.display.width], ['height', 'Height', 32, draft.display.height]] as const) {
-    numeric(title, c.rect[key], min, max, geometry, n => updateComponent(c => { c.rect[key] = n; }));
+  if (editingContents() && !element()) {
+    const empty = node('div', 'empty-properties'); empty.append(node('span', '', '↖'), node('h3', '', 'Choose an element.'), node('p', '', 'Select text, a data field, or a clock on the canvas. Add another element from the left panel.')); inspector.append(empty); return;
   }
-  const spacing = node('div', 'field-grid'); placement.append(spacing);
-  numeric('Padding', c.padding, 0, 64, spacing, n => updateComponent(c => { c.padding = n; }));
-  numeric('Block gap', c.gap, 0, 64, spacing, n => updateComponent(c => { c.gap = n; }));
-  const borderLabel = node('label', 'check'); const border = node('input'); border.type = 'checkbox'; border.checked = c.border;
-  border.onchange = () => updateComponent(c => { c.border = border.checked; }); borderLabel.append(border, document.createTextNode('Draw component border')); placement.append(borderLabel);
-  const content = section('CONTENT · FLOWS FROM TOP TO BOTTOM', inspector);
+  if (!editingContents()) {
+    const placement = section('PLACEMENT · NATIVE PIXELS', inspector);
+    const geometry = node('div', 'field-grid'); placement.append(geometry);
+    for (const [key, title, min, max] of [['x', 'X', 0, draft.display.width - c.rect.width], ['y', 'Y', 0, draft.display.height - c.rect.height], ['width', 'Width', 32, draft.display.width], ['height', 'Height', 32, draft.display.height]] as const) {
+      numeric(title, c.rect[key], min, max, geometry, n => updateComponent(c => { c.rect[key] = n; }));
+    }
+    const spacing = node('div', 'field-grid'); placement.append(spacing);
+    numeric('Padding', c.padding, 0, 64, spacing, n => updateComponent(c => { c.padding = n; }));
+    numeric('Block gap', c.gap, 0, 64, spacing, n => updateComponent(c => { c.gap = n; }));
+    const borderLabel = node('label', 'check'); const border = node('input'); border.type = 'checkbox'; border.checked = c.border;
+    border.onchange = () => updateComponent(c => { c.border = border.checked; }); borderLabel.append(border, document.createTextNode('Draw component border')); placement.append(borderLabel);
+    const layout = section('INTERNAL LAYOUT', inspector);
+    select('Content layout', c.content_layout ?? 'flow', [['flow', 'Vertical flow'], ['positioned', 'Positioned elements']], layout, value => { if (value === 'flow') useFlow(); else void enterContents(); });
+    action('Edit contents ↗', 'Edit contents', layout, () => { void enterContents(); }, converting).className = 'wide-button';
+  }
+  const content = section(editingContents() ? 'SELECTED ELEMENT' : c.content_layout === 'positioned' ? 'POSITIONED CONTENT' : 'CONTENT · FLOWS FROM TOP TO BOTTOM', inspector);
   c.blocks.forEach((block, index) => {
+    if (editingContents() && block.id !== selectedElement) return;
     const updateBlock = (fn: (b: Block) => void, key = '', rebuild = true) => updateComponent(c => fn(c.blocks.find(b => b.id === block.id)!), key, rebuild);
     const card = node('div', 'block-card'); card.dataset.block = block.id; content.append(card);
-    const heading = node('div', 'block-heading'); heading.append(node('strong', '', `Block ${index + 1}`)); card.append(heading);
+    const heading = node('div', 'block-heading'); heading.append(node('strong', '', `${editingContents() ? 'Element' : 'Block'} ${index + 1}`)); card.append(heading);
     const move = (direction: number) => updateComponent(c => { const i = c.blocks.findIndex(b => b.id === block.id); [c.blocks[i], c.blocks[i + direction]] = [c.blocks[i + direction]!, c.blocks[i]!]; });
-    action('↑', 'Move block up', heading, () => move(-1), index === 0);
-    action('↓', 'Move block down', heading, () => move(1), index === c.blocks.length - 1);
-    action('×', 'Remove block', heading, () => updateComponent(c => { c.blocks = c.blocks.filter(b => b.id !== block.id); }), c.blocks.length === 1);
+    if (c.content_layout !== 'positioned') {
+      action('↑', 'Move block up', heading, () => move(-1), index === 0);
+      action('↓', 'Move block down', heading, () => move(1), index === c.blocks.length - 1);
+    }
+    action('×', editingContents() ? 'Remove element' : 'Remove block', heading, () => updateComponent(c => { c.blocks = c.blocks.filter(b => b.id !== block.id); }), c.blocks.length === 1);
+    if (editingContents() && block.rect) {
+      const geometry = node('div', 'field-grid'); card.append(geometry); const bounds = contentBounds(c);
+      for (const [key, title, min, max] of [['x', 'Element X', 0, bounds.width - block.rect.width], ['y', 'Element Y', 0, bounds.height - block.rect.height], ['width', 'Element width', 8, bounds.width], ['height', 'Element height', 8, bounds.height]] as const) {
+        numeric(title, block.rect[key], min, max, geometry, value => updateBlock(b => { b.rect![key] = value; }));
+      }
+    }
     select('Content source', block.source.kind, [['literal', 'Text'], ['field', 'Dataset field'], ['clock', 'Time & date']], card, kind => updateBlock(b => {
       if (kind === 'literal') b.source = { kind: 'literal', text: 'Your text' };
       else if (kind === 'clock') b.source = { kind: 'clock', clock: newClock('time') };
@@ -371,10 +466,14 @@ function renderInspector() {
     select('Alignment', block.align ?? 'left', [['left', 'Left'], ['center', 'Centre'], ['right', 'Right']], typography, value => updateBlock(b => { b.align = value; }));
     select('Overflow', block.overflow ?? 'wrap', [['wrap', 'Wrap'], ['clip', 'Clip'], ['ellipsis', 'Ellipsis']], card, value => updateBlock(b => { b.overflow = value; }));
   });
-  action('+ Add text block', 'Add text block', content, () => updateComponent(c => { c.blocks.push(newBlock()); }), c.blocks.length >= 32).className = 'wide-button';
+  action(editingContents() ? '+ Add text element' : '+ Add text block', editingContents() ? 'Add text element' : 'Add text block', content, () => {
+    if (c.content_layout === 'positioned') addElement('text'); else updateComponent(c => { c.blocks.push(newBlock()); });
+  }, c.blocks.length >= 32).className = 'wide-button';
   const report = node('p', 'render-report'); report.id = 'render-report'; content.append(report); renderReport();
-  const remove = section('COMPONENT', inspector);
-  action('Remove component', 'Remove component', remove, () => { change(l => { l.components = l.components.filter(c => c.id !== id); }); selected = null; render(); }).className = 'danger wide-button';
+  if (!editingContents()) {
+    const remove = section('COMPONENT', inspector);
+    action('Remove component', 'Remove component', remove, () => { change(l => { l.components = l.components.filter(c => c.id !== id); }); selected = null; render(); }).className = 'danger wide-button';
+  }
 }
 function newBinding(dataset: Dataset): Binding { return { connection_id: dataset.connection_id, dataset_id: dataset.dataset_id, field_id: dataset.fields[0]!.id, row: 0, decimals: null, prefix: '', suffix: '' }; }
 // getRandomValues also works over plain HTTP on a LAN; randomUUID requires HTTPS.
@@ -400,6 +499,7 @@ function renderSettings(parent: HTMLElement) {
   panel.append(node('p', 'render-report', 'Use Save to apply these settings, or Discard to restore them. Refresh display also respects quiet hours.'));
 }
 function addComponent(kind: 'text' | 'data' | 'clock') {
+  if (editingContents()) { addElement(kind); return; }
   const block = newBlock();
   const blocks = [block];
   if (kind === 'clock') {
@@ -419,26 +519,45 @@ function addComponent(kind: 'text' | 'data' | 'clock') {
   notice('No free 256 × 128 area is available. Resize or remove a component to make room.');
 }
 
+function addElement(kind: 'text' | 'data' | 'clock') {
+  const current = component(); if (!current || current.content_layout !== 'positioned' || !active()) return;
+  if (current.blocks.length >= 32) { notice('Each component can contain at most 32 elements.'); return; }
+  const block = newBlock();
+  if (kind === 'data') { if (!catalog[0]) return; block.source = { kind: 'field', binding: newBinding(catalog[0]) }; }
+  if (kind === 'clock') block.source = { kind: 'clock', clock: newClock('date_time') };
+  const candidate = clone(current); candidate.blocks.push(block);
+  const rect = freeElementRect(candidate, block.id, kind === 'clock' ? 60 : 30);
+  if (!rect) { notice('No free element-sized area is available. Resize or move an existing element to make room.'); return; }
+  block.rect = rect;
+  if (!validElements(candidate)) { notice('Leave enough content space for every element and the data status strip.', true); return; }
+  contentMode = true; selectedElement = block.id; autoFit = true;
+  change(layout => { layout.components.find(c => c.id === current.id)!.blocks.push(block); });
+}
+
 let lastPointerX = 0;
 let lastPointerY = 0;
 function proposedRect(state: NonNullable<typeof drag>, x: number, y: number): Rect {
   const snap = (n: number) => Math.round(n / (checked('snap') ? 8 : 1)) * (checked('snap') ? 8 : 1);
   const dx = (x - state.startX) / zoom, dy = (y - state.startY) / zoom;
   const rect = { ...state.original };
-  if (state.resize) { rect.width = Math.max(32, snap(rect.width + dx)); rect.height = Math.max(32, snap(rect.height + dy)); }
+  const minimum = state.blockId ? 8 : 32;
+  if (state.resize) { rect.width = Math.max(minimum, snap(rect.width + dx)); rect.height = Math.max(minimum, snap(rect.height + dy)); }
   else { rect.x = snap(rect.x + dx); rect.y = snap(rect.y + dy); }
   return rect;
 }
 $('board').addEventListener('pointerdown', event => {
   if (!active() || event.button !== 0 || drag) return;
   const target = event.target as HTMLElement;
-  const box = target.closest<HTMLElement>('[data-component]');
-  if (!box) { selected = null; render(); return; }
+  const inside = editingContents();
+  const box = target.closest<HTMLElement>(inside ? '[data-element]' : '[data-component]');
+  if (!box) { if (inside) selectedElement = null; else selected = null; render(); return; }
   event.preventDefault();
-  selected = box.dataset.component!;
+  if (inside) selectedElement = box.dataset.element!;
+  else selected = box.dataset.component!;
   settingsSelected = false;
   const c = component()!;
-  drag = { id: c.id, startX: event.clientX, startY: event.clientY, original: { ...c.rect }, last: { ...c.rect }, baseline: capture(), resize: !!target.closest('[data-resize]'), pointerId: event.pointerId, invalid: false };
+  const rect = inside ? element()!.rect! : c.rect;
+  drag = { id: c.id, blockId: inside ? selectedElement! : undefined, startX: event.clientX, startY: event.clientY, original: { ...rect }, last: { ...rect }, baseline: capture(), resize: !!target.closest('[data-resize]'), pointerId: event.pointerId, invalid: false };
   lastPointerX = event.clientX; lastPointerY = event.clientY;
   $('board').setPointerCapture(event.pointerId);
   document.body.classList.add('dragging');
@@ -449,8 +568,13 @@ $('board').addEventListener('pointermove', event => {
   if (!drag || event.pointerId !== drag.pointerId) return;
   lastPointerX = event.clientX; lastPointerY = event.clientY;
   const rect = proposedRect(drag, event.clientX, event.clientY);
-  drag.invalid = !validRect(rect, drag.id);
-  if (!drag.invalid) { drag.last = rect; component()!.rect = rect; queuePreview(); }
+  const c = component()!;
+  drag.invalid = drag.blockId ? !validElement(rect, drag.blockId, c) : !validRect(rect, drag.id) || !validElements({ ...c, rect });
+  if (!drag.invalid) {
+    drag.last = rect;
+    if (drag.blockId) c.blocks.find(block => block.id === drag!.blockId)!.rect = rect; else c.rect = rect;
+    queuePreview();
+  }
   renderOverlays();
 });
 function endDrag(cancel = false) {
@@ -459,9 +583,10 @@ function endDrag(cancel = false) {
   drag = undefined;
   if (cancel) restore(state.baseline);
   else {
-    component()!.rect = state.last;
+    if (state.blockId) component()!.blocks.find(block => block.id === state.blockId)!.rect = state.last;
+    else component()!.rect = state.last;
     if (!equal(state.baseline, capture())) remember(state.baseline);
-    if (state.invalid) notice('Components cannot overlap or leave the display. Restored the last valid position.');
+    if (state.invalid) notice(state.blockId ? 'Elements cannot overlap or leave the content area. Restored the last valid position.' : 'Components must fit the display and their positioned contents. Restored the last valid position.');
   }
   if ($('board').hasPointerCapture(state.pointerId)) $('board').releasePointerCapture(state.pointerId);
   document.body.classList.remove('dragging');
@@ -478,6 +603,7 @@ function history(direction: 'undo' | 'redo') {
   if (!layout) return;
   to.push(capture()); restore(layout); coalescedKey = '';
   if (!component()) selected = null;
+  normaliseSelection();
   notice(); render(); queuePreview();
 }
 async function save() {
@@ -486,7 +612,7 @@ async function save() {
   try {
     const result = await api<{ revision: number; phase: string }>('/api/layout', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ base_revision: saved.revision, layout: draft, refresh_settings: draftSettings }) });
     saved = { ...saved, revision: result.revision, layout: clone(draft), refresh_settings: clone(draftSettings), phase: result.phase };
-    editing = false; viewingDraft = false; selected = null; undo = []; redo = [];
+    editing = false; viewingDraft = false; selected = null; contentMode = false; selectedElement = null; undo = []; redo = [];
     ++previewSequence; previewAbort?.abort(); window.clearTimeout(previewTimer);
     notice(result.phase === 'paused' ? 'Saved. Display updates are paused for quiet hours.' : result.phase === 'pending' ? 'Saved. A display update is pending.' : result.phase === 'refreshing' ? 'Saved. The simulator is refreshing.' : 'Saved. The display is already up to date.');
     displayNoticePending = result.phase !== 'idle';
@@ -494,14 +620,14 @@ async function save() {
   finally { saving = false; render(); }
 }
 button('edit').onclick = () => {
-  editing = true; viewingDraft = true; draft = clone(saved.layout); draftSettings = clone(saved.refresh_settings); settingsSelected = false; draftImage = $<HTMLImageElement>('frame').src;
+  editing = true; viewingDraft = true; draft = clone(saved.layout); draftSettings = clone(saved.refresh_settings); settingsSelected = false; contentMode = false; selectedElement = null; draftImage = $<HTMLImageElement>('frame').src;
   undo = []; redo = []; selected = null; conflict = false; notice(); render(); queuePreview();
 };
 button('discard').onclick = async () => {
   if (drag) endDrag(true);
   try {
     const current = await api<Workspace>('/api/state');
-    saved = current; draft = clone(current.layout); draftSettings = clone(current.refresh_settings); settingsSelected = false; editing = false; viewingDraft = false; selected = null; conflict = false;
+    saved = current; draft = clone(current.layout); draftSettings = clone(current.refresh_settings); settingsSelected = false; contentMode = false; selectedElement = null; editing = false; viewingDraft = false; selected = null; conflict = false;
     ++previewSequence; previewAbort?.abort(); window.clearTimeout(previewTimer); notice(); render(); updateStatus();
   } catch (error) { notice(String(error), true); }
 };
@@ -510,7 +636,9 @@ button('view-current').onclick = () => { if (drag) endDrag(); viewingDraft = fal
 button('view-draft').onclick = () => { viewingDraft = true; render(); };
 button('undo').onclick = () => history('undo'); button('redo').onclick = () => history('redo');
 button('add-text').onclick = () => addComponent('text'); button('add-data').onclick = () => addComponent('data'); button('add-clock').onclick = () => addComponent('clock');
-button('display-settings').onclick = () => { settingsSelected = true; selected = null; render(); };
+button('display-settings').onclick = () => { settingsSelected = true; selected = null; contentMode = false; selectedElement = null; render(); };
+button('exit-content').onclick = leaveContents;
+button('use-flow').onclick = useFlow;
 button('refresh').onclick = async () => {
   button('refresh').disabled = true;
   try {
@@ -533,17 +661,33 @@ document.addEventListener('keydown', event => {
   const mod = event.ctrlKey || event.metaKey;
   if (mod && event.key.toLowerCase() === 's') { event.preventDefault(); void save(); return; }
   if (!active()) return;
-  if (event.key === 'Escape') { if (drag) endDrag(true); else { selected = null; settingsSelected = false; render(); } return; }
+  if (event.key === 'Escape') {
+    if (drag) endDrag(true);
+    else if (editingContents()) { if (selectedElement) { selectedElement = null; render(); } else leaveContents(); }
+    else { selected = null; settingsSelected = false; render(); }
+    return;
+  }
   if (typing || drag) return;
   if (mod && event.key.toLowerCase() === 'z') { event.preventDefault(); history(event.shiftKey ? 'redo' : 'undo'); return; }
   const c = component();
   if (!c) return;
-  if (event.key === 'Delete' || event.key === 'Backspace') { event.preventDefault(); const id = c.id; change(l => { l.components = l.components.filter(c => c.id !== id); }); selected = null; render(); return; }
+  if (event.key === 'Delete' || event.key === 'Backspace') {
+    event.preventDefault();
+    if (editingContents()) {
+      if (selectedElement && c.blocks.length > 1) { const id = selectedElement; change(l => { const target = l.components.find(component => component.id === c.id)!; target.blocks = target.blocks.filter(block => block.id !== id); }); selectedElement = null; render(); }
+    } else { const id = c.id; change(l => { l.components = l.components.filter(c => c.id !== id); }); selected = null; render(); }
+    return;
+  }
   const delta: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
   const movement = delta[event.key];
   if (movement) {
     event.preventDefault(); const step = event.shiftKey ? 8 : 1;
-    change(l => { const target = l.components.find(c => c.id === selected)!; target.rect.x += movement[0] * step; target.rect.y += movement[1] * step; }, `move.${c.id}`);
+    if (editingContents() && !selectedElement) return;
+    change(l => {
+      const target = l.components.find(c => c.id === selected)!;
+      const rect = editingContents() ? target.blocks.find(block => block.id === selectedElement)!.rect! : target.rect;
+      rect.x += movement[0] * step; rect.y += movement[1] * step;
+    }, `move.${c.id}.${editingContents() ? selectedElement : ''}`);
   }
 });
 function updateStatus() {

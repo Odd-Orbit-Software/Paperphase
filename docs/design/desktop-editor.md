@@ -2,7 +2,8 @@
 
 The first browser editor runs inside the Paperphase Rust executable. It edits
 text and typed-data components against a simulated monochrome display. It does
-not load plugins or drive GPIO/SPI yet.
+not drive GPIO/SPI yet. Registered compiled connectors are described in the
+[connection execution design](compiled-connectors.md).
 
 ![Desktop editor with a draft layout and component properties](images/editor-overview.png)
 
@@ -19,6 +20,10 @@ and ordered text blocks. Blocks support literal text or a connection/dataset/
 field/row binding, numeric precision, affixes, fixed font size, alignment, and
 wrap/clip/ellipsis overflow. All datasets in the current fixture catalog are
 available to every component.
+
+[Internal element editing](internal-editor.md) now adds positioned text/data/clock
+boxes and a cropped component canvas. Existing components retain vertical flow
+until the user chooses Edit contents.
 
 Dragging converts pointer distances from CSS pixels into native display pixels.
 Optional snapping rounds coordinates/sizes to an eight-pixel grid. Each proposed

@@ -78,6 +78,31 @@ These records save independently of layout drafts. The Demo weather settings
 descriptor is settings-only; the Temperature connector can
 [run through a registered compiled module](compiled-connectors.md).
 
+## Edit inside a component
+
+Select a component in **Edit layout**, then choose **Edit contents** in its
+properties. Existing vertical content converts to positioned boxes using the
+Rust renderer's measurements. If some blocks are hidden or their measured boxes
+cannot fit without overlap, enlarge the component or adjust the font sizes/gap
+and try again.
+
+The canvas now focuses on that component. Select an element on the canvas or in
+the left panel, drag it, or resize with its corner handle. **Element X/Y** are
+relative to the content area, after padding. Numeric width/height and font size
+are independent. Snap, arrows, Shift-arrows, undo/redo, and Save/Discard work here
+too. The left panel adds text, data, or a clock inside the component.
+
+Elements cannot overlap or occupy the hatched data-status strip. Increasing
+padding, adding a data binding, or shrinking the component must leave every box
+inside the available area. Resize or move its elements first when necessary.
+Delete removes the selected element; a component must keep at least one.
+
+**← Components** returns to the full layout. **Use vertical flow** restores
+automatic top-to-bottom arrangement; Undo recovers the positioned boxes. Escape
+clears the element selection, and a second Escape returns to the full layout.
+Save applies the complete layout and returns to **On display**. Icons, repeating
+lists, and charts are not available yet.
+
 ## Alternate layouts, fixtures, and backup
 
 ```sh
@@ -127,7 +152,7 @@ CAPTURE_SCREENSHOTS=1 pnpm --dir web test
 ```
 
 This updates screenshots under `docs/design/images`, including the editor,
-quiet hours, connection settings, and compiled data. Playwright
+quiet hours, connection settings, compiled data, and internal element editing. Playwright
 failure traces and local workspaces are ignored by Git. Rust checks need the
 compiled guest target and loopback access as described in
 [foundation-harness.md](foundation-harness.md). These are desktop checks; they do

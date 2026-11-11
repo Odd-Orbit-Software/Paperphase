@@ -110,8 +110,10 @@ resizing, optional snapping, numeric geometry, keyboard movement, undo/redo,
 and Save/Discard.
 
 Plugin templates provide starting designs. A visual builder exposes text,
-icons, lists, charts, and data bindings within a component. The initial building
-blocks and detailed builder interactions still need specification.
+icons, lists, charts, and data bindings within a component. The initial
+text/data/clock elements now support both vertical flow and explicit internal
+positioning, as documented in the [internal editor](../design/internal-editor.md).
+Icons, repeating lists, charts, and distributable templates still need specification.
 
 Highlight invalid placements while dragging. On an invalid drop, restore the
 last valid position without moving neighbours. Resizing reflows content using

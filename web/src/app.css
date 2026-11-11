@@ -491,6 +491,63 @@ p {
 .component-box:active {
   cursor: grabbing;
 }
+.element-box {
+  position: absolute;
+  border: 1px dashed #64819888;
+  pointer-events: auto;
+  cursor: grab;
+  outline: 0;
+}
+.element-box:hover {
+  background: #55799412;
+}
+.element-box.selected {
+  border: 2px solid #486f8a;
+  background: #55799408;
+}
+.element-box.invalid {
+  border-color: #b34d42;
+  background: #c856451d;
+}
+.element-box .resize-handle {
+  border-color: #486f8a;
+}
+.element-tag {
+  position: absolute;
+  top: -21px;
+  left: -2px;
+  background: #486f8a;
+  color: white;
+  font-size: 10px;
+  padding: 3px 5px;
+  white-space: nowrap;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.content-boundary {
+  position: absolute;
+  border: 1px dashed #8aa492;
+  pointer-events: none;
+}
+.reserved-area {
+  position: absolute;
+  background: repeating-linear-gradient(135deg, #b18e3b22 0 3px, transparent 3px 7px);
+  border-top: 1px dashed #ad986b;
+  pointer-events: none;
+}
+#content-mode-bar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 0 24px 10px;
+  font-size: 10px;
+  color: #70836b;
+}
+#content-mode-bar > button:last-child {
+  margin-left: auto;
+}
+
 .resize-handle {
   position: absolute;
   bottom: -5px;

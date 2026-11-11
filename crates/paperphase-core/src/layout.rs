@@ -6,6 +6,7 @@ use crate::{ClockSpec, Dataset, Result, require, valid_id};
 
 pub const MAX_PIXELS: u64 = 4_194_304;
 pub const STATUS_HEIGHT: u32 = 18;
+pub const MIN_ELEMENT_SIZE: u32 = 8;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -85,7 +86,17 @@ pub struct Component {
     pub gap: u16,
     #[serde(default)]
     pub border: bool,
+    #[serde(default)]
+    pub content_layout: ContentLayout,
     pub blocks: Vec<TextBlock>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ContentLayout {
+    #[default]
+    Flow,
+    Positioned,
 }
 
 fn default_padding() -> u16 {
@@ -105,6 +116,9 @@ pub struct TextBlock {
     pub align: Align,
     #[serde(default)]
     pub overflow: Overflow,
+    /// Content-local coordinates, excluding padding and the host status strip.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rect: Option<Rect>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize)]
@@ -150,6 +164,22 @@ pub struct Binding {
 }
 
 impl Component {
+    pub fn content_bounds(&self) -> Rect {
+        let padding = 2 * u32::from(self.padding);
+        Rect {
+            x: 0,
+            y: 0,
+            width: self.rect.width.saturating_sub(padding),
+            height: self.rect.height.saturating_sub(
+                padding
+                    + if self.has_bindings() {
+                        STATUS_HEIGHT
+                    } else {
+                        0
+                    },
+            ),
+        }
+    }
     pub fn has_bindings(&self) -> bool {
         self.blocks
             .iter()
@@ -227,6 +257,40 @@ impl Layout {
             let mut block_ids = BTreeSet::new();
             for (j, block) in component.blocks.iter().enumerate() {
                 let path = format!("{path}.blocks[{j}]");
+                match (component.content_layout, block.rect) {
+                    (ContentLayout::Flow, None) => {}
+                    (ContentLayout::Flow, Some(_)) => require(
+                        false,
+                        format!("{path}.rect"),
+                        "flow elements must not have positioned rectangles",
+                    )?,
+                    (ContentLayout::Positioned, None) => require(
+                        false,
+                        format!("{path}.rect"),
+                        "positioned elements require a rectangle",
+                    )?,
+                    (ContentLayout::Positioned, Some(rect)) => {
+                        let bounds = component.content_bounds();
+                        require(
+                            rect.width >= MIN_ELEMENT_SIZE && rect.height >= MIN_ELEMENT_SIZE,
+                            format!("{path}.rect"),
+                            "minimum element size is 8 × 8",
+                        )?;
+                        require(
+                            rect.right() <= u64::from(bounds.width)
+                                && rect.bottom() <= u64::from(bounds.height),
+                            format!("{path}.rect"),
+                            "element extends outside the content area",
+                        )?;
+                        for other in &component.blocks[..j] {
+                            require(
+                                !other.rect.is_some_and(|other| rect.intersects(other)),
+                                format!("{path}.rect"),
+                                "element overlaps another element",
+                            )?;
+                        }
+                    }
+                }
                 require(
                     valid_id(&block.id) && block_ids.insert(&block.id),
                     format!("{path}.id"),

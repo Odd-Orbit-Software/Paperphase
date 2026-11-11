@@ -29,6 +29,8 @@ display. Built-in time/date blocks, clock/freshness scheduling, and quiet hours
 work in the simulator. Connector definitions generate persistent settings forms
 with private-value handling. Registered compiled connectors now fetch and cache
 data through shared host networking, with polling, backoff, and Fetch now.
+The internal editor supports direct positioning of text, data, and clock elements
+inside each component, alongside the original vertical flow.
 Real provider integrations, Pi measurements, and hardware validation are pending.
 The initial target is a Raspberry Pi Zero 2 W running 64-bit Raspberry
 Pi OS Lite with a Waveshare 7.5-inch monochrome e-paper HAT. The exact panel
@@ -43,6 +45,7 @@ revision and resolution remain to be confirmed.
 - [Shared data and renderer design](docs/design/data-and-rendering.md)
 - [Run the desktop editor](docs/usage/desktop-editor.md)
 - [Desktop editor design](docs/design/desktop-editor.md)
+- [Internal element editor](docs/design/internal-editor.md)
 - [Clock and refresh scheduling](docs/design/clock-and-refresh.md)
 - [Configure connections](docs/usage/connections.md)
 - [Connector settings design](docs/design/connector-settings.md)

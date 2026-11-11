@@ -9,8 +9,8 @@ use fontdue::{
     },
 };
 use paperphase_core::{
-    Align, Binding, Component, FieldKind, Layout, Overflow, Rect, STATUS_HEIGHT, Snapshot,
-    SnapshotSet, TextBlock, TextSource,
+    Align, Binding, Component, ContentLayout, FieldKind, Layout, Overflow, Rect, STATUS_HEIGHT,
+    Snapshot, SnapshotSet, TextBlock, TextSource,
 };
 use serde::Serialize;
 
@@ -45,6 +45,21 @@ pub struct ComponentReport {
     pub id: String,
     pub state: DataState,
     pub warnings: Vec<RenderWarning>,
+    pub blocks: Vec<BlockReport>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BlockReport {
+    pub id: String,
+    /// The visible box in content-local coordinates; None for hidden flow blocks.
+    pub rect: Option<Rect>,
+}
+
+struct TextMetrics {
+    flow_height: u32,
+    visible_height: u32,
+    overflow: bool,
+    fallback: bool,
 }
 
 impl ComponentReport {
@@ -111,6 +126,14 @@ impl Renderer {
                 id: component.id.clone(),
                 state: DataState::Fresh,
                 warnings: Vec::new(),
+                blocks: component
+                    .blocks
+                    .iter()
+                    .map(|block| BlockReport {
+                        id: block.id.clone(),
+                        rect: None,
+                    })
+                    .collect(),
             };
             let values: Vec<_> = component
                 .blocks
@@ -157,25 +180,48 @@ impl Renderer {
             ..inner
         };
         let mut y = body.y;
-        for (block, value) in component.blocks.iter().zip(values) {
-            if u64::from(y) >= body.bottom() {
+        for (index, (block, value)) in component.blocks.iter().zip(values).enumerate() {
+            if component.content_layout == ContentLayout::Flow && u64::from(y) >= body.bottom() {
                 report.warn(RenderWarning::Overflow);
                 break;
             }
-            let clip = Rect {
-                y,
-                height: (body.bottom() - u64::from(y)) as u32,
-                ..body
+            let clip = if component.content_layout == ContentLayout::Positioned {
+                let rect = block
+                    .rect
+                    .expect("positioned rectangles validated before rendering");
+                Rect {
+                    x: body.x + rect.x,
+                    y: body.y + rect.y,
+                    width: rect.width,
+                    height: rect.height,
+                }
+            } else {
+                Rect {
+                    y,
+                    height: (body.bottom() - u64::from(y)) as u32,
+                    ..body
+                }
             };
-            let (height, overflow, fallback) = self.text(frame, value, block, clip);
-            if overflow {
+            let metrics = self.text(frame, value, block, clip);
+            report.blocks[index].rect =
+                Some(if component.content_layout == ContentLayout::Positioned {
+                    block.rect.expect("validated")
+                } else {
+                    Rect {
+                        x: 0,
+                        y: y - body.y,
+                        width: body.width,
+                        height: metrics.visible_height.min(clip.height),
+                    }
+                });
+            if metrics.overflow {
                 report.warn(RenderWarning::Overflow);
             }
-            if fallback {
+            if metrics.fallback {
                 report.warn(RenderWarning::GlyphFallback);
             }
             y = y
-                .saturating_add(height)
+                .saturating_add(metrics.flow_height)
                 .saturating_add(u32::from(component.gap));
         }
         let label = match report.state {
@@ -197,19 +243,20 @@ impl Renderer {
                 font_size: 11,
                 align: Align::Left,
                 overflow: Overflow::Clip,
+                rect: None,
             };
             self.text(frame, label, &style, clip);
         }
     }
 
-    /// Returns flow height, overflow status, and whether glyph substitution occurred.
+    /// Preserve flow advance while also reporting a box covering visible glyphs.
     fn text(
         &mut self,
         frame: &mut Frame,
         text: &str,
         style: &TextBlock,
         clip: Rect,
-    ) -> (u32, bool, bool) {
+    ) -> TextMetrics {
         let mut fallback = false;
         let mut text: String = text
             .chars()
@@ -279,6 +326,7 @@ impl Renderer {
         self.flow
             .append(&[&self.font], &TextStyle::new(&text, px, 0));
         let height = self.flow.height().ceil() as u32;
+        let mut visible_height = height;
         overflow |= height > clip.height;
         for glyph in self.flow.glyphs() {
             if glyph.width == 0 || glyph.height == 0 {
@@ -286,6 +334,8 @@ impl Renderer {
             }
             let x = glyph.x.round() as i64;
             let y = glyph.y.round() as i64;
+            visible_height =
+                visible_height.max((y + glyph.height as i64 - i64::from(clip.y)).max(0) as u32);
             if x >= clip.right() as i64
                 || y >= clip.bottom() as i64
                 || x + glyph.width as i64 <= i64::from(clip.x)
@@ -313,7 +363,12 @@ impl Renderer {
                 }
             }
         }
-        (height, overflow, fallback)
+        TextMetrics {
+            flow_height: height,
+            visible_height,
+            overflow,
+            fallback,
+        }
     }
 }
 

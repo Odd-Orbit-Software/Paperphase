@@ -4,4 +4,6 @@ mod frame;
 mod renderer;
 
 pub use frame::Frame;
-pub use renderer::{ComponentReport, DataState, RenderWarning, RenderedFrame, Renderer};
+pub use renderer::{
+    BlockReport, ComponentReport, DataState, RenderWarning, RenderedFrame, Renderer,
+};

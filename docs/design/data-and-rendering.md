@@ -49,10 +49,10 @@ without starting an HTTP server or contacting providers.
 | `Snapshot` | Connection ID, dataset, last successful fetch time, optional observation time, stale interval, last error |
 | `SnapshotSet` | Schema version and snapshots keyed by connection/dataset identity |
 | `Layout` | Schema version, simulator display specification, components |
-| `Component` | ID, rectangle, padding, gap, border, vertically arranged text blocks |
-| `TextBlock` | ID, literal/field source, font size, alignment, overflow mode |
+| `Component` | ID, rectangle, padding, gap, border, flow/positioned content layout, text blocks |
+| `TextBlock` | ID, literal/field/clock source, font size, alignment, overflow mode, optional positioned rectangle |
 | `Binding` | Connection ID, dataset ID, field ID, row position, optional decimal precision, prefix/suffix |
-| `ComponentReport` | Component ID, data state, rendering/binding warnings |
+| `ComponentReport` | Component ID, data state, rendering/binding warnings, measured block boxes |
 
 IDs are case-sensitive ASCII identifiers of 1–64 bytes using letters, digits,
 underscores, hyphens, and dots. They are separate from visible text: changing a
@@ -183,3 +183,6 @@ account-scoped snapshots through the shared runtime.
 [Live clocks and simulated refresh scheduling](clock-and-refresh.md) are
 implemented. Real provider integrations, physical drivers, and Pi validation
 remain pending.
+
+[Positioned internal elements](internal-editor.md) extend the block builder with
+measured flow conversion and separately clipped content-local rectangles.

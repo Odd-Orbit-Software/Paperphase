@@ -341,3 +341,96 @@ fn invalid_layout_is_rejected_before_rendering() {
         .contains(32, 31)
     );
 }
+
+#[test]
+fn measured_flow_boxes_preserve_pixels_when_converted_to_positioned_elements() {
+    use paperphase_core::{Align, ContentLayout};
+    let mut renderer = Renderer::new().unwrap();
+    for alignment in [Align::Left, Align::Center, Align::Right] {
+        for at in [101, 160] {
+            let mut scene = layout();
+            scene.components[0].gap = 8;
+            let mut title = scene.components[0].blocks[0].clone();
+            title.id = "title".into();
+            title.source = paperphase_core::TextSource::Literal {
+                text: "Égy\nDublin".into(),
+            };
+            title.font_size = 12;
+            title.align = alignment;
+            scene.components[0].blocks.insert(0, title);
+            let before = renderer.render(&scene, &data(), at).unwrap();
+            scene.components[0].content_layout = ContentLayout::Positioned;
+            for (block, report) in scene.components[0]
+                .blocks
+                .iter_mut()
+                .zip(&before.components[0].blocks)
+            {
+                block.rect = report.rect;
+            }
+            let after = renderer.render(&scene, &data(), at).unwrap();
+            assert_eq!(before.frame, after.frame);
+            assert_eq!(before.components[0].state, after.components[0].state);
+        }
+    }
+}
+
+#[test]
+fn positioned_text_is_clipped_to_its_box_and_moving_it_clears_old_pixels() {
+    use paperphase_core::ContentLayout;
+    let mut scene = literal("MMMMMMMM", 32, "wrap");
+    scene.components[0].content_layout = ContentLayout::Positioned;
+    let area = Rect {
+        x: 8,
+        y: 8,
+        width: 40,
+        height: 24,
+    };
+    scene.components[0].blocks[0].rect = Some(area);
+    let mut renderer = Renderer::new().unwrap();
+    let before = renderer.render(&scene, &data(), 101).unwrap();
+    assert!(
+        before.components[0]
+            .warnings
+            .contains(&RenderWarning::Overflow)
+    );
+    assert!(before.frame.bits().iter().any(|byte| *byte != 0));
+    for y in 0..96 {
+        for x in 0..192 {
+            if !area.contains(x, y) {
+                assert_eq!(before.frame.is_black(x as u32, y as u32), Some(false));
+            }
+        }
+    }
+    scene.components[0].blocks[0].rect.as_mut().unwrap().x = 56;
+    let after = renderer.render(&scene, &data(), 101).unwrap();
+    for y in 0..96 {
+        for x in 0..56 {
+            assert_eq!(after.frame.is_black(x, y), Some(false));
+        }
+    }
+    let dirty = before
+        .frame
+        .difference_bounds(&after.frame)
+        .unwrap()
+        .unwrap();
+    assert!(dirty.x < 48 && dirty.right() > 56);
+    let first = scene.components[0].blocks[0].clone();
+    let mut overlapping = first;
+    overlapping.id = "overlapping".into();
+    scene.components[0].blocks.push(overlapping);
+    assert!(renderer.render(&scene, &data(), 101).is_err());
+}
+
+#[test]
+fn flow_reports_identify_elements_hidden_below_the_content_area() {
+    let mut scene = literal("A", 128, "clip");
+    let mut hidden = scene.components[0].blocks[0].clone();
+    hidden.id = "hidden".into();
+    scene.components[0].blocks.push(hidden);
+    let result = Renderer::new()
+        .unwrap()
+        .render(&scene, &data(), 101)
+        .unwrap();
+    assert!(result.components[0].blocks[0].rect.is_some());
+    assert!(result.components[0].blocks[1].rect.is_none());
+}
