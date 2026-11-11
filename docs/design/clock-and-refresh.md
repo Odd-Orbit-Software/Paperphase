@@ -55,7 +55,8 @@ The service takes the earliest clock deadline and freshness deadline for bound
 snapshots. Freshness deadlines use the older observation/fetch time plus the
 stale interval. A future-dated snapshot is reconsidered when time catches up.
 No deadline is needed for literal-only content or permanently failed fixtures.
-This slice does not fetch new provider data.
+The [compiled connection layer](compiled-connectors.md) now supplies new snapshots
+through an independent fetch scheduler.
 
 One Tokio task checks wall time every second, using skipped missed ticks. It
 renders only when due, resuming from quiet hours, handling a backward clock
@@ -74,7 +75,7 @@ blocking workers, as described in [desktop-editor.md](desktop-editor.md).
 | Render token | Cancels completion of an older queued frame |
 | `next_due` | Earliest known clock/freshness change |
 | `pending` | A newer display evaluation/completion is still needed |
-| `quiet`, `refreshing`, `last_error` | Determine `paused`, `refreshing`, `idle`, or `error` status |
+| `quiet`, `refreshing`, `pending`, `last_error` | Determine `paused`, `refreshing`, `pending`, `idle`, or `error` status |
 
 The API's `frame_id` combines a process/start identity and frame serial. Browsers
 use it to retrieve new pixels even when no layout edit occurred, including after
@@ -118,7 +119,7 @@ undocumented all-day interval.
 While paused, saves remain durable and explicit refreshes remain pending. On
 resume the service renders the newest saved layout with the current time and
 freshness, rather than replaying frames from the pause. Draft previews continue
-to work. Future provider fetching can run independently of this display gate.
+to work. Registered connector fetching runs independently of this display gate.
 
 The simulator initialises a frame from the saved layout on startup, even during
 quiet hours, then applies the gate. Its previous completed pixels are not stored

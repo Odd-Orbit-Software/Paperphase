@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "bindings": [{
+    "connector_id": "example.temperature",
+    "wasm": "../../target/wasm32-unknown-unknown/release/paperphase_temperature_example.wasm",
+    "source_url": "http://127.0.0.1:9001/observations",
+    "stale_after_secs": 600
+  }]
+}

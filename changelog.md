@@ -148,3 +148,33 @@ generated fields, secret placeholders, discard/clear, independent conflicts, and
 retained layout drafts. Version remains `0.1.0`; compiled connector integration,
 provider scheduling, Pi measurements, Google linking, and physical display
 validation remain pending.
+
+### Compiled connector fetching and polling
+
+- Added local portable-Wasm registrations with explicit source-origin grants,
+  one shared runtime/HTTP client, one active guest, and one bounded HTTP attempt
+  per service invocation. Added a bounded `settings_json` host call and SDK
+  settings reader; extended the Rust example with location/units and empty data.
+- Connected saved records to automatic polling and Fetch now with persisted
+  attempt deadlines, shared-origin floors, exponential backoff, and HTTP
+  Retry-After hints that survive invocation failure and normal service restart.
+- Persisted latest account-scoped datasets and retained stale last-good content
+  after failures. Kept successful empty results distinct. Added cache/file bounds,
+  generation checks for late results, and storage recovery that prevents new
+  requests until pending retry metadata is durable.
+- Added a data epoch separate from layout/config revisions, invalidated obsolete
+  frames, refreshed browser dataset choices, and preserved drafts during data
+  updates. Fetching continues during quiet hours while completed pixels remain
+  held. Added per-connection status and eligibility controls.
+- Added the Rust `demo-source` command, an example registration, compiled-source
+  browser coverage, implementation/usage documentation, and an actual screenshot.
+
+Validation: `sh scripts/check.sh` passed with 74 Rust tests, including the compiled
+Rust guest through service polling, quiet hours, empty/error cases, durable caches,
+restart cooldowns, settings edits/recreation, cache limits, and obsolete frames.
+Frontend type checking/build and all seven Chromium workflows passed, including
+Fetch now → dataset binding → Save → matching preview/completed PNGs. Mermaid
+diagrams rendered in Chromium; the Rust demo source returned its documented JSON
+and stopped cleanly. The updated example Wasm is 145,407 bytes. Version remains
+`0.1.0`; real provider/account rules, UI installation, final plugin contracts,
+historical storage, Pi budgets, and physical refresh validation remain pending.

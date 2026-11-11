@@ -39,9 +39,11 @@ non-overlapping geometry, undo/redo, durable revision-checked saves, and simulat
 completion state. [Time/date blocks, clock/freshness deadlines, quiet hours, and
 explicit simulated refresh](../design/clock-and-refresh.md) are also implemented.
 [Generated connector settings and persistent connection records](../design/connector-settings.md)
-are implemented against a settings-only demo descriptor. Compiled-plugin connection
-execution, provider scheduling, direct internal positioning, fuller builder nodes,
-and panel-aware refresh policy remain pending; stage 2 is not complete.
+are implemented. [Compiled connection execution, shared polling/backoff, cached
+datasets, and Fetch now](../design/compiled-connectors.md) are exercised with the
+Rust temperature example and local sources. Real provider policy/account checks,
+direct internal positioning, fuller builder nodes, and panel-aware refresh policy
+remain pending; stage 2 is not complete.
 
 Deliver a usable desktop workflow backed by the real rendering and scheduling
 boundaries, with deterministic sample datasets and simulated display operations.

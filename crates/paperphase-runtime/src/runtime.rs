@@ -1,7 +1,10 @@
 use std::{
     io::Read,
-    sync::Arc,
-    time::{Duration, Instant},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+    },
+    time::{Duration, Instant, SystemTime},
 };
 
 use reqwest::{Url, blocking::Client, redirect::Policy};
@@ -16,6 +19,7 @@ use crate::Dataset;
 
 const ABI: &str = "paperphase_v0";
 const MAX_URL_BYTES: usize = 8192;
+const MAX_SETTINGS_BYTES: usize = 16 * 1024;
 
 /// Initial harness budgets. These are not measured production settings.
 #[derive(Clone, Debug)]
@@ -43,10 +47,19 @@ impl Default for Limits {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct RunConfig {
     source_url: Url,
     allowed_origin: String,
+    settings: Vec<u8>,
+}
+impl std::fmt::Debug for RunConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RunConfig")
+            .field("allowed_origin", &self.allowed_origin)
+            .field("settings_bytes", &self.settings.len())
+            .finish_non_exhaustive()
+    }
 }
 
 impl RunConfig {
@@ -59,7 +72,19 @@ impl RunConfig {
         Ok(Self {
             source_url,
             allowed_origin,
+            settings: b"{}".to_vec(),
         })
+    }
+    pub fn with_settings(mut self, settings: &paperphase_core::SettingsValues) -> Result<Self> {
+        self.settings = serde_json::to_vec(settings).map_err(|_| anyhow!("invalid settings"))?;
+        ensure!(
+            self.settings.len() <= MAX_SETTINGS_BYTES,
+            "settings byte limit exceeded"
+        );
+        Ok(self)
+    }
+    pub fn origin(&self) -> &str {
+        &self.allowed_origin
     }
 }
 
@@ -101,7 +126,20 @@ pub struct RunResult {
     pub metrics: RunMetrics,
 }
 
+/// Per-invocation provider hints remain available even when a guest traps.
+pub struct RunAttempt {
+    pub result: Result<RunResult>,
+    pub retry_after_secs: Option<u64>,
+    pub provider_backoff: bool,
+}
+#[derive(Default)]
+struct ProviderHints {
+    retry_after: AtomicU64,
+    backoff: AtomicBool,
+}
+
 struct HostState {
+    provider_hints: Arc<ProviderHints>,
     limits: StoreLimits,
     budgets: Limits,
     config: RunConfig,
@@ -182,6 +220,26 @@ impl PluginRuntime {
 
     /// Fresh store and quotas per invocation; compiler and HTTP pool are reused.
     pub fn run(&self, plugin: &PreparedPlugin, config: &RunConfig) -> Result<RunResult> {
+        self.run_observed(plugin, config).result
+    }
+
+    pub fn run_observed(&self, plugin: &PreparedPlugin, config: &RunConfig) -> RunAttempt {
+        let hints = Arc::new(ProviderHints::default());
+        let result = self.run_inner(plugin, config, Arc::clone(&hints));
+        let seconds = hints.retry_after.load(Ordering::Relaxed);
+        RunAttempt {
+            result,
+            retry_after_secs: (seconds > 0).then_some(seconds),
+            provider_backoff: hints.backoff.load(Ordering::Relaxed),
+        }
+    }
+
+    fn run_inner(
+        &self,
+        plugin: &PreparedPlugin,
+        config: &RunConfig,
+        hints: Arc<ProviderHints>,
+    ) -> Result<RunResult> {
         ensure!(
             Engine::same(&self.engine, plugin.module.engine()),
             "plugin belongs to a different runtime"
@@ -190,6 +248,7 @@ impl PluginRuntime {
         let mut store = Store::new(
             &self.engine,
             HostState {
+                provider_hints: hints,
                 limits: StoreLimitsBuilder::new()
                     .memory_size(self.limits.memory_bytes)
                     .memories(1)
@@ -210,6 +269,7 @@ impl PluginRuntime {
         store.set_fuel(self.limits.fuel)?;
         let mut linker = Linker::new(&self.engine);
         linker.func_wrap(ABI, "source_url", source_url)?;
+        linker.func_wrap(ABI, "settings_json", settings_json)?;
         linker.func_wrap(ABI, "http_get", http_get)?;
         linker.func_wrap(ABI, "publish", publish)?;
         let instance = linker
@@ -284,6 +344,14 @@ fn source_url(mut caller: Caller<'_, HostState>, ptr: i32, capacity: i32) -> Res
     Ok(url.len() as i32)
 }
 
+fn settings_json(mut caller: Caller<'_, HostState>, ptr: i32, capacity: i32) -> Result<i32> {
+    let (memory, ptr, capacity) = buffer(&mut caller, ptr, capacity, MAX_SETTINGS_BYTES)?;
+    let bytes = caller.data().config.settings.clone();
+    ensure!(bytes.len() <= capacity, "settings buffer is too small");
+    memory.write(&mut caller, ptr, &bytes)?;
+    Ok(bytes.len() as i32)
+}
+
 fn http_get(
     mut caller: Caller<'_, HostState>,
     url_ptr: i32,
@@ -314,6 +382,29 @@ fn http_get(
         .get(url)
         .send()
         .map_err(|_| anyhow!("HTTP request failed or timed out"))?;
+    if matches!(response.status().as_u16(), 429 | 503) {
+        state.provider_hints.backoff.store(true, Ordering::Relaxed);
+        if let Some(value) = response
+            .headers()
+            .get(reqwest::header::RETRY_AFTER)
+            .and_then(|value| value.to_str().ok())
+        {
+            let delay = value.parse::<u64>().ok().or_else(|| {
+                httpdate::parse_http_date(value).ok().map(|at| {
+                    let duration = at.duration_since(SystemTime::now()).unwrap_or_default();
+                    duration
+                        .as_secs()
+                        .saturating_add(u64::from(duration.subsec_nanos() > 0))
+                })
+            });
+            if let Some(delay) = delay {
+                state
+                    .provider_hints
+                    .retry_after
+                    .fetch_max(delay, Ordering::Relaxed);
+            }
+        }
+    }
     ensure!(
         response.status().is_success(),
         "HTTP source returned status {}",

@@ -1,5 +1,6 @@
 //! Experimental guest bindings for the foundation harness, not a stable SDK.
 
+pub use paperphase_core::SettingsValues;
 pub use paperphase_core::{Dataset, Field, FieldKind};
 
 #[derive(Debug)]
@@ -21,10 +22,28 @@ pub fn publish_dataset(dataset: &Dataset) -> Result<(), Error> {
 unsafe extern "C" {
     #[link_name = "source_url"]
     fn host_source_url(ptr: i32, capacity: i32) -> i32;
+    #[link_name = "settings_json"]
+    fn host_settings_json(ptr: i32, capacity: i32) -> i32;
     #[link_name = "http_get"]
     fn host_http_get(url_ptr: i32, url_len: i32, out_ptr: i32, capacity: i32) -> i32;
     #[link_name = "publish"]
     fn host_publish(ptr: i32, len: i32) -> i32;
+}
+
+pub fn settings() -> Result<SettingsValues, Error> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let mut bytes = vec![0; 16 * 1024];
+        // SAFETY: The host receives an allocated writable buffer of this size.
+        let length = unsafe { host_settings_json(bytes.as_mut_ptr() as i32, bytes.len() as i32) };
+        let length = usize::try_from(length).map_err(|_| Error::InvalidResponse)?;
+        if length > bytes.len() {
+            return Err(Error::InvalidResponse);
+        }
+        serde_json::from_slice(&bytes[..length]).map_err(|_| Error::InvalidResponse)
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    Err(Error::UnsupportedTarget)
 }
 
 pub fn source_url() -> Result<String, Error> {

@@ -26,9 +26,10 @@ Foundation implementation includes a compiled-plugin CLI harness, shared typed
 data/layout contracts, a monochrome renderer with PNG/PBM simulator exports,
 and a desktop layout editor served by Rust with durable saves and a simulated
 display. Built-in time/date blocks, clock/freshness scheduling, and quiet hours
-work in the simulator. Live integrations, provider scheduling, and hardware
-validation are pending. Connector definitions now generate persistent settings
-forms with private-value handling; the bundled demo does not fetch provider data.
+work in the simulator. Connector definitions generate persistent settings forms
+with private-value handling. Registered compiled connectors now fetch and cache
+data through shared host networking, with polling, backoff, and Fetch now.
+Real provider integrations, Pi measurements, and hardware validation are pending.
 The initial target is a Raspberry Pi Zero 2 W running 64-bit Raspberry
 Pi OS Lite with a Waveshare 7.5-inch monochrome e-paper HAT. The exact panel
 revision and resolution remain to be confirmed.
@@ -45,6 +46,8 @@ revision and resolution remain to be confirmed.
 - [Clock and refresh scheduling](docs/design/clock-and-refresh.md)
 - [Configure connections](docs/usage/connections.md)
 - [Connector settings design](docs/design/connector-settings.md)
+- [Run a compiled connector](docs/usage/compiled-connectors.md)
+- [Compiled connection design](docs/design/compiled-connectors.md)
 - [Changelog](changelog.md)
 
 Implemented features will be documented in `docs/design`, with setup and

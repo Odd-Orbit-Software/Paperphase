@@ -11,15 +11,16 @@ use paperphase_render::Renderer;
 use serde::de::DeserializeOwned;
 use serde_json::json;
 
+pub(crate) const MAX_JSON_BYTES: usize = 1024 * 1024;
+
 pub(crate) fn read_json<T: DeserializeOwned>(path: &Path) -> Result<T> {
-    const MAX_BYTES: usize = 1024 * 1024;
     let mut bytes = Vec::new();
     File::open(path)
         .with_context(|| format!("opening {}", path.display()))?
-        .take(MAX_BYTES as u64 + 1)
+        .take(MAX_JSON_BYTES as u64 + 1)
         .read_to_end(&mut bytes)?;
     ensure!(
-        bytes.len() <= MAX_BYTES,
+        bytes.len() <= MAX_JSON_BYTES,
         "{} exceeds the 1 MiB input limit",
         path.display()
     );

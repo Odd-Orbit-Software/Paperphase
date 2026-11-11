@@ -1232,6 +1232,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+ "wat",
 ]
 
 [[package]]
@@ -1268,6 +1269,7 @@ dependencies = [
 name = "paperphase-runtime"
 version = "0.1.0"
 dependencies = [
+ "httpdate",
  "paperphase-core",
  "reqwest",
  "rustls",

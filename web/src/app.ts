@@ -7,16 +7,17 @@ type Source = { kind: 'literal'; text: string } | { kind: 'field'; binding: Bind
 type Block = { id: string; source: Source; font_size: number; align: string; overflow: string };
 type Component = { id: string; rect: Rect; padding: number; gap: number; border: boolean; blocks: Block[] };
 type Layout = { schema_version: number; display: { id: string; width: number; height: number }; components: Component[] };
-type Workspace = { revision: number; displayed_revision: number; frame_id: string; clock_now: number; pending: boolean; phase: string; layout: Layout; refresh_settings: RefreshSettings; addresses: string[] };
+type Workspace = { revision: number; displayed_revision: number; data_revision: number; frame_id: string; clock_now: number; pending: boolean; phase: string; layout: Layout; refresh_settings: RefreshSettings; addresses: string[]; connector_execution: boolean; fixture_data: boolean };
 type EditState = { layout: Layout; settings: RefreshSettings };
-type Dataset = { connection_id: string; dataset_id: string; fields: { id: string; kind: string; unit?: string }[]; rows: number; stale: boolean };
+type Dataset = { connection_id: string; connection_label?: string; dataset_id: string; fields: { id: string; kind: string; unit?: string }[]; rows: number; stale: boolean };
 type Report = { id: string; state: string; warnings: string[] };
 type Preview = { png_base64: string; components: Report[] };
 type SettingInput = { type: 'text'; max_bytes: number; default?: string | null } | { type: 'secret'; max_bytes: number } | { type: 'integer'; min: number; max: number; default?: number | null } | { type: 'boolean'; default?: boolean | null } | { type: 'choice'; options: { value: string; label: string }[]; default?: string | null };
 type SettingDefinition = { id: string; label: string; help: string; required: boolean; input: SettingInput };
 type ConnectorDefinition = { id: string; name: string; description: string; min_poll_secs: number; default_poll_secs: number; settings: SettingDefinition[] };
-type Connection = { id: string; connector_id: string; label: string; enabled: boolean; poll_interval_secs: number; settings: Record<string, string | number | boolean | null>; secret_present: string[] };
-type Connections = { revision: number; connections: Connection[] };
+type FetchStatus = { status: string; can_fetch: boolean; fetch_after: number; next_fetch_at: number; last_attempt_at: number | null; last_success_at: number | null; last_error: string | null };
+type Connection = { id: string; connector_id: string; label: string; enabled: boolean; poll_interval_secs: number; settings: Record<string, string | number | boolean | null>; secret_present: string[]; fetch?: FetchStatus };
+type Connections = { revision: number; connections: Connection[]; execution: string };
 class ApiFailure extends Error { constructor(message: string, readonly status: number) { super(message); } }
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -42,6 +43,7 @@ let draftMinute = -1;
 let zoom = 1;
 let autoFit = true;
 let saving = false;
+let displayNoticePending = false;
 let conflict = false;
 let previewTimer = 0;
 let previewSequence = 0;
@@ -65,6 +67,7 @@ async function api<T>(path: string, options?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 function notice(message = '', error = false) {
+  displayNoticePending = false;
   $('notice').hidden = !message;
   $('notice').textContent = message;
   $('notice').classList.toggle('error', error);
@@ -177,6 +180,7 @@ function render(rebuildInspector = true) {
   $('canvas-title').textContent = viewingDraft ? 'Draft preview' : 'Last completed frame';
   $('canvas-caption').textContent = viewingDraft ? 'Rust-rendered pixels · Drag to move, corner to resize.' : 'Exactly the pixels sent to the simulated display.';
   $('revision-label').textContent = `Displayed ${saved.displayed_revision} / saved ${saved.revision}`;
+  $('data-mode').textContent = saved.connector_execution ? (saved.fixture_data ? 'Monochrome · Connectors + fixtures' : 'Monochrome · Connector data') : 'Monochrome · Sample data';
   $('dimensions').textContent = `${draft.display.width} × ${draft.display.height} px`;
   $('keyboard-hint').textContent = active() ? 'Arrow keys: move · Shift: 8 px · Ctrl/Cmd Z: undo · Ctrl/Cmd S: save' : 'Paperphase 0.1.0 · Experimental';
   $('grid-overlay').style.display = viewingDraft && checked('grid') ? 'block' : 'none';
@@ -350,7 +354,7 @@ function renderInspector() {
       const updateBinding = (fn: (b: Binding) => void, key = '', rebuild = true) => updateBlock(b => { if (b.source.kind === 'field') fn(b.source.binding); }, key, rebuild);
       const key = `${binding.connection_id}/${binding.dataset_id}`;
       const dataset = catalog.find(d => `${d.connection_id}/${d.dataset_id}` === key);
-      select('Dataset', key, catalog.map(d => [`${d.connection_id}/${d.dataset_id}`, `${d.connection_id} / ${d.dataset_id}`]), card, value => {
+      select('Dataset', key, catalog.map(d => [`${d.connection_id}/${d.dataset_id}`, `${d.connection_label ?? d.connection_id} / ${d.dataset_id}`]), card, value => {
         const d = catalog.find(d => `${d.connection_id}/${d.dataset_id}` === value)!;
         updateBlock(b => { b.source = { kind: 'field', binding: newBinding(d) }; });
       });
@@ -484,7 +488,8 @@ async function save() {
     saved = { ...saved, revision: result.revision, layout: clone(draft), refresh_settings: clone(draftSettings), phase: result.phase };
     editing = false; viewingDraft = false; selected = null; undo = []; redo = [];
     ++previewSequence; previewAbort?.abort(); window.clearTimeout(previewTimer);
-    notice(result.phase === 'paused' ? 'Saved. Display updates are paused for quiet hours.' : result.phase === 'refreshing' ? 'Saved. The simulator is refreshing.' : 'Saved. The display is already up to date.');
+    notice(result.phase === 'paused' ? 'Saved. Display updates are paused for quiet hours.' : result.phase === 'pending' ? 'Saved. A display update is pending.' : result.phase === 'refreshing' ? 'Saved. The simulator is refreshing.' : 'Saved. The display is already up to date.');
+    displayNoticePending = result.phase !== 'idle';
   } catch (error) { notice(String(error), true); }
   finally { saving = false; render(); }
 }
@@ -511,6 +516,7 @@ button('refresh').onclick = async () => {
   try {
     const result = await api<{ phase: string }>('/api/refresh', { method: 'POST' });
     notice(result.phase === 'paused' ? 'Refresh queued until quiet hours end.' : result.phase === 'idle' ? 'The display is already up to date.' : 'Refreshing the saved layout.');
+    displayNoticePending = result.phase !== 'idle';
     await poll();
   } catch (error) { notice(String(error), true); }
   finally { button('refresh').disabled = !connected; }
@@ -541,7 +547,7 @@ document.addEventListener('keydown', event => {
   }
 });
 function updateStatus() {
-  $('device-status').textContent = !connected ? 'Service unavailable' : saved.phase === 'paused' ? 'Quiet hours · paused' : saved.phase === 'error' ? 'Display update failed' : saved.phase === 'refreshing' ? 'Simulator refreshing' : 'Simulator idle';
+  $('device-status').textContent = !connected ? 'Service unavailable' : saved.phase === 'paused' ? 'Quiet hours · paused' : saved.phase === 'pending' ? 'Display update pending' : saved.phase === 'error' ? 'Display update failed' : saved.phase === 'refreshing' ? 'Simulator refreshing' : 'Simulator idle';
   const dot = document.querySelector('.device .status-dot')!;
   dot.classList.toggle('busy', connected && saved.phase === 'refreshing'); dot.classList.toggle('offline', !connected);
   const onLan = location.hostname !== 'localhost' && location.hostname !== '127.0.0.1' && location.hostname !== '[::1]';
@@ -553,16 +559,27 @@ async function poll() {
   try {
     const current = await api<Workspace>('/api/state');
     if (saving || drag) return;
+    const dataChanged = current.data_revision !== saved.data_revision || current.frame_id.split('-').slice(0, -1).join('-') !== saved.frame_id.split('-').slice(0, -1).join('-');
+    if (dataChanged) {
+      const updated = await api<Dataset[]>('/api/catalog');
+      if (saving || drag) return;
+      const changedSchema = JSON.stringify(updated.map(d => [d.connection_id, d.connection_label, d.dataset_id, d.fields])) !== JSON.stringify(catalog.map(d => [d.connection_id, d.connection_label, d.dataset_id, d.fields]));
+      catalog = updated;
+      if (editing && viewingDraft) queuePreview();
+      if (changedSchema && active() && !document.activeElement?.closest('input,textarea,select')) renderInspector();
+    }
     const changed = !connected || current.revision !== saved.revision || current.frame_id !== saved.frame_id || current.displayed_revision !== saved.displayed_revision || current.phase !== saved.phase;
     connected = true;
     if (editing) {
       if (current.revision !== saved.revision && !conflict) { conflict = true; notice('A newer layout was saved in another tab. Your draft is retained. Discard to load the newer layout.', true); }
-      saved.phase = current.phase; saved.displayed_revision = current.displayed_revision; saved.frame_id = current.frame_id; saved.clock_now = current.clock_now;
+      saved.phase = current.phase; saved.displayed_revision = current.displayed_revision; saved.frame_id = current.frame_id; saved.clock_now = current.clock_now; saved.data_revision = current.data_revision;
+      saved.connector_execution = current.connector_execution; saved.fixture_data = current.fixture_data;
     } else { saved = current; draft = clone(current.layout); draftSettings = clone(current.refresh_settings); }
     if (!viewingDraft && displayedFrame !== current.frame_id) { displayedFrame = current.frame_id; setDisplayedImage(true); }
     const minute = Math.floor(current.clock_now / 60);
     if (editing && viewingDraft && minute !== draftMinute && draft.components.some(c => c.blocks.some(b => b.source.kind === 'clock'))) { draftMinute = minute; queuePreview(); }
     updateStatus();
+    if (displayNoticePending && current.phase === 'idle') notice('Display is up to date.');
     // Polling must not replace focused component buttons every second.
     if (changed) render(false);
   } catch { connected = false; if (saved) { updateStatus(); render(false); } }
@@ -577,7 +594,7 @@ async function start() {
 void start();
 
 let connectorDefinitions: ConnectorDefinition[] = [];
-let connectionStore: Connections = { revision: 0, connections: [] };
+let connectionStore: Connections = { revision: 0, connections: [], execution: 'settings_only' };
 let connectionDraft: Connection | undefined;
 let connectionBaseline = '';
 let connectionBusy = false;
@@ -599,6 +616,7 @@ function connectionButtons() {
 async function loadConnections() {
   const [catalog, store] = await Promise.all([api<{ connectors: ConnectorDefinition[] }>('/api/connectors'), api<Connections>('/api/connections')]);
   connectorDefinitions = catalog.connectors; connectionStore = store;
+  document.querySelector('.connections-scope')!.textContent = store.execution === 'compiled' ? 'Fetch now updates connection data. Refresh display applies the latest saved layout and data, subject to quiet hours.' : 'Settings only in this release. Connections do not fetch data or change the sample display yet.';
   connectionDraft = undefined; connectionBaseline = ''; connectionConflict = false; connectionIsNew = false;
   renderConnections();
 }
@@ -623,10 +641,17 @@ function renderConnections() {
   for (const connection of connectionStore.connections) {
     const item = node('button', `connection-item ${connectionDraft?.id === connection.id ? 'selected' : ''}`);
     item.setAttribute('aria-label', `Configure ${connection.label}`);
-    item.append(node('strong', '', connection.label), node('small', '', `${connection.enabled ? 'Configured' : 'Disabled'} · ${connection.poll_interval_secs} s`));
+    item.append(node('strong', '', connection.label), node('small', '', `${connection.fetch?.status.replaceAll('_', ' ') ?? (connection.enabled ? 'Configured' : 'Disabled')} · ${connection.poll_interval_secs} s`));
     item.disabled = !!connectionDraft;
     item.onclick = () => beginConnection(connection);
     list.append(item);
+    if (connection.fetch && connection.fetch.status !== 'settings_only') {
+      const status = node('div', 'connection-fetch'); status.dataset.fetchId = connection.id;
+      const text = node('small', 'field-help'); text.dataset.fetchDetails = 'true'; status.append(text);
+      const fetch = node('button', 'small', 'Fetch now'); fetch.dataset.fetchButton = 'true'; fetch.setAttribute('aria-label', `Fetch ${connection.label} now`);
+      fetch.onclick = () => { void fetchConnection(connection.id); }; status.append(fetch); list.append(status);
+      updateFetchControl(status, connection);
+    }
   }
   const parent = $('connection-properties'); parent.replaceChildren();
   const current = connectionDraft;
@@ -715,6 +740,38 @@ function renderConnections() {
   form.onsubmit = event => { event.preventDefault(); if (form.reportValidity()) void writeConnection(false); };
   connectionButtons();
 }
+function updateFetchControl(container: HTMLElement, connection: Connection) {
+  const status = connection.fetch; if (!status) return;
+  const fetch = container.querySelector<HTMLButtonElement>('[data-fetch-button]')!;
+  fetch.disabled = !status.can_fetch || connectionBusy;
+  fetch.title = 'Fetch using saved connection settings.';
+  const details = container.querySelector<HTMLElement>('[data-fetch-details]')!;
+  details.textContent = status.status === 'fetching' ? 'Fetching…' : status.last_error ?? (status.last_success_at ? `Last fetched ${new Date(status.last_success_at * 1000).toLocaleTimeString()}` : 'Waiting for the first fetch.');
+  if (!status.can_fetch && status.fetch_after > 0) fetch.title = `Next eligible: ${new Date(status.fetch_after * 1000).toLocaleString()}`;
+}
+async function refreshConnectionStatus() {
+  if (!connectionDialog().open || connectionBusy) return;
+  try {
+    const current = await api<Connections>('/api/connections');
+    if (!connectionDialog().open || connectionBusy) return;
+    if (connectionDraft) {
+      // Configuration and password inputs stay untouched while status changes.
+      for (const container of $('connections-list').querySelectorAll<HTMLElement>('[data-fetch-id]')) {
+        const connection = current.connections.find(c => c.id === container.dataset.fetchId);
+        if (connection) updateFetchControl(container, connection);
+      }
+    } else { connectionStore = current; renderConnections(); }
+  } catch { /* Keep the current form during a transient service outage. */ }
+}
+async function fetchConnection(id: string) {
+  const container = [...$('connections-list').querySelectorAll<HTMLElement>('[data-fetch-id]')].find(element => element.dataset.fetchId === id);
+  const fetch = container?.querySelector<HTMLButtonElement>('[data-fetch-button]'); if (fetch) fetch.disabled = true;
+  try {
+    await api(`/api/connections/${encodeURIComponent(id)}/fetch`, { method: 'POST' });
+    connectionNotice('Fetch started using saved settings. The display will update through its refresh policy.');
+  } catch (error) { connectionNotice(String(error), true); }
+  await refreshConnectionStatus();
+}
 async function writeConnection(remove: boolean) {
   if (!connectionDraft || connectionBusy || connectionConflict) return;
   connectionBusy = true; connectionNotice(); connectionButtons();
@@ -737,6 +794,7 @@ button('connection-new').onclick = () => beginConnection();
 function closeConnections(event?: Event) {
   if (connectionBusy || connectionDirty()) { event?.preventDefault(); connectionNotice('Save or discard your form before closing connections.'); return; }
   connectionDraft = undefined; connectionBaseline = ''; $('connection-properties').replaceChildren(); connectionDialog().close();
+  if (active()) renderInspector();
 }
 button('connections-close').onclick = () => closeConnections();
 connectionDialog().addEventListener('cancel', event => closeConnections(event));
@@ -746,3 +804,4 @@ connectionDialog().addEventListener('keydown', event => {
     if (!connectionBusy && !connectionConflict && (connectionIsNew || connectionDirty())) $<HTMLFormElement>('connection-form')?.requestSubmit();
   }
 });
+window.setInterval(() => { void refreshConnectionStatus(); }, 1000);

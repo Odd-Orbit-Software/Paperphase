@@ -118,8 +118,9 @@ dialog is open, and canvas keyboard shortcuts are suspended.
 | `DELETE /api/connections/{id}` | Delete using `base_revision` |
 
 Existing host/origin checks, JSON limits, cache prevention, and content security
-policy apply to these routes too. No endpoint fetches provider data or installs
-packages. A custom catalog can be supplied with `--connector-definitions` at
+policy apply to these routes too. The [compiled connection layer](compiled-connectors.md)
+now adds a separate Fetch now route; settings saves themselves do not run a guest.
+No endpoint installs packages. A custom catalog can be supplied with `--connector-definitions` at
 startup; it replaces the bundled catalog and must still describe saved records.
 
 ## Validation and remaining work
@@ -131,10 +132,10 @@ restart persistence, custom descriptors, competing saves, failed writes, deletio
 and independence from layout revisions/pixels. Chromium covers generated field
 types, secret placeholders, discard, clear, conflicts, and retained layout drafts.
 
-The next connector slice must connect these records to compiled plugin execution,
-shared host fetching, provider limits, last-good snapshots, and Fetch now. Package
-installation, OAuth flows, historical storage, and the final public plugin/SDK
-contract remain pending. Real credentials, Pi performance, and physical display
-validation have not been exercised by the demo.
+The [compiled connection layer](compiled-connectors.md) now connects registered
+modules to these records, shared fetching, cooldowns, latest snapshots, and Fetch
+now. Package installation, real provider validation/OAuth, historical storage,
+and the final public plugin/SDK contract remain pending. Real credentials, Pi
+performance, and physical display validation have not been exercised by the demo.
 
 See [connection operations](../usage/connections.md).

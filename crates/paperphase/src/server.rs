@@ -1,10 +1,13 @@
-//! A fixture-backed editor service. Physical refresh policy belongs to a later driver slice.
+//! Editor service with fixtures and compiled connectors. Physical drivers are separate work.
 use std::{
     fs::{File, OpenOptions},
     io::Write,
     net::SocketAddr,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -27,6 +30,7 @@ use tokio::sync::{Mutex as AsyncMutex, Semaphore};
 
 use crate::simulator::read_json;
 mod connections;
+mod fetching;
 mod scheduling;
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -54,6 +58,9 @@ struct Workspace {
 }
 
 struct App {
+    executors: Option<Arc<fetching::Registry>>,
+    fetch_slots: Arc<Semaphore>,
+    data_epoch: AtomicU64,
     connector_catalog: ConnectorCatalog,
     connections: AsyncMutex<connections::ConnectionStore>,
     connections_file: PathBuf,
@@ -93,11 +100,16 @@ fn internal(error: impl std::fmt::Display) -> ApiError {
 }
 
 fn persist(path: &Path, saved: &impl Serialize) -> Result<()> {
+    let bytes = serde_json::to_vec_pretty(saved)?;
+    ensure!(
+        bytes.len() < crate::simulator::MAX_JSON_BYTES,
+        "saved state exceeds the 1 MiB reload limit"
+    );
     let parent = path
         .parent()
         .context("workspace requires a parent directory")?;
     let mut temp = tempfile::NamedTempFile::new_in(parent)?;
-    serde_json::to_writer_pretty(&mut temp, saved)?;
+    temp.write_all(&bytes)?;
     temp.write_all(b"\n")?;
     temp.as_file().sync_all()?;
     temp.persist(path).map_err(|e| e.error)?;
@@ -115,6 +127,7 @@ pub fn run(
     seed_layout: Option<PathBuf>,
     data: Option<PathBuf>,
     connector_definitions: Option<PathBuf>,
+    connector_bindings: Option<PathBuf>,
     fixed_now: Option<u64>,
 ) -> Result<()> {
     let state_file = std::path::absolute(state_file)?;
@@ -130,6 +143,7 @@ pub fn run(
         .iter()
         .chain(data.iter())
         .chain(connector_definitions.iter())
+        .chain(connector_bindings.iter())
     {
         ensure!(
             !crate::simulator::same_file(&state_file, source)?,
@@ -184,21 +198,44 @@ pub fn run(
         serde_json::from_str(include_str!("../../../examples/simulator/connectors.json"))?
     };
     connector_catalog.validate()?;
-    let connection_store = if connections_file.try_exists()? {
+    let mut connection_store = if connections_file.try_exists()? {
         read_json(&connections_file)?
     } else {
         connections::ConnectionStore::default()
     };
     connections::validate_store(&connection_store, &connector_catalog)?;
+    let executors = connector_bindings
+        .as_deref()
+        .map(|path| fetching::Registry::load(path, &connector_catalog).map(Arc::new))
+        .transpose()?;
+    if let Some(registry) = &executors {
+        registry.prune_origins(&mut connection_store.origin_deadlines);
+    }
     let snapshots: SnapshotSet = if let Some(path) = data {
         read_json(&path)?
     } else {
         serde_json::from_str(include_str!("../../../examples/simulator/data.json"))?
     };
     snapshots.validate()?;
+    ensure!(
+        snapshots.snapshots.len() + connection_store.connections.len() <= 256,
+        "snapshot source limit exceeded"
+    );
+    ensure!(
+        !connection_store
+            .connections
+            .iter()
+            .any(|connection| snapshots
+                .snapshots
+                .iter()
+                .any(|snapshot| snapshot.connection_id == connection.id)),
+        "connection id conflicts with a fixture source"
+    );
+    let initial_data = connections::merge_snapshots(&connection_store, &snapshots);
+    initial_data.validate()?;
     let mut renderer = Renderer::new()?;
     let initial_now = now(fixed_now);
-    let frame = renderer.render(&saved.layout, &snapshots, initial_now)?;
+    let frame = renderer.render(&saved.layout, &initial_data, initial_now)?;
     let mut png = Vec::new();
     frame.frame.write_png(&mut png)?;
     if !exists {
@@ -263,10 +300,13 @@ pub fn run(
             })
             .collect();
         let app = Arc::new(App {
+            executors,
+            fetch_slots: fetching::slots(),
+            data_epoch: AtomicU64::new(0),
             connector_catalog,
             connections: AsyncMutex::new(connection_store),
             connections_file,
-            workspace: AsyncMutex::new(Workspace::new(saved, png, &snapshots, initial_now)?),
+            workspace: AsyncMutex::new(Workspace::new(saved, png, &initial_data, initial_now)?),
             renderer: Mutex::new(renderer),
             snapshots,
             state_file,
@@ -314,6 +354,7 @@ pub fn run(
             .route("/api/catalog", get(catalog))
             .route("/api/connectors", get(connections::catalog))
             .route("/api/connections", get(connections::list))
+            .route("/api/connections/{id}/fetch", post(fetching::fetch))
             .route(
                 "/api/connections/{id}",
                 put(connections::save).delete(connections::remove),
@@ -332,6 +373,7 @@ pub fn run(
                 same_origin,
             ))
             .with_state(Arc::clone(&app));
+        let fetch_scheduler = fetching::start(Arc::clone(&app));
         let scheduler = scheduling::start(app);
         let browser_address = if address.ip().is_unspecified() {
             SocketAddr::new(
@@ -353,6 +395,7 @@ pub fn run(
             })
             .await?;
         scheduler.abort();
+        fetch_scheduler.abort();
         Ok(())
     })
 }
@@ -412,7 +455,8 @@ async fn state(State(app): State<Shared>) -> Json<serde_json::Value> {
         "phase": ws.phase(), "pending": ws.pending, "next_update_at": ws.next_due,
         "frame_id": format!("{}-{}", app.boot_id, ws.frame_serial), "clock_now": (app.clock)(),
         "last_error": ws.last_error,
-        "mode": "simulated", "addresses": app.addresses, "fixture_data": true,
+        "data_revision": app.data_epoch.load(Ordering::SeqCst),
+        "mode": "simulated", "addresses": app.addresses, "fixture_data": !app.snapshots.snapshots.is_empty(), "connector_execution": app.executors.is_some(),
     }))
 }
 
@@ -422,12 +466,15 @@ async fn display(State(app): State<Shared>) -> Response {
 }
 
 async fn catalog(State(app): State<Shared>) -> Json<serde_json::Value> {
+    let store = app.connections.lock().await;
+    let snapshots = connections::merge_snapshots(&store, &app.snapshots);
     Json(json!(
-        app.snapshots
+        snapshots
             .snapshots
             .iter()
             .map(|s| json!({
                 "connection_id": s.connection_id, "dataset_id": s.dataset.id,
+                "connection_label": store.connections.iter().find(|connection| connection.id == s.connection_id).map_or(s.connection_id.as_str(), |connection| connection.label.as_str()),
                 "fields": s.dataset.fields, "rows": s.dataset.rows.len(),
                 "stale": s.is_stale((app.clock)()),
             }))
@@ -439,10 +486,22 @@ async fn catalog(State(app): State<Shared>) -> Json<serde_json::Value> {
 struct Preview {
     png_base64: String,
     components: Vec<ComponentReport>,
+    #[serde(skip)]
+    data_epoch: u64,
+    #[serde(skip)]
+    next_due: Option<u64>,
 }
 
 async fn render(app: Shared, layout: Layout, at: u64) -> ApiResult<Preview> {
     layout.validate().map_err(invalid)?;
+    let (data, data_epoch) = {
+        let store = app.connections.lock().await;
+        (
+            connections::merge_snapshots(&store, &app.snapshots),
+            app.data_epoch.load(Ordering::SeqCst),
+        )
+    };
+    let next_due = scheduling::next_due(&layout, &data, at).map_err(invalid)?;
     let permit = Arc::clone(&app.render_slots)
         .try_acquire_owned()
         .map_err(|_| {
@@ -454,14 +513,14 @@ async fn render(app: Shared, layout: Layout, at: u64) -> ApiResult<Preview> {
     tokio::task::spawn_blocking(move || {
         let _permit = permit;
         let mut renderer = app.renderer.lock().map_err(internal)?;
-        let rendered = renderer
-            .render(&layout, &app.snapshots, at)
-            .map_err(invalid)?;
+        let rendered = renderer.render(&layout, &data, at).map_err(invalid)?;
         let mut png = Vec::new();
         rendered.frame.write_png(&mut png).map_err(internal)?;
         Ok(Preview {
             png_base64: STANDARD.encode(png),
             components: rendered.components,
+            data_epoch,
+            next_due,
         })
     })
     .await

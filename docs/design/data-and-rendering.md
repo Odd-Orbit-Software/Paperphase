@@ -177,7 +177,9 @@ visually inspected. Pi resource and physical-display validation remain pending.
 
 The [desktop editor/service](desktop-editor.md) now adds persistence, a text/data
 block builder, and draft previews on top of this renderer. Further builder nodes,
-a plugin package/settings contract, and provider scheduling are pending.
+a final plugin package/settings contract and provider-specific policy validation
+are pending. [Compiled connection polling](compiled-connectors.md) now supplies
+account-scoped snapshots through the shared runtime.
 [Live clocks and simulated refresh scheduling](clock-and-refresh.md) are
 implemented. Real provider integrations, physical drivers, and Pi validation
 remain pending.

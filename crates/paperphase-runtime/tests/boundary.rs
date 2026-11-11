@@ -381,6 +381,64 @@ fn source_url_rejects_unsupported_forms() {
 }
 
 #[test]
+fn settings_are_bounded_and_guest_buffers_are_checked() {
+    let config = config()
+        .with_settings(&std::collections::BTreeMap::from([(
+            "secret".into(),
+            json!("do-not-debug-this"),
+        )]))
+        .unwrap();
+    assert!(!format!("{config:?}").contains("do-not-debug-this"));
+    assert!(
+        config
+            .clone()
+            .with_settings(&std::collections::BTreeMap::from([(
+                "large".into(),
+                json!("x".repeat(16 * 1024))
+            )]))
+            .is_err()
+    );
+    let runtime = PluginRuntime::new(Limits::default()).unwrap();
+    for (ptr, capacity, expected) in [
+        (0, 1, "too small"),
+        (65536, 16384, "buffer"),
+        (-1, 16384, "buffer"),
+        (0, 16385, "buffer"),
+    ] {
+        let wasm = wat::parse_str(format!(r#"(module (import "paperphase_v0" "settings_json" (func $settings (param i32 i32) (result i32))) (memory (export "memory") 1) (func (export "run") (result i32) i32.const {ptr} i32.const {capacity} call $settings drop i32.const 0))"#)).unwrap();
+        assert!(error(&runtime, &wasm, &config).contains(expected));
+    }
+}
+
+#[test]
+fn provider_retry_hints_are_available_on_failure_and_isolated_per_invocation() {
+    let runtime = PluginRuntime::new(Limits::default()).unwrap();
+    let module = runtime.prepare(&http_wasm(None, 1)).unwrap();
+    for (status, hint, minimum, maximum) in [
+        (429, "120".to_owned(), 120, 120),
+        (
+            503,
+            httpdate::fmt_http_date(std::time::SystemTime::now() + Duration::from_secs(120)),
+            100,
+            120,
+        ),
+        (429, "not-a-delay".into(), 0, 0),
+        (503, "Sun, 06 Nov 1994 08:49:37 GMT".into(), 0, 0),
+    ] {
+        let source = Server::new(format!("HTTP/1.1 {status} Unavailable\r\nRetry-After: {hint}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").into_bytes(), Duration::ZERO);
+        let attempt = runtime.run_observed(&module, &RunConfig::new(&source.url).unwrap());
+        assert!(attempt.result.is_err());
+        assert!(attempt.provider_backoff);
+        assert!((minimum..=maximum).contains(&attempt.retry_after_secs.unwrap_or(0)));
+    }
+    let source = Server::ok(DATASET.as_bytes());
+    let attempt = runtime.run_observed(&module, &RunConfig::new(&source.url).unwrap());
+    assert!(attempt.result.is_ok());
+    assert!(!attempt.provider_backoff);
+    assert!(attempt.retry_after_secs.is_none());
+}
+
+#[test]
 #[ignore = "build the Rust guest and set PAPERPHASE_TEST_PLUGIN; scripts/check.sh does this"]
 fn compiled_rust_plugin_fetches_and_transforms_data() {
     let wasm =
@@ -395,6 +453,25 @@ fn compiled_rust_plugin_fetches_and_transforms_data() {
     assert_eq!(result.dataset.id, "current-weather");
     assert_eq!(result.dataset.rows[0]["temperature"], 18.5);
     assert_eq!(result.metrics.http_requests, 1);
+    let config = RunConfig::new(&source.url)
+        .unwrap()
+        .with_settings(&std::collections::BTreeMap::from([
+            ("location".into(), json!("Cork")),
+            ("units".into(), json!("imperial")),
+        ]))
+        .unwrap();
+    let result = runtime.run(&module, &config).unwrap();
+    assert_eq!(result.dataset.rows[0]["location"], "Cork");
+    assert_eq!(result.dataset.rows[0]["display-temperature"], "65.3 °F");
+    let empty = Server::ok(br#"{"temperature_c":null}"#);
+    assert!(
+        runtime
+            .run(&module, &RunConfig::new(&empty.url).unwrap())
+            .unwrap()
+            .dataset
+            .rows
+            .is_empty()
+    );
 }
 
 struct Server {

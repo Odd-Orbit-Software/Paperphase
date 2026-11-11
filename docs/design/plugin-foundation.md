@@ -69,6 +69,7 @@ and lengths refer to its 32-bit linear memory; no Rust object crosses the ABI.
 | Import | Arguments | Result |
 | --- | --- | --- |
 | `source_url` | Destination pointer, capacity | Number of URL bytes written |
+| `settings_json` | Destination pointer, capacity (at most 16 KiB) | Connection settings JSON bytes written |
 | `http_get` | URL pointer/length, response pointer/capacity | Number of response bytes written |
 | `publish` | JSON pointer/length | Zero after validating and staging a dataset |
 
@@ -97,7 +98,8 @@ invocation therefore cannot return a partially successful update.
 
 | Record | Fields |
 | --- | --- |
-| `RunConfig` | Parsed source URL and its permitted origin |
+| `RunConfig` | Parsed source URL, permitted origin, bounded connection settings |
+| `RunAttempt` | Invocation result and isolated provider backoff/retry hints |
 | `Limits` | Guest memory/fuel, module/response/output bytes, request count/deadline |
 | `Dataset` | Schema version, ID, field definitions, rows |
 | `Field` | ID, type (`text`, `number`, `boolean`), optional unit |
@@ -108,14 +110,19 @@ declared fields. Values must match their types; explicit nulls represent missing
 values. Empty row lists are successful empty results. Reject duplicate fields,
 unknown properties, invalid IDs, nested values, and oversized data.
 
-The example receives `{"temperature_c":18.5}` and returns:
+The example receives `{"temperature_c":18.5}`. Its current output with default
+settings is:
 
 ```json
 {
   "schema_version": 1,
   "id": "current-weather",
-  "fields": [{"id": "temperature", "kind": "number", "unit": "celsius"}],
-  "rows": [{"temperature": 18.5}]
+  "fields": [
+    {"id": "temperature", "kind": "number", "unit": "celsius"},
+    {"id": "display-temperature", "kind": "text"},
+    {"id": "location", "kind": "text"}
+  ],
+  "rows": [{"temperature": 18.5, "display-temperature": "18.5 °C", "location": "Observation"}]
 }
 ```
 
@@ -133,6 +140,7 @@ These are executable test budgets, not measured production defaults.
 | HTTP | Four attempted requests, three-second deadline per request |
 | HTTP response / published JSON | 64 KiB each |
 | URL | 8,192 bytes |
+| Settings JSON | 16 KiB |
 | Dataset | 1–32 fields, at most 512 rows |
 | IDs / units / text values | 64 / 64 / 4,096 bytes respectively |
 
@@ -140,6 +148,12 @@ Fuel is an execution budget, not milliseconds. Linear-memory limits do not cap
 whole-process RSS, compilation memory, native stacks, or all host allocations.
 The CLI retains invocation metrics and only the final dataset during repeated
 runs, rather than retaining every payload.
+
+The [service connection layer](compiled-connectors.md) reuses this runtime with
+one HTTP attempt per invocation and a shared polling/backoff gate. The example
+also reads location/units settings and accepts null temperature as an empty
+result. Older guests using only the original imports remain compatible; the
+updated example requires `settings_json`.
 
 ## Validation
 

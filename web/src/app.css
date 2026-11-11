@@ -725,6 +725,8 @@ p {
 .connection-item { display: block; text-align: left; width: 100%; margin-top: 9px; white-space: normal; background: transparent; border-color: transparent; }
 .connection-item.selected { background: #e9eee2; border-color: #cad4c0; }
 .connection-item.selected:disabled { opacity: 1; }
+.connection-fetch { padding: 0 12px 12px; border-bottom: 1px solid var(--line); }
+.connection-fetch small { margin-top: 0; }
 .connection-item strong { font-size: 11px; font-weight: 600; overflow-wrap: anywhere; }
 .connection-item small { display: block; font-size: 10px; color: var(--muted); margin-top: 5px; }
 .connection-form h3 { margin: 3px 0 8px; font-size: 16px; font-weight: 550; }

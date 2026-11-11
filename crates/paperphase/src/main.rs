@@ -28,6 +28,11 @@ struct Args {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Serve a deterministic local temperature API for connector development.
+    DemoSource {
+        #[arg(long, default_value = "127.0.0.1:9001")]
+        listen: std::net::SocketAddr,
+    },
     /// Start the LAN editor with a simulated display (no hardware access).
     Serve {
         #[arg(long, default_value = "127.0.0.1:8080")]
@@ -37,12 +42,15 @@ enum Command {
         /// Initial layout, used only when no saved workspace exists.
         #[arg(long)]
         seed_layout: Option<PathBuf>,
-        /// Snapshot fixtures; no external APIs are fetched by this editor slice.
+        /// Optional snapshot fixtures, combined with registered connector results.
         #[arg(long)]
         data: Option<PathBuf>,
         /// Experimental settings descriptors; does not load executable plugins.
         #[arg(long)]
         connector_definitions: Option<PathBuf>,
+        /// Local portable-Wasm registrations and explicit HTTP origin grants.
+        #[arg(long)]
+        connector_bindings: Option<PathBuf>,
         /// Unix seconds; omit to evaluate snapshot freshness using the host clock.
         #[arg(long)]
         now: Option<u64>,
@@ -96,12 +104,22 @@ struct Report {
 fn main() -> Result<()> {
     let args = Args::parse();
     let (plugin, source_url, iterations, _demo) = match args.command {
+        Command::DemoSource { listen } => {
+            let source = DemoApi::start_at(listen)?;
+            println!("Paperphase demo source: {} (fixed 18.5 °C)", source.url);
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()?
+                .block_on(async { tokio::signal::ctrl_c().await })?;
+            return Ok(());
+        }
         Command::Serve {
             listen,
             state_file,
             seed_layout,
             data,
             connector_definitions,
+            connector_bindings,
             now,
         } => {
             return server::run(
@@ -110,6 +128,7 @@ fn main() -> Result<()> {
                 seed_layout,
                 data,
                 connector_definitions,
+                connector_bindings,
                 now,
             );
         }
@@ -194,7 +213,10 @@ struct DemoApi {
 
 impl DemoApi {
     fn start() -> Result<Self> {
-        let listener = TcpListener::bind("127.0.0.1:0").context("starting demo API")?;
+        Self::start_at(([127, 0, 0, 1], 0).into())
+    }
+    fn start_at(address: std::net::SocketAddr) -> Result<Self> {
+        let listener = TcpListener::bind(address).context("starting demo API")?;
         listener.set_nonblocking(true)?;
         let url = format!("http://{}/observations", listener.local_addr()?);
         let stop = Arc::new(AtomicBool::new(false));

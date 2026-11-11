@@ -8,6 +8,7 @@ use std::{
 use base64::{Engine, engine::general_purpose::STANDARD};
 use reqwest::blocking::Client;
 use serde_json::{Value, json};
+mod fetching_support;
 
 struct Server {
     child: Child,
@@ -22,20 +23,27 @@ impl Server {
         state: &std::path::Path,
         definitions: Option<&std::path::Path>,
     ) -> Self {
+        Self::start_options(state, definitions, None, Some(1700000000))
+    }
+    fn start_options(
+        state: &std::path::Path,
+        definitions: Option<&std::path::Path>,
+        bindings: Option<&std::path::Path>,
+        now: Option<u64>,
+    ) -> Self {
         let _ = rustls::crypto::ring::default_provider().install_default();
         let mut command = Command::new(env!("CARGO_BIN_EXE_paperphase"));
         command
-            .args([
-                "serve",
-                "--listen",
-                "127.0.0.1:0",
-                "--now",
-                "1700000000",
-                "--state-file",
-            ])
+            .args(["serve", "--listen", "127.0.0.1:0", "--state-file"])
             .arg(state);
         if let Some(path) = definitions {
             command.arg("--connector-definitions").arg(path);
+        }
+        if let Some(path) = bindings {
+            command.arg("--connector-bindings").arg(path);
+        }
+        if let Some(now) = now {
+            command.arg("--now").arg(now.to_string());
         }
         let mut child = command
             .stdout(Stdio::piped())
@@ -351,6 +359,301 @@ fn alternate_connector_definitions_are_loaded_and_stored_records_are_validated_a
         list["connections"][0]["settings"]["feed_name"],
         "Local headlines"
     );
+}
+
+fn wait_connection(server: &Server, id: &str, predicate: impl Fn(&Value) -> bool) -> Value {
+    let until = Instant::now() + Duration::from_secs(8);
+    loop {
+        let state: Value = server
+            .client
+            .get(format!("{}/api/connections", server.url))
+            .send()
+            .unwrap()
+            .json()
+            .unwrap();
+        if let Some(connection) = state["connections"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|connection| connection["id"] == id)
+            && predicate(connection)
+        {
+            return connection.clone();
+        }
+        assert!(
+            Instant::now() < until,
+            "connection did not reach expected state: {state}"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+fn temperature_connection(server: &Server, id: &str, poll: u64) {
+    let state: Value = server
+        .client
+        .get(format!("{}/api/connections", server.url))
+        .send()
+        .unwrap()
+        .json()
+        .unwrap();
+    let request = json!({"base_revision":state["revision"],"connector_id":"example.temperature","label":"Balcony","enabled":true,"poll_interval_secs":poll,"settings":{"location":"Balcony","units":"imperial"}});
+    assert_eq!(
+        server
+            .client
+            .put(format!("{}/api/connections/{id}", server.url))
+            .json(&request)
+            .send()
+            .unwrap()
+            .status(),
+        200
+    );
+}
+fn wait_idle(server: &Server) {
+    let until = Instant::now() + Duration::from_secs(8);
+    while server.state()["phase"] != "idle" {
+        assert!(Instant::now() < until);
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+#[test]
+#[ignore = "scripts/check.sh supplies the compiled guest"]
+fn compiled_connector_settings_flow_into_persisted_data_bindings_and_survive_restart() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("workspace.json");
+    let source = fetching_support::Observation::start();
+    let bindings = fetching_support::registration(dir.path(), &source.url);
+    let mut server = Server::start_options(&path, None, Some(&bindings), Some(1700000000));
+    temperature_connection(&server, "home", 300);
+    let response = server
+        .client
+        .post(format!("{}/api/connections/home/fetch", server.url))
+        .send()
+        .unwrap();
+    assert!([202, 429].contains(&response.status().as_u16()));
+    let record = wait_connection(&server, "home", |connection| {
+        connection["fetch"]["status"] == "ready"
+    });
+    assert_eq!(record["fetch"]["last_success_at"], 1700000000);
+    assert_eq!(source.hits.load(std::sync::atomic::Ordering::SeqCst), 1);
+    let cooldown = server
+        .client
+        .post(format!("{}/api/connections/home/fetch", server.url))
+        .send()
+        .unwrap();
+    assert_eq!(cooldown.status(), 429);
+    assert_eq!(cooldown.headers()["retry-after"], "30");
+    let catalog: Value = server
+        .client
+        .get(format!("{}/api/catalog", server.url))
+        .send()
+        .unwrap()
+        .json()
+        .unwrap();
+    assert!(
+        catalog
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|dataset| dataset["connection_id"] == "home"
+                && dataset["connection_label"] == "Balcony")
+    );
+    let state = server.state();
+    let before = server.png();
+    let mut layout = state["layout"].clone();
+    layout["components"][0]["blocks"][0]["source"] = json!({"kind":"field","binding":{"connection_id":"home","dataset_id":"current-weather","field_id":"display-temperature"}});
+    let request = json!({"base_revision":state["revision"],"layout":layout,"refresh_settings":{"quiet_hours":{"timezone":"Europe/Dublin","start":"22:00","end":"07:00"}}});
+    assert_eq!(
+        server
+            .client
+            .put(format!("{}/api/layout", server.url))
+            .json(&request)
+            .send()
+            .unwrap()
+            .status(),
+        200
+    );
+    assert_eq!(server.state()["phase"], "paused");
+    assert_eq!(server.png(), before);
+    let preview: Value = server
+        .client
+        .post(format!("{}/api/preview", server.url))
+        .json(&layout)
+        .send()
+        .unwrap()
+        .json()
+        .unwrap();
+    assert_eq!(preview["components"][0]["state"], "fresh");
+    let disk: Value =
+        serde_json::from_slice(&std::fs::read(path.with_extension("connections.json")).unwrap())
+            .unwrap();
+    assert_eq!(
+        disk["data"]["home"]["snapshot"]["dataset"]["rows"][0]["display-temperature"],
+        "65.3 °F"
+    );
+    let request = json!({"base_revision":server.state()["revision"],"layout":layout,"refresh_settings":{"quiet_hours":null}});
+    assert_eq!(
+        server
+            .client
+            .put(format!("{}/api/layout", server.url))
+            .json(&request)
+            .send()
+            .unwrap()
+            .status(),
+        200
+    );
+    wait_idle(&server);
+    let expected = STANDARD
+        .decode(preview["png_base64"].as_str().unwrap())
+        .unwrap();
+    assert_eq!(server.png(), expected);
+    server.stop();
+    let restarted = Server::start_options(&path, None, Some(&bindings), Some(1700000000));
+    assert_eq!(restarted.png(), expected);
+    assert_eq!(source.hits.load(std::sync::atomic::Ordering::SeqCst), 1);
+}
+
+#[test]
+#[ignore = "scripts/check.sh supplies the compiled guest"]
+fn provider_cooldowns_survive_service_restart_and_empty_data_is_a_success() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("workspace.json");
+    let source = fetching_support::Observation::start();
+    let bindings = fetching_support::registration(dir.path(), &source.url);
+    let mut server = Server::start_options(&path, None, Some(&bindings), Some(1700000000));
+    temperature_connection(&server, "home", 300);
+    let _ = server
+        .client
+        .post(format!("{}/api/connections/home/fetch", server.url))
+        .send()
+        .unwrap();
+    wait_connection(&server, "home", |connection| {
+        connection["fetch"]["status"] == "ready"
+    });
+    server.stop();
+    *source.reply.lock().unwrap() = (429, Some(120), json!({}));
+    server = Server::start_options(&path, None, Some(&bindings), Some(1700000030));
+    assert_eq!(
+        server
+            .client
+            .post(format!("{}/api/connections/home/fetch", server.url))
+            .send()
+            .unwrap()
+            .status(),
+        202
+    );
+    wait_connection(&server, "home", |connection| {
+        connection["fetch"]["status"] == "error"
+    });
+    temperature_connection(&server, "work", 300);
+    let response = server
+        .client
+        .post(format!("{}/api/connections/work/fetch", server.url))
+        .send()
+        .unwrap();
+    assert_eq!(response.status(), 429);
+    assert_eq!(response.headers()["retry-after"], "300");
+    server.stop();
+    server = Server::start_options(&path, None, Some(&bindings), Some(1700000031));
+    let response = server
+        .client
+        .post(format!("{}/api/connections/home/fetch", server.url))
+        .send()
+        .unwrap();
+    assert_eq!(response.status(), 429);
+    assert_eq!(response.headers()["retry-after"], "299");
+    assert_eq!(source.hits.load(std::sync::atomic::Ordering::SeqCst), 2);
+    server.stop();
+    *source.reply.lock().unwrap() = (200, None, json!({"temperature_c":null}));
+    server = Server::start_options(&path, None, Some(&bindings), Some(1700000330));
+    wait_connection(&server, "home", |connection| {
+        connection["fetch"]["status"] == "empty"
+    });
+    let catalog: Value = server
+        .client
+        .get(format!("{}/api/catalog", server.url))
+        .send()
+        .unwrap()
+        .json()
+        .unwrap();
+    let home = catalog
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|dataset| dataset["connection_id"] == "home")
+        .unwrap();
+    assert_eq!(home["rows"], 0);
+    assert_eq!(home["stale"], false);
+}
+
+#[test]
+#[ignore = "scripts/check.sh supplies the compiled guest"]
+fn automatic_compiled_polling_keeps_fetching_during_quiet_hours() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("workspace.json");
+    let source = fetching_support::Observation::start();
+    let bindings = fetching_support::registration(dir.path(), &source.url);
+    let definitions = dir.path().join("definitions.json");
+    let mut catalog: Value =
+        serde_json::from_str(include_str!("../../../examples/simulator/connectors.json")).unwrap();
+    catalog["connectors"][1]["min_poll_secs"] = json!(1);
+    catalog["connectors"][1]["default_poll_secs"] = json!(1);
+    std::fs::write(&definitions, serde_json::to_vec(&catalog).unwrap()).unwrap();
+    let server = Server::start_options(&path, Some(&definitions), Some(&bindings), None);
+    let state = server.state();
+    let now = state["clock_now"].as_u64().unwrap();
+    let clock = paperphase_core::ClockSpec {
+        timezone: "UTC".into(),
+        content: paperphase_core::ClockContent::Time,
+        hour_cycle: paperphase_core::HourCycle::TwentyFour,
+        date_format: paperphase_core::DateFormat::Iso,
+    };
+    let mut layout = state["layout"].clone();
+    layout["components"][0]["blocks"][0]["source"] = json!({"kind":"field","binding":{"connection_id":"home","dataset_id":"current-weather","field_id":"display-temperature"}});
+    let request = json!({"base_revision":state["revision"],"layout":layout,"refresh_settings":{"quiet_hours":{"timezone":"UTC","start":clock.format(now).unwrap(),"end":clock.format(now+120).unwrap()}}});
+    assert_eq!(
+        server
+            .client
+            .put(format!("{}/api/layout", server.url))
+            .json(&request)
+            .send()
+            .unwrap()
+            .status(),
+        200
+    );
+    let before = server.png();
+    temperature_connection(&server, "home", 1);
+    wait_connection(&server, "home", |connection| {
+        connection["fetch"]["status"] == "ready"
+    });
+    source.reply.lock().unwrap().2 = json!({"temperature_c":27.0});
+    let until = Instant::now() + Duration::from_secs(8);
+    loop {
+        let disk: Value = serde_json::from_slice(
+            &std::fs::read(path.with_extension("connections.json")).unwrap(),
+        )
+        .unwrap();
+        if disk["data"]["home"]["snapshot"]["dataset"]["rows"][0]["temperature"] == 27.0 {
+            break;
+        }
+        assert!(Instant::now() < until);
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(server.state()["phase"], "paused");
+    assert_eq!(server.png(), before);
+    assert!(source.hits.load(std::sync::atomic::Ordering::SeqCst) >= 2);
+    let request = json!({"base_revision":server.state()["revision"],"layout":layout,"refresh_settings":{"quiet_hours":null}});
+    assert_eq!(
+        server
+            .client
+            .put(format!("{}/api/layout", server.url))
+            .json(&request)
+            .send()
+            .unwrap()
+            .status(),
+        200
+    );
+    wait_idle(&server);
+    assert_ne!(server.png(), before);
 }
 impl Drop for Server {
     fn drop(&mut self) {

@@ -1,5 +1,5 @@
-//! Settings records only. Connector execution and provider scheduling are separate work.
-use std::collections::BTreeSet;
+//! Private connection records, cached datasets, and redacted configuration responses.
+use std::collections::{BTreeMap, BTreeSet};
 
 use axum::{
     Json,
@@ -15,9 +15,15 @@ use super::{ApiError, ApiResult, Shared, internal, invalid, persist};
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct ConnectionStore {
-    schema_version: u32,
-    revision: u64,
-    connections: Vec<ConnectionConfig>,
+    pub(super) schema_version: u32,
+    pub(super) revision: u64,
+    pub(super) connections: Vec<ConnectionConfig>,
+    #[serde(default)]
+    pub(super) data: BTreeMap<String, super::fetching::ConnectionData>,
+    #[serde(default)]
+    pub(super) origin_deadlines: BTreeMap<String, u64>,
+    #[serde(skip)]
+    pub(super) dirty: bool,
 }
 impl Default for ConnectionStore {
     fn default() -> Self {
@@ -25,6 +31,9 @@ impl Default for ConnectionStore {
             schema_version: 1,
             revision: 0,
             connections: vec![],
+            data: BTreeMap::new(),
+            origin_deadlines: BTreeMap::new(),
+            dirty: false,
         }
     }
 }
@@ -42,7 +51,63 @@ pub(super) fn validate_store(
         anyhow::ensure!(ids.insert(&connection.id), "duplicate connection id");
         connection.validate(catalog)?;
     }
+    anyhow::ensure!(
+        store.data.len() <= 32
+            && store.origin_deadlines.len() <= 256
+            && store
+                .origin_deadlines
+                .keys()
+                .all(|origin| origin.len() <= 8192),
+        "invalid cache or origin budget count"
+    );
+    let mut cached_bytes = 0;
+    for (id, data) in &store.data {
+        anyhow::ensure!(
+            ids.contains(id) && data.generation <= store.revision,
+            "orphaned or invalid connection cache"
+        );
+        anyhow::ensure!(
+            data.last_error
+                .as_ref()
+                .is_none_or(|message| message.len() <= 1024),
+            "oversized connector error"
+        );
+        if let Some(snapshot) = &data.snapshot {
+            anyhow::ensure!(
+                &snapshot.connection_id == id,
+                "cache connection id mismatch"
+            );
+            paperphase_core::SnapshotSet {
+                schema_version: 1,
+                snapshots: vec![snapshot.clone()],
+            }
+            .validate()?;
+            cached_bytes += serde_json::to_vec(snapshot)?.len();
+        }
+    }
+    anyhow::ensure!(
+        cached_bytes <= 512 * 1024,
+        "connection data cache limit exceeded"
+    );
+    anyhow::ensure!(
+        serde_json::to_vec_pretty(store)?.len() < crate::simulator::MAX_JSON_BYTES,
+        "connection store size limit exceeded"
+    );
     Ok(())
+}
+
+pub(super) fn merge_snapshots(
+    store: &ConnectionStore,
+    fixtures: &paperphase_core::SnapshotSet,
+) -> paperphase_core::SnapshotSet {
+    let mut data = fixtures.clone();
+    data.snapshots.extend(
+        store
+            .data
+            .values()
+            .filter_map(|state| state.snapshot.clone()),
+    );
+    data
 }
 
 pub(super) async fn catalog(State(app): State<Shared>) -> Json<ConnectorCatalog> {
@@ -74,10 +139,19 @@ fn public_connection(connection: &ConnectionConfig, catalog: &ConnectorCatalog) 
         "enabled":connection.enabled,"poll_interval_secs":connection.poll_interval_secs,
         "settings":visible,"secret_present":secret_present})
 }
+fn public_with_status(
+    connection: &ConnectionConfig,
+    app: &super::App,
+    store: &ConnectionStore,
+) -> Value {
+    let mut value = public_connection(connection, &app.connector_catalog);
+    value["fetch"] = super::fetching::public_status(app, store, connection);
+    value
+}
 pub(super) async fn list(State(app): State<Shared>) -> Json<Value> {
     let store = app.connections.lock().await;
     Json(
-        json!({"revision":store.revision,"connections":store.connections.iter().map(|connection| public_connection(connection, &app.connector_catalog)).collect::<Vec<_>>(),"execution":"settings_only"}),
+        json!({"revision":store.revision,"connections":store.connections.iter().map(|connection| public_with_status(connection, &app, &store)).collect::<Vec<_>>(),"execution":if app.executors.is_some() {"compiled"} else {"settings_only"}}),
     )
 }
 
@@ -109,6 +183,8 @@ pub(super) async fn save(
         let mut store = app.connections.lock().await;
         if request.base_revision != store.revision { return Err(conflict()); }
         let previous = store.connections.iter().find(|connection| connection.id == id);
+        if app.snapshots.snapshots.iter().any(|snapshot| snapshot.connection_id == id) { return Err(invalid("connection id conflicts with a fixture source")); }
+        if app.snapshots.snapshots.len() + store.connections.len() + usize::from(previous.is_none()) > 256 { return Err(invalid("snapshot source limit exceeded")); }
         if previous.is_some_and(|old| old.connector_id != request.connector_id) { return Err(invalid("an existing connection cannot change connector type")); }
         let definition = app.connector_catalog.get(&request.connector_id).ok_or_else(|| invalid("unknown connector"))?;
         let settings = definition.resolve(&request.settings, previous.map(|connection| &connection.settings)).map_err(invalid)?;
@@ -121,10 +197,13 @@ pub(super) async fn save(
             updated.connections.push(connection);
         }
         updated.revision = store.revision.checked_add(1).ok_or_else(|| internal("connection revision exhausted"))?;
+        updated.data.entry(id.clone()).or_default().reconfigure(updated.revision, (app.clock)(), request.enabled);
+        validate_store(&updated, &app.connector_catalog).map_err(invalid)?;
         let file = app.connections_file.clone(); let to_write = updated.clone();
         tokio::task::spawn_blocking(move || persist(&file, &to_write)).await.map_err(internal)?.map_err(internal)?;
         let response = json!({"revision":updated.revision,"connection":public_connection(updated.connections.iter().find(|connection| connection.id == id).expect("inserted above"), &app.connector_catalog)});
-        *store = updated;
+        updated.dirty = false; *store = updated;
+        super::fetching::bump_epoch(&app.data_epoch); drop(store); super::fetching::changed(&app).await;
         Ok(Json(response))
     }).await.map_err(internal)?
 }
@@ -157,6 +236,7 @@ pub(super) async fn remove(
         }
         let mut updated = store.clone();
         updated.connections.retain(|connection| connection.id != id);
+        updated.data.remove(&id);
         updated.revision = store
             .revision
             .checked_add(1)
@@ -168,7 +248,11 @@ pub(super) async fn remove(
             .map_err(internal)?
             .map_err(internal)?;
         let revision = updated.revision;
+        updated.dirty = false;
         *store = updated;
+        super::fetching::bump_epoch(&app.data_epoch);
+        drop(store);
+        super::fetching::changed(&app).await;
         Ok(Json(json!({"revision":revision})))
     })
     .await

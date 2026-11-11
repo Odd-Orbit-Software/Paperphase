@@ -183,7 +183,7 @@ test('generated connection forms save typed settings and never prefill secrets',
   await page.getByLabel('Text', { exact: true }).first().fill('My layout draft stays here');
   await page.getByRole('button', { name: 'Connections', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: 'Connections', exact: true });
-  await expect(dialog).toContainText('Connections do not fetch data');
+  await expect(dialog).toContainText('Fetch now updates connection data');
   await page.getByRole('button', { name: 'New connection' }).click();
   await expect(page.getByLabel('Location', { exact: true })).toHaveValue('Dublin');
   await expect(page.getByLabel('Include summary', { exact: true })).toBeChecked();
@@ -252,4 +252,36 @@ test('connection conflicts retain their form without conflicting a layout draft'
   await expect(page.getByRole('button', { name: 'Edit layout' })).toBeVisible();
   const store = await (await request.get('/api/connections')).json();
   expect((await request.delete('/api/connections/conflict-test', { data: { base_revision: store.revision } })).ok()).toBeTruthy();
+});
+
+test('compiled connector Fetch now publishes data that can be bound to the display', async ({ page, request }) => {
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Connections', exact: true }).click();
+  await page.getByRole('button', { name: 'Fetch Bench sensor now', exact: true }).click();
+  await expect(page.locator('#connections-notice')).toContainText('Fetch started using saved settings');
+  await expect(page.locator('[data-fetch-id="temperature.browser"]')).toContainText('Last fetched');
+  await expect(page.getByRole('button', { name: 'Fetch Bench sensor now', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: 'Configure Bench sensor', exact: true }).click();
+  await expect(page.getByLabel('Location label', { exact: true })).toHaveValue('Workshop');
+  await expect(page.getByLabel('Display units', { exact: true })).toHaveValue('imperial');
+  if (process.env.CAPTURE_SCREENSHOTS === '1') await page.screenshot({ path: '../docs/design/images/compiled-connector.png' });
+  await page.getByRole('button', { name: 'Close connections', exact: true }).click();
+  await page.getByRole('button', { name: 'Edit layout' }).click();
+  await page.getByRole('button', { name: 'Data field' }).click();
+  await page.getByLabel('Dataset', { exact: true }).selectOption('temperature.browser/current-weather');
+  await page.getByLabel('Field', { exact: true }).selectOption('display-temperature');
+  await page.getByLabel('Font size (px)', { exact: true }).fill('34');
+  await page.getByLabel('Font size (px)', { exact: true }).press('Tab');
+  await page.getByRole('button', { name: 'Save to display' }).click();
+  await expect(page.getByRole('button', { name: 'Edit layout' })).toBeVisible();
+  await expect.poll(async () => (await (await request.get('/api/state')).json()).phase).toBe('idle');
+  const state = await (await request.get('/api/state')).json();
+  const rendered = await (await request.post('/api/preview', { data: state.layout })).json();
+  expect(rendered.components.at(-1).state).toBe('fresh');
+  expect(await (await request.get('/api/display.png')).body()).toEqual(Buffer.from(rendered.png_base64, 'base64'));
+  await expect(page.locator('#frame')).toHaveAttribute('src', `/api/display.png?frame=${encodeURIComponent(state.frame_id)}`);
+  await expect(page.locator('#frame')).toHaveJSProperty('complete', true);
+  if (process.env.CAPTURE_SCREENSHOTS === '1') await page.screenshot({ path: '../docs/design/images/compiled-display.png' });
+  expect(errors).toEqual([]);
 });

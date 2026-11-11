@@ -11,7 +11,8 @@ Open <http://127.0.0.1:8080> in a desktop browser. The executable contains the
 compiled frontend assets; Node is not needed to run it. The default workspace is
 `.paperphase/workspace.json`, created on first launch. The default layout leaves
 space below the header/weather/agenda components for new components. Sample data
-is fictional and makes no API requests. The host clock drives time/date blocks
+is fictional. With no registered modules the service makes no source API requests.
+The host clock drives time/date blocks
 and marks old fixtures stale. Add `--now 1700000000` for deterministic fixture
 freshness; this also freezes time/date blocks until the service restarts.
 
@@ -73,8 +74,9 @@ See the [clock and refresh design](../design/clock-and-refresh.md) for state and
 boundary behaviour. Panel-specific refresh budgets and maintenance are pending.
 
 Use **Connections** in the top bar for [connector-defined settings forms](connections.md).
-These records save independently of layout drafts. The bundled demonstration
-defines settings only; it does not fetch new display data.
+These records save independently of layout drafts. The Demo weather settings
+descriptor is settings-only; the Temperature connector can
+[run through a registered compiled module](compiled-connectors.md).
 
 ## Alternate layouts, fixtures, and backup
 
@@ -115,15 +117,17 @@ pnpm --dir web test
 `web/dist` files with source changes so Rust-only builds work without Node. CI
 rebuilds them and checks for differences before running Rust and browser tests.
 The browser suite starts/stops its own fixture service on `127.0.0.1:8097` and
-uses a temporary workspace. Set `PAPERPHASE_TEST_BINARY` to an absolute executable
-path when using a different Cargo output directory. For screenshot updates:
+uses a temporary workspace, local source, and compiled temperature guest. Run
+`sh scripts/check.sh` first to build that guest. Set `PAPERPHASE_TEST_BINARY` and
+`PAPERPHASE_TEST_PLUGIN` to absolute artifact paths when using a different Cargo
+output directory. For screenshot updates:
 
 ```sh
 CAPTURE_SCREENSHOTS=1 pnpm --dir web test
 ```
 
-This updates `docs/design/images/editor-overview.png` and `clock-quiet-hours.png`
-from the tested UI. Playwright
+This updates screenshots under `docs/design/images`, including the editor,
+quiet hours, connection settings, and compiled data. Playwright
 failure traces and local workspaces are ignored by Git. Rust checks need the
 compiled guest target and loopback access as described in
 [foundation-harness.md](foundation-harness.md). These are desktop checks; they do

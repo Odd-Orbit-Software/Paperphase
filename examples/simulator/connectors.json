@@ -13,5 +13,15 @@
       { "id": "include_summary", "label": "Include summary", "input": { "type": "boolean", "default": true } },
       { "id": "test_secret", "label": "Test secret", "help": "Optional private value for exercising secret settings. It is never sent to an API.", "input": { "type": "secret", "max_bytes": 256 } }
     ]
+  }, {
+    "id": "example.temperature",
+    "name": "Temperature connector",
+    "description": "Reads a temperature observation from the source granted by the host. Register the compiled example module to enable fetching.",
+    "min_poll_secs": 30,
+    "default_poll_secs": 300,
+    "settings": [
+      { "id": "location", "label": "Location label", "required": true, "input": { "type": "text", "max_bytes": 128, "default": "Dublin" } },
+      { "id": "units", "label": "Display units", "input": { "type": "choice", "default": "metric", "options": [{ "value": "metric", "label": "Celsius" }, { "value": "imperial", "label": "Fahrenheit" }] } }
+    ]
   }]
 }

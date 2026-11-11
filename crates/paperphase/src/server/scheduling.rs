@@ -36,13 +36,19 @@ impl Workspace {
             "refreshing"
         } else if self.last_error.is_some() {
             "error"
+        } else if self.pending {
+            "pending"
         } else {
             "idle"
         }
     }
 }
 
-fn next_due(layout: &Layout, data: &SnapshotSet, now: u64) -> paperphase_core::Result<Option<u64>> {
+pub(super) fn next_due(
+    layout: &Layout,
+    data: &SnapshotSet,
+    now: u64,
+) -> paperphase_core::Result<Option<u64>> {
     let mut next = None;
     let mut offer = |at: u64| {
         if at > now {
@@ -84,6 +90,7 @@ fn next_due(layout: &Layout, data: &SnapshotSet, now: u64) -> paperphase_core::R
 }
 
 pub(super) struct PreparedFrame {
+    data_epoch: u64,
     png: Vec<u8>,
     next_due: Option<u64>,
     quiet: bool,
@@ -96,12 +103,12 @@ pub(super) async fn prepare(
     settings: &RefreshSettings,
     at: u64,
 ) -> ApiResult<PreparedFrame> {
-    let next_due = next_due(layout, &app.snapshots, at).map_err(invalid)?;
     let quiet = settings.is_quiet(at).map_err(invalid)?;
     let preview = render(app, layout.clone(), at).await?;
     Ok(PreparedFrame {
         png: STANDARD.decode(preview.png_base64).map_err(internal)?,
-        next_due,
+        next_due: preview.next_due,
+        data_epoch: preview.data_epoch,
         quiet,
         at,
     })
@@ -115,6 +122,9 @@ pub(super) fn queue(app: &Shared, ws: &mut Workspace, frame: PreparedFrame) {
     ws.quiet = frame.quiet;
     ws.refreshing = false;
     ws.pending = true;
+    if frame.data_epoch != app.data_epoch.load(std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
     if ws.quiet {
         return;
     }
@@ -144,7 +154,11 @@ pub(super) fn queue(app: &Shared, ws: &mut Workspace, frame: PreparedFrame) {
         }
         // Never publish a frame from before a minute/date/freshness boundary,
         // a backward clock adjustment, or the start of quiet hours.
-        if ws.quiet || now < frame.at || frame.next_due.is_some_and(|due| now >= due) {
+        if ws.quiet
+            || now < frame.at
+            || frame.next_due.is_some_and(|due| now >= due)
+            || frame.data_epoch != app.data_epoch.load(std::sync::atomic::Ordering::SeqCst)
+        {
             return;
         }
         ws.png = frame.png;
@@ -214,7 +228,7 @@ pub(super) fn start(app: Shared) -> tokio::task::JoinHandle<()> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
     use crate::server::{App, SaveRequest, persist, save};
     use axum::{Json, extract::State};
@@ -228,20 +242,20 @@ mod tests {
 
     const START: u64 = 1_699_999_980; // 2023-11-14 22:13 UTC
 
-    fn scene() -> Layout {
+    pub(in crate::server) fn scene() -> Layout {
         serde_json::from_value(json!({"schema_version":1,"display":{"id":"test","width":320,"height":160},"components":[{
             "id":"clock","rect":{"x":0,"y":0,"width":320,"height":160},"blocks":[
                 {"id":"time","font_size":40,"source":{"kind":"clock","clock":{"timezone":"Europe/Dublin"}}},
                 {"id":"caption","font_size":16,"source":{"kind":"literal","text":"Original"}}
             ]}]})).unwrap()
     }
-    fn quiet() -> RefreshSettings {
+    pub(in crate::server) fn quiet() -> RefreshSettings {
         serde_json::from_value(
             json!({"quiet_hours":{"timezone":"Europe/Dublin","start":"22:14","end":"22:16"}}),
         )
         .unwrap()
     }
-    fn app(
+    pub(in crate::server) fn app(
         layout: Layout,
         settings: RefreshSettings,
         snapshots: SnapshotSet,
@@ -264,6 +278,9 @@ mod tests {
         let path = dir.path().join("workspace.json");
         persist(&path, &workspace.saved).unwrap();
         let app = Arc::new(App {
+            executors: None,
+            fetch_slots: super::super::fetching::slots(),
+            data_epoch: AtomicU64::new(0),
             connector_catalog: serde_json::from_str(include_str!(
                 "../../../../examples/simulator/connectors.json"
             ))
@@ -284,13 +301,13 @@ mod tests {
         });
         (app, clock, dir)
     }
-    fn empty() -> SnapshotSet {
+    pub(in crate::server) fn empty() -> SnapshotSet {
         SnapshotSet {
             schema_version: 1,
             snapshots: vec![],
         }
     }
-    async fn settle(app: &Shared) {
+    pub(in crate::server) async fn settle(app: &Shared) {
         for _ in 0..100 {
             if !app.workspace.lock().await.refreshing {
                 return;
@@ -315,7 +332,7 @@ mod tests {
         .unwrap()
         .0
     }
-    async fn assert_current_pixels(app: &Shared) {
+    pub(in crate::server) async fn assert_current_pixels(app: &Shared) {
         let (layout, settings, png) = {
             let ws = app.workspace.lock().await;
             (

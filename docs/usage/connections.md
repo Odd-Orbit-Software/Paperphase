@@ -2,12 +2,12 @@
 
 Start the [desktop editor](desktop-editor.md), then choose **Connections** in the
 top bar. The bundled **Demo weather settings** descriptor exercises the form
-builder. It saves settings only; it does not contact a weather service or affect
-the simulator's fixture datasets.
+builder. That descriptor saves settings only. The **Temperature connector** can
+[fetch through a registered compiled module](compiled-connectors.md).
 
 1. Select **New connection**, choose a descriptor, and name the record.
 2. Set enabled state and polling interval. Descriptor minimums are enforced;
-   polling itself is part of the next connector-execution slice.
+   registered modules use them for polling and Fetch now eligibility.
 3. Edit generated text, integer, boolean, or choice controls. The demo's optional
    Test secret field exercises private-value handling and makes no API calls.
 4. Choose **Save connection**. Configure a saved record again to edit it, or use
@@ -41,17 +41,20 @@ Definitions must continue to describe saved records. An unknown connector,
 incompatible changed field, or invalid saved value stops startup with an error;
 restore the previous definitions or a backup rather than deleting state blindly.
 
-The plugin package format, UI installation, account linking, shared fetching,
-provider scheduling, and Fetch now are separate pending work. These experimental
-definitions are not a promise of public plugin compatibility.
+Use `--connector-bindings` to register modules and explicit source origins for
+definitions that should fetch. See [compiled connector operations](compiled-connectors.md).
+The plugin package format, UI installation, real provider/account integration,
+and the final SDK contract remain pending. These experimental definitions are
+not a promise of public plugin compatibility.
 
 ## Files and backup
 
 With the default workspace, records are stored in
 `.paperphase/workspace.connections.json`, created on first save. A custom
 `--state-file` uses the same path with its extension replaced by `connections.json`.
-The connection store has its own revision and is protected by the workspace's
-process lock.
+The connection store has its own configuration revision and is protected by the
+workspace's process lock. Registered connectors also persist their latest data
+and rate-limit metadata in this file, without advancing that configuration revision.
 
 Secrets are stored as plaintext in this owner-readable file, not encrypted.
 Stop Paperphase before backing up/restoring it alongside the workspace and any
