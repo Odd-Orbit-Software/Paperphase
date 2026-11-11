@@ -39,6 +39,12 @@ struct Registration {
     wasm: PathBuf,
     #[serde(default)]
     icon_manifest: Option<PathBuf>,
+    #[serde(default)]
+    request_headers: BTreeMap<String, String>,
+    #[serde(default)]
+    reference_archive: Option<super::reference::Archive>,
+    #[serde(default)]
+    work_budget: Option<WorkBudget>,
     source_url: Option<String>,
     #[serde(default)]
     source_setting: Option<String>,
@@ -47,8 +53,18 @@ struct Registration {
     stale_after_secs: u64,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WorkBudget {
+    response_bytes: usize,
+    fuel: u64,
+}
+
 pub(super) struct Binding {
     plugin: PreparedPlugin,
+    request_headers: BTreeMap<String, String>,
+    references: Option<Arc<super::reference::Source>>,
+    work_budget: Option<WorkBudget>,
     config: RunConfig,
     source_setting: Option<String>,
     origin_interval_secs: u64,
@@ -75,6 +91,9 @@ impl Registry {
         let runtime =
             PluginRuntime::new(limits.clone()).map_err(|error| anyhow::anyhow!("{error:#}"))?;
         let mut icons = paperphase_render::IconStore::default();
+        let reference_budget = Arc::new(super::reference::Budget::default());
+        let mut reference_sources: BTreeMap<String, Arc<super::reference::Source>> =
+            BTreeMap::new();
         let mut bindings = BTreeMap::new();
         let mut floors = BTreeMap::new();
         for entry in file.bindings {
@@ -97,6 +116,21 @@ impl Registry {
                     "source setting must be a required URL field"
                 );
             }
+            ensure!(
+                entry.request_headers.len() <= 3,
+                "too many authentication headers"
+            );
+            for (name, setting) in &entry.request_headers {
+                ensure!(
+                    matches!(
+                        name.as_str(),
+                        "x-api-key" | "authorization" | "ocp-apim-subscription-key"
+                    ) && definition.settings.iter().any(|field| &field.id == setting
+                        && field.required
+                        && matches!(field.input, paperphase_core::SettingInput::Secret { .. })),
+                    "authentication headers must bind supported names to required secret settings"
+                );
+            }
             let origin_interval = entry
                 .origin_interval_secs
                 .unwrap_or(definition.min_poll_secs);
@@ -111,6 +145,36 @@ impl Registry {
                     .unwrap_or("https://example.invalid/"),
             )
             .map_err(|_| anyhow::anyhow!("invalid source URL in connector registration"))?;
+            if let Some(budget) = &entry.work_budget {
+                source
+                    .clone()
+                    .with_work_budget(budget.response_bytes, budget.fuel)
+                    .map_err(|_| anyhow::anyhow!("invalid connector work budget"))?;
+            }
+            let references = if let Some(spec) = entry.reference_archive {
+                if let Some(setting) = &spec.selection_setting {
+                    ensure!(
+                        definition.settings.iter().any(|field| &field.id == setting
+                            && field.required
+                            && matches!(field.input, paperphase_core::SettingInput::Text { .. })),
+                        "reference selections require a required text setting"
+                    );
+                }
+                let key = serde_json::to_string(&spec)?;
+                if let Some(source) = reference_sources.get(&key) {
+                    Some(Arc::clone(source))
+                } else {
+                    let source = Arc::new(super::reference::Source::with_budget(
+                        spec,
+                        path.parent().unwrap_or(Path::new(".")),
+                        Arc::clone(&reference_budget),
+                    )?);
+                    reference_sources.insert(key, Arc::clone(&source));
+                    Some(source)
+                }
+            } else {
+                None
+            };
             if let Some(manifest) = entry.icon_manifest {
                 let manifest = path.parent().unwrap_or(Path::new(".")).join(manifest);
                 icons.merge(paperphase_render::IconStore::load_pack(
@@ -142,6 +206,9 @@ impl Registry {
                         entry.connector_id,
                         Binding {
                             plugin,
+                            request_headers: entry.request_headers,
+                            references,
+                            work_budget: entry.work_budget,
                             config: source,
                             source_setting: entry.source_setting,
                             origin_interval_secs: u64::from(origin_interval),
@@ -158,6 +225,16 @@ impl Registry {
             bindings,
             floors,
         })
+    }
+    pub(super) fn ready(&self, connection: &ConnectionConfig) -> bool {
+        self.bindings
+            .get(&connection.connector_id)
+            .is_some_and(|binding| {
+                binding
+                    .references
+                    .as_ref()
+                    .is_none_or(|source| source.ready_for(&connection.settings))
+            })
     }
     pub(super) fn supports(&self, id: &str) -> bool {
         self.bindings.contains_key(id)
@@ -186,9 +263,31 @@ impl Binding {
         } else {
             self.config.clone()
         };
-        config
+        let mut config = config
             .with_settings(settings)
-            .map_err(|_| anyhow::anyhow!("invalid connector settings"))
+            .map_err(|_| anyhow::anyhow!("invalid connector settings"))?;
+        if let Some(budget) = &self.work_budget {
+            config = config
+                .with_work_budget(budget.response_bytes, budget.fuel)
+                .map_err(|_| anyhow::anyhow!("invalid work budget"))?;
+        }
+        if let Some(data) = self
+            .references
+            .as_ref()
+            .and_then(|source| source.snapshot())
+        {
+            config = config.with_references(data);
+        }
+        for (name, setting) in &self.request_headers {
+            let value = settings
+                .get(setting)
+                .and_then(serde_json::Value::as_str)
+                .context("required authentication setting is missing")?;
+            config = config
+                .with_secret_header(name, value)
+                .map_err(|_| anyhow::anyhow!("invalid connector authentication setting"))?;
+        }
+        Ok(config)
     }
 }
 impl Registry {
@@ -275,6 +374,10 @@ pub(super) fn public_status(
         .executors
         .as_ref()
         .is_some_and(|registry| registry.supports(&connection.connector_id));
+    let ready = app
+        .executors
+        .as_ref()
+        .is_some_and(|registry| registry.ready(connection));
     let now = (app.clock)();
     let after = eligible_at(app, store, connection, data);
     let status = if linked && store.dirty {
@@ -283,6 +386,8 @@ pub(super) fn public_status(
         "settings_only"
     } else if !connection.enabled {
         "disabled"
+    } else if !ready {
+        "preparing"
     } else if data.in_flight {
         "fetching"
     } else if data.failures > 0 {
@@ -298,7 +403,7 @@ pub(super) fn public_status(
     } else {
         "waiting"
     };
-    json!({"status":status,"can_fetch":linked && !store.dirty && connection.enabled && !data.in_flight && now >= after && app.fetch_slots.available_permits() > 0,
+    json!({"status":status,"can_fetch":linked && ready && !store.dirty && connection.enabled && !data.in_flight && now >= after && app.fetch_slots.available_permits() > 0,
         "fetch_after":after,"next_fetch_at":data.next_fetch_at.max(after),"last_attempt_at":data.last_attempt_at,
         "last_success_at":data.snapshot.as_ref().map(|snapshot| snapshot.last_success_at),"last_error":if store.dirty {Some("Fetching waits for storage recovery.".to_owned())} else {data.last_error.clone()}})
 }
@@ -347,6 +452,21 @@ async fn claim(app: &Shared, id: &str) -> ApiResult<Claimed> {
             "No compiled connector is registered for this service.".into(),
         )
     })?;
+    {
+        let store = app.connections.lock().await;
+        if let Some(connection) = store
+            .connections
+            .iter()
+            .find(|connection| connection.id == id)
+            && registry.supports(&connection.connector_id)
+            && !registry.ready(connection)
+        {
+            return Err(ApiError(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Reference data is still preparing. Please wait for the first import.".into(),
+            ));
+        }
+    }
     let permit = Arc::clone(&app.fetch_slots)
         .try_acquire_owned()
         .map_err(|_| {
@@ -658,7 +778,7 @@ pub(super) fn start(app: Shared) -> tokio::task::JoinHandle<()> {
                             && app
                                 .executors
                                 .as_ref()
-                                .is_some_and(|registry| registry.supports(&connection.connector_id))
+                                .is_some_and(|registry| registry.ready(connection))
                     })
                     .filter_map(|connection| {
                         let empty = ConnectionData::default();
@@ -693,4 +813,74 @@ fn invalid_source(_: anyhow::Error) -> ApiError {
         StatusCode::UNPROCESSABLE_ENTITY,
         "Invalid connector source settings.".into(),
     )
+}
+
+pub(super) fn start_references(app: Shared) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        let Some(registry) = &app.executors else {
+            return;
+        };
+        let client = registry.runtime.reference_client();
+        let sources = registry
+            .bindings
+            .iter()
+            .filter_map(|(id, binding)| {
+                binding
+                    .references
+                    .as_ref()
+                    .map(|source| (id.clone(), Arc::clone(source)))
+            })
+            .collect::<Vec<_>>();
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            interval.tick().await;
+            let connections = {
+                let store = app.connections.lock().await;
+                store
+                    .connections
+                    .iter()
+                    .filter(|c| c.enabled)
+                    .cloned()
+                    .collect::<Vec<_>>()
+            };
+            for (id, source) in &sources {
+                let matching = connections
+                    .iter()
+                    .filter(|c| {
+                        registry
+                            .bindings
+                            .get(&c.connector_id)
+                            .and_then(|b| b.references.as_ref())
+                            .is_some_and(|other| Arc::ptr_eq(source, other))
+                    })
+                    .collect::<Vec<_>>();
+                if matching.is_empty() {
+                    continue;
+                }
+                let selected = matching
+                    .iter()
+                    .flat_map(|c| source.selections(&c.settings))
+                    .collect();
+                source.select(selected);
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0, |at| at.as_secs());
+                if source.due(now) {
+                    let source = Arc::clone(source);
+                    let client = client.clone();
+                    let result = tokio::task::spawn_blocking(move || source.update(&client)).await;
+                    let reason = match result {
+                        Ok(Ok(())) => continue,
+                        Ok(Err(error)) => error.to_string(),
+                        Err(_) => "reference worker failed".into(),
+                    };
+                    let reason: String = reason.chars().take(256).collect();
+                    eprintln!(
+                        "Reference import failed for connector {id}; previous reference data retained: {reason}"
+                    );
+                }
+            }
+        }
+    })
 }

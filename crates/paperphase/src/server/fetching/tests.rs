@@ -138,6 +138,9 @@ fn setup(source: &Source, quiet: bool) -> (Shared, Arc<AtomicU64>, tempfile::Tem
             "example.temperature".into(),
             Binding {
                 plugin,
+                request_headers: BTreeMap::new(),
+                references: None,
+                work_budget: None,
                 config,
                 source_setting: None,
                 origin_interval_secs: 5,

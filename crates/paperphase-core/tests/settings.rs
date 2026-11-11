@@ -153,6 +153,7 @@ fn unicode_limits_count_bytes_and_combined_values_are_bounded() {
             required: false,
             input: paperphase_core::SettingInput::Text {
                 max_bytes: 4096,
+                multiline: false,
                 default: Some("x".repeat(4096)),
             },
         });

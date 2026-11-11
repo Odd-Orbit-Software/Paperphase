@@ -647,3 +647,36 @@ test('Charlemont Luas shows both directions with configurable stops and saved di
   await page.getByRole('button',{name:'Discard',exact:true}).click();
   expect(errors).toEqual([]);
 });
+
+test('Dublin Bus accepts multiple stop numbers with a private key and shared feed', async ({page,request})=>{
+ const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
+ await page.goto('/');await page.getByRole('button',{name:'Connections',exact:true}).click();
+ await page.getByRole('button',{name:'Configure Dublin buses',exact:true}).click();
+ await expect(page.getByLabel('NTA API key',{exact:true})).toHaveValue('');
+ await expect(page.getByLabel('NTA API key',{exact:true})).toHaveAttribute('type','password');
+ await expect(page.getByLabel('Bus stop numbers',{exact:true})).toHaveJSProperty('tagName','TEXTAREA');
+ await page.getByLabel('Bus stop numbers',{exact:true}).fill('2813,\n2');
+ await page.getByLabel('NTA API key',{exact:true}).fill('fixture-secret-key');
+ await page.getByRole('checkbox',{name:'Enabled',exact:true}).check();
+ await page.getByRole('button',{name:'Save connection',exact:true}).click();
+ await expect(page.locator('[data-fetch-id="bus.browser"]')).toContainText('Last fetched');
+ const store=await(await request.get('/api/connections')).json();const bus=store.connections.find((c:{id:string})=>c.id==='bus.browser');
+ expect(bus.settings.api_key).toBeUndefined();expect(bus.secret_present).toContain('api_key');expect(bus.settings.stop_numbers).toBe('2813,\n2');expect(bus.fetch.can_fetch).toBe(false);
+ await page.getByRole('button',{name:'Configure Dublin buses',exact:true}).click();
+ await expect(page.getByLabel('NTA API key',{exact:true})).toHaveValue('');
+ if(process.env.CAPTURE_SCREENSHOTS==='1')await page.screenshot({path:'../docs/design/images/dublin-bus-settings.png'});
+ await page.getByRole('button',{name:'Discard form',exact:true}).click();
+ const catalog=await(await request.get('/api/catalog')).json();expect(catalog.filter((d:{connection_id:string})=>d.connection_id==='bus.browser').map((d:{dataset_id:string})=>d.dataset_id).sort()).toEqual(['arrivals','overview','stops']);
+ expect(catalog.find((d:{connection_id:string;dataset_id:string})=>d.connection_id==='bus.browser'&&d.dataset_id==='stops').rows).toBe(2);
+ await page.getByRole('button',{name:'Close connections',exact:true}).click();await page.getByRole('button',{name:'Edit layout'}).click();
+ for(const id of ['weather','agenda']){await page.getByRole('button',{name:`Select ${id}`,exact:true}).click();await page.getByRole('button',{name:'Remove component',exact:true}).click();}
+ await page.getByRole('button',{name:'Add All bus stops from Dublin buses',exact:true}).click();
+ await page.getByRole('button',{name:'Save to display'}).click();await expect(page.getByRole('button',{name:'Edit layout'})).toBeVisible();
+ await expect.poll(async()=>{const s=await(await request.get('/api/state')).json();return !s.pending&&s.displayed_revision===s.revision;}).toBe(true);
+ const state=await(await request.get('/api/state')).json();const component=state.layout.components.find((c:{label?:string})=>c.label==='Dublin buses · All bus stops');expect(component).toBeTruthy();
+ const preview=await(await request.post('/api/preview',{data:state.layout})).json();const report=preview.components.find((c:{id:string})=>c.id===component.id);expect(report.state).toBe('fresh');expect(report.warnings).toEqual([]);
+ expect(await(await request.get('/api/display.png')).body()).toEqual(Buffer.from(preview.png_base64,'base64'));
+ await expect(page.locator('#frame')).toHaveAttribute('src',`/api/display.png?frame=${encodeURIComponent(state.frame_id)}`);await expect(page.locator('#frame')).toHaveJSProperty('complete',true);
+ if(process.env.CAPTURE_SCREENSHOTS==='1')await page.screenshot({path:'../docs/design/images/dublin-bus-display.png'});
+ await page.reload();await page.getByRole('button',{name:'Edit layout'}).click();await expect(page.getByRole('button',{name:'Add Bus stop board from Dublin buses',exact:true})).toBeVisible();await page.getByRole('button',{name:'Discard',exact:true}).click();expect(errors).toEqual([]);
+});

@@ -790,8 +790,9 @@ p {
 .connection-description { font-size: 11px; color: var(--muted); margin: 0 0 20px; }
 .connection-form label { display: block; color: #64705a; font-size: 11px; margin: 16px 0 5px; }
 .connection-form label > span { display: block; margin-bottom: 7px; }
-.connection-form input:not([type=checkbox]), .connection-form select { width: 100%; padding: 9px 10px; color: #2e3f30; border: 1px solid #ccd6c0; border-radius: 5px; background: #fffffc; font-size: 12px; }
+.connection-form input:not([type=checkbox]), .connection-form select, .connection-form textarea { width: 100%; padding: 9px 10px; color: #2e3f30; border: 1px solid #ccd6c0; border-radius: 5px; background: #fffffc; font-size: 12px; }
 .connection-form .check { display: flex; align-items: center; gap: 6px; }
+.connection-form textarea { min-height: 72px; resize: vertical; }
 .connection-form input[type=checkbox] { accent-color: var(--green); width: 13px; height: 13px; }
 .connection-form .boolean-setting { display: flex; align-items: center; justify-content: space-between; }
 .connection-form .boolean-setting > span { margin: 0; }

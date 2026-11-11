@@ -2,7 +2,7 @@ use std::{
     io::{Read, Write},
     net::TcpListener,
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     thread::{self, JoinHandle},
@@ -475,6 +475,7 @@ fn compiled_rust_plugin_fetches_and_transforms_data() {
 }
 
 struct Server {
+    request: Arc<Mutex<Vec<u8>>>,
     url: String,
     hits: Arc<AtomicUsize>,
     stop: Arc<AtomicBool>,
@@ -498,6 +499,8 @@ impl Server {
         listener.set_nonblocking(true).unwrap();
         let hits = Arc::new(AtomicUsize::new(0));
         let requests = Arc::clone(&hits);
+        let captured = Arc::new(Mutex::new(Vec::new()));
+        let capture = Arc::clone(&captured);
         let stop = Arc::new(AtomicBool::new(false));
         let stopped = Arc::clone(&stop);
         let worker = thread::spawn(move || {
@@ -512,7 +515,8 @@ impl Server {
                             .set_write_timeout(Some(Duration::from_millis(250)))
                             .unwrap();
                         let mut request = [0; 8192];
-                        let _ = stream.read(&mut request);
+                        let length = stream.read(&mut request).unwrap_or(0);
+                        *capture.lock().unwrap() = request[..length].to_vec();
                         let _ = stream.write_all(&response);
                         // Keep an incomplete response open to test body timeouts too.
                         thread::sleep(delay);
@@ -525,6 +529,7 @@ impl Server {
             }
         });
         Self {
+            request: captured,
             url,
             hits,
             stop,
@@ -793,5 +798,207 @@ fn compiled_luas_plugin_uses_one_request_and_preserves_times_for_both_datasets()
                     .unwrap()
             )
             .is_err()
+    );
+}
+
+#[test]
+fn authentication_headers_are_host_granted_redacted_and_exact_origin_only() {
+    let source = Server::ok(DATASET.as_bytes());
+    let runtime = PluginRuntime::new(Limits::default()).unwrap();
+    let config = RunConfig::new(&source.url)
+        .unwrap()
+        .with_secret_header("x-api-key", "fixture-secret-key")
+        .unwrap();
+    assert!(!format!("{config:?}").contains("fixture-secret-key"));
+    let module = runtime.prepare(&http_wasm(None, 1)).unwrap();
+    runtime.run(&module, &config).unwrap();
+    assert!(
+        String::from_utf8_lossy(&source.request.lock().unwrap())
+            .to_lowercase()
+            .contains("x-api-key: fixture-secret-key")
+    );
+    // A later invocation without a grant must not inherit credentials.
+    runtime
+        .run(&module, &RunConfig::new(&source.url).unwrap())
+        .unwrap();
+    assert!(
+        !String::from_utf8_lossy(&source.request.lock().unwrap())
+            .to_lowercase()
+            .contains("x-api-key")
+    );
+    let other = Server::ok(DATASET.as_bytes());
+    assert!(
+        runtime
+            .run(
+                &runtime.prepare(&http_wasm(Some(&other.url), 1)).unwrap(),
+                &config
+            )
+            .is_err()
+    );
+    assert_eq!(other.hits(), 0);
+    for (name, value) in [
+        ("host", "example.org"),
+        ("x-api-key", "bad\r\nInjected: value"),
+        ("x-api-key", ""),
+    ] {
+        assert!(
+            RunConfig::new(&source.url)
+                .unwrap()
+                .with_secret_header(name, value)
+                .is_err()
+        );
+    }
+}
+
+#[test]
+#[ignore = "scripts/check.sh builds the Dublin Bus guest"]
+fn compiled_bus_guest_queries_granted_tables_and_publishes_multiple_stops() {
+    let source = Server::ok(include_bytes!(
+        "../../../plugins/dublin-bus/fixtures/sparse-updates.pb"
+    ));
+    let mut data = paperphase_runtime::ReferenceData::default();
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../plugins/dublin-bus/fixtures/reference.json"
+    ))
+    .unwrap();
+    for (table, rows) in fixture.as_object().unwrap() {
+        for (key, row) in rows.as_object().unwrap() {
+            data.insert(
+                table,
+                key,
+                &serde_json::from_value::<Vec<String>>(row.clone()).unwrap(),
+            )
+            .unwrap();
+        }
+    }
+    data.insert(
+        "calendar",
+        "daily",
+        &["1", "1", "1", "1", "1", "1", "1", "20230101", "20300101"].map(String::from),
+    )
+    .unwrap();
+    data.insert(
+        "trips",
+        "trip-scheduled",
+        &["route-11", "City Centre", "daily"].map(String::from),
+    )
+    .unwrap();
+    data.append(
+        "times",
+        "8220DB002813|0",
+        &["trip-scheduled", "34", "22:16:00", "22:16:00", "0"].map(String::from),
+    )
+    .unwrap();
+    let runtime = PluginRuntime::new(Limits {
+        max_requests: 1,
+        ..Limits::default()
+    })
+    .unwrap();
+    let module = runtime
+        .prepare(
+            &std::fs::read(
+                std::env::var("PAPERPHASE_TEST_DUBLIN_BUS_PLUGIN").expect("build Dublin Bus guest"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    let settings=serde_json::from_value(json!({"stop_numbers":"2813, 2","routes":"","max_arrivals":3,"api_key":"fixture-secret-key"})).unwrap();
+    let config = RunConfig::new(&source.url)
+        .unwrap()
+        .with_settings(&settings)
+        .unwrap()
+        .with_secret_header("x-api-key", "fixture-secret-key")
+        .unwrap()
+        .with_references(Arc::new(data))
+        .with_work_budget(8 * 1024 * 1024, 500_000_000)
+        .unwrap();
+    let result = runtime.run(&module, &config).unwrap();
+    assert_eq!(
+        result.additional_datasets[0].rows[0]["expected-at"],
+        1700000100_u64
+    );
+    assert_eq!(result.additional_datasets[0].rows[0]["due-label"], "2 min");
+    let scheduled = result.additional_datasets[0]
+        .rows
+        .iter()
+        .find(|row| row["status"] == "scheduled")
+        .expect("compiled guest publishes scheduled fallback");
+    assert_eq!(scheduled["due-label"], "Scheduled 22:16");
+    assert!(scheduled["expected-at"].is_null());
+    assert!(scheduled["due-minutes"].is_null());
+    assert_eq!(scheduled["scheduled-at"], 1700000160_u64);
+    assert_eq!(result.metrics.http_requests, 1);
+    assert_eq!(source.hits(), 1);
+    assert_eq!(result.dataset.rows.len(), 2);
+    assert_eq!(result.dataset.rows[0]["stop-name"], "Ranelagh Road");
+    assert_eq!(result.dataset.rows[1]["stop-name"], "Parnell Square West");
+    assert_eq!(result.observed_at, Some(1700000000));
+    assert_eq!(result.additional_observed_at["arrivals"], 1700000000);
+    assert!(result.metrics.fuel_consumed < 500_000_000);
+    assert!(result.metrics.memory_bytes <= 32 * 1024 * 1024);
+    assert!(
+        String::from_utf8_lossy(&source.request.lock().unwrap())
+            .to_lowercase()
+            .contains("x-api-key: fixture-secret-key")
+    );
+    let without_reference = RunConfig::new(&source.url)
+        .unwrap()
+        .with_settings(&settings)
+        .unwrap();
+    assert!(runtime.run(&module, &without_reference).is_err());
+    assert_eq!(
+        source.hits(),
+        1,
+        "Missing reference data must prevent upstream requests"
+    );
+}
+
+#[test]
+fn reference_tables_validate_keys_budgets_and_cache_deserialisation() {
+    let mut data = paperphase_runtime::ReferenceData::default();
+    data.insert("stops", "2813", &["Ranelagh Road".into()])
+        .unwrap();
+    assert!(
+        data.insert("stops", "2813", &["Different stop".into()])
+            .is_err()
+    );
+    assert!(data.insert("../secrets", "2813", &[]).is_err());
+    assert!(data.insert("stops", "bad\nkey", &[]).is_err());
+    let mut restored: paperphase_runtime::ReferenceData =
+        serde_json::from_slice(&serde_json::to_vec(&data).unwrap()).unwrap();
+    restored.validate().unwrap();
+    assert_eq!(restored.rows(), 1);
+    assert_eq!(restored.get("stops", "2813"), Some("[\"Ranelagh Road\"]"));
+    for (bytes, fuel) in [
+        (64 * 1024 - 1, 10_000_000),
+        (8 * 1024 * 1024 + 1, 10_000_000),
+        (64 * 1024, 500_000_001),
+    ] {
+        assert!(config().with_work_budget(bytes, fuel).is_err());
+    }
+}
+
+#[test]
+fn reference_lookup_quota_bounds_native_work_per_invocation() {
+    let mut data = paperphase_runtime::ReferenceData::default();
+    data.insert("stops", "2813", &["Ranelagh Road".into()])
+        .unwrap();
+    let config = config().with_references(Arc::new(data));
+    let runtime = PluginRuntime::new(Limits::default()).unwrap();
+    let wasm=wat::parse_str(r#"(module
+  (import "paperphase_v0" "reference_lookup" (func $lookup (param i32 i32 i32 i32 i32 i32)(result i32)))
+  (memory (export "memory") 1)(data(i32.const 0) "stops")(data(i32.const 8) "2813")
+  (func(export "run")(result i32)(local $count i32)
+   (loop $next i32.const 0 i32.const 5 i32.const 8 i32.const 4 i32.const 64 i32.const 4096 call $lookup drop
+    local.get $count i32.const 1 i32.add local.tee $count i32.const 4097 i32.lt_u br_if $next)
+   i32.const 0))"#).unwrap();
+    assert!(error(&runtime, &wasm, &config).contains("reference lookup quota exceeded"));
+    assert!(
+        runtime
+            .run(
+                &runtime.prepare(&publish_wasm(DATASET, "", 0)).unwrap(),
+                &config
+            )
+            .is_ok()
     );
 }

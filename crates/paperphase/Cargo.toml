@@ -8,6 +8,10 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+csv.workspace = true
+flate2.workspace = true
+crc32fast.workspace = true
+reqwest.workspace = true
 anyhow.workspace = true
 axum.workspace = true
 base64.workspace = true

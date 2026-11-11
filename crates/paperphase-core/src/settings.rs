@@ -52,6 +52,8 @@ pub enum SettingInput {
     Text {
         max_bytes: u16,
         #[serde(default)]
+        multiline: bool,
+        #[serde(default)]
         default: Option<String>,
     },
     Url {

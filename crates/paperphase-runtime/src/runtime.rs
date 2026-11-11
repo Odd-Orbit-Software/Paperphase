@@ -7,7 +7,12 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 
-use reqwest::{Url, blocking::Client, redirect::Policy};
+use reqwest::{
+    Url,
+    blocking::Client,
+    header::{HeaderMap, HeaderName, HeaderValue},
+    redirect::Policy,
+};
 use serde::Serialize;
 use wasmtime::{
     Caller, Config, Engine, Linker, Memory, Module, Store, StoreLimits, StoreLimitsBuilder,
@@ -53,6 +58,9 @@ pub struct RunConfig {
     source_url: Url,
     allowed_origin: String,
     settings: Vec<u8>,
+    headers: HeaderMap,
+    references: Option<Arc<crate::ReferenceData>>,
+    work_budget: Option<(usize, u64)>,
 }
 impl std::fmt::Debug for RunConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -74,6 +82,9 @@ impl RunConfig {
             source_url,
             allowed_origin,
             settings: b"{}".to_vec(),
+            headers: HeaderMap::new(),
+            references: None,
+            work_budget: None,
         })
     }
     pub fn with_settings(mut self, settings: &paperphase_core::SettingsValues) -> Result<Self> {
@@ -82,6 +93,43 @@ impl RunConfig {
             self.settings.len() <= MAX_SETTINGS_BYTES,
             "settings byte limit exceeded"
         );
+        Ok(self)
+    }
+    /// Host-granted authentication for the exact source origin. Guests cannot
+    /// choose headers, and redirects are disabled by the shared client.
+    pub fn with_secret_header(mut self, name: &str, value: &str) -> Result<Self> {
+        ensure!(
+            matches!(
+                name,
+                "x-api-key" | "authorization" | "ocp-apim-subscription-key"
+            ),
+            "unsupported authentication header"
+        );
+        ensure!(
+            !value.is_empty() && value.len() <= 4096,
+            "invalid authentication header size"
+        );
+        let mut header = HeaderValue::from_str(value)
+            .map_err(|_| anyhow!("invalid authentication header value"))?;
+        header.set_sensitive(true);
+        self.headers.insert(
+            HeaderName::from_bytes(name.as_bytes())
+                .map_err(|_| anyhow!("invalid authentication header name"))?,
+            header,
+        );
+        Ok(self)
+    }
+    pub fn with_references(mut self, data: Arc<crate::ReferenceData>) -> Self {
+        self.references = Some(data);
+        self
+    }
+    pub fn with_work_budget(mut self, response_bytes: usize, fuel: u64) -> Result<Self> {
+        ensure!(
+            (64 * 1024..=8 * 1024 * 1024).contains(&response_bytes)
+                && (10_000_000..=500_000_000).contains(&fuel),
+            "invalid registered work budget"
+        );
+        self.work_budget = Some((response_bytes, fuel));
         Ok(self)
     }
     pub fn origin(&self) -> &str {
@@ -150,6 +198,8 @@ struct HostState {
     config: RunConfig,
     client: Client,
     requests: u32,
+    lookups: u32,
+    lookup_bytes: usize,
     output: Option<Publication>,
 }
 
@@ -223,6 +273,10 @@ impl PluginRuntime {
         Ok(PreparedPlugin { module })
     }
 
+    pub fn reference_client(&self) -> Client {
+        self.client.clone()
+    }
+
     /// Fresh store and quotas per invocation; compiler and HTTP pool are reused.
     pub fn run(&self, plugin: &PreparedPlugin, config: &RunConfig) -> Result<RunResult> {
         self.run_observed(plugin, config).result
@@ -250,6 +304,11 @@ impl PluginRuntime {
             "plugin belongs to a different runtime"
         );
         let started = Instant::now();
+        let mut budgets = self.limits.clone();
+        if let Some((bytes, fuel)) = config.work_budget {
+            budgets.max_response_bytes = bytes;
+            budgets.fuel = fuel;
+        }
         let mut store = Store::new(
             &self.engine,
             HostState {
@@ -262,17 +321,20 @@ impl PluginRuntime {
                     .table_elements(4096)
                     .trap_on_grow_failure(true)
                     .build(),
-                budgets: self.limits.clone(),
+                budgets: budgets.clone(),
                 config: config.clone(),
                 client: self.client.clone(),
                 requests: 0,
+                lookups: 0,
+                lookup_bytes: 0,
                 output: None,
             },
         );
         store.limiter(|state| &mut state.limits);
         // Set before instantiation: a module's start function is untrusted too.
-        store.set_fuel(self.limits.fuel)?;
+        store.set_fuel(budgets.fuel)?;
         let mut linker = Linker::new(&self.engine);
+        linker.func_wrap(ABI, "reference_lookup", reference_lookup)?;
         linker.func_wrap(ABI, "source_url", source_url)?;
         linker.func_wrap(ABI, "settings_json", settings_json)?;
         linker.func_wrap(ABI, "http_get", http_get)?;
@@ -290,7 +352,7 @@ impl PluginRuntime {
             .get_memory(&mut store, "memory")
             .ok_or_else(|| anyhow!("plugin must export memory"))?
             .data_size(&store);
-        let fuel_consumed = self.limits.fuel - store.get_fuel()?;
+        let fuel_consumed = budgets.fuel - store.get_fuel()?;
         let state = store.data_mut();
         let publication = state
             .output
@@ -390,6 +452,7 @@ fn http_get(
     let response = state
         .client
         .get(url)
+        .headers(state.config.headers.clone())
         .send()
         .map_err(|_| anyhow!("HTTP request failed or timed out"))?;
     if matches!(response.status().as_u16(), 429 | 503) {
@@ -462,4 +525,43 @@ fn publish_with_metadata(mut caller: Caller<'_, HostState>, ptr: i32, len: i32) 
     publication.validate()?;
     caller.data_mut().output = Some(publication);
     Ok(0)
+}
+
+fn reference_lookup(
+    mut caller: Caller<'_, HostState>,
+    table_ptr: i32,
+    table_len: i32,
+    key_ptr: i32,
+    key_len: i32,
+    out_ptr: i32,
+    capacity: i32,
+) -> Result<i32> {
+    ensure!(
+        caller.data().lookups < 4096,
+        "reference lookup quota exceeded"
+    );
+    caller.data_mut().lookups += 1;
+    let table = read(&mut caller, table_ptr, table_len, 64)?;
+    let key = read(&mut caller, key_ptr, key_len, 192)?;
+    let table = std::str::from_utf8(&table).context("reference table must be UTF-8")?;
+    let key = std::str::from_utf8(&key).context("reference key must be UTF-8")?;
+    let value = caller
+        .data()
+        .config
+        .references
+        .as_ref()
+        .ok_or_else(|| anyhow!("reference data unavailable"))?
+        .get(table, key)
+        .map(str::to_owned);
+    let (memory, ptr, capacity) = buffer(&mut caller, out_ptr, capacity, 4096)?;
+    if let Some(value) = value {
+        let total = caller.data().lookup_bytes.saturating_add(value.len());
+        ensure!(total <= 4 * 1024 * 1024, "reference output budget exceeded");
+        caller.data_mut().lookup_bytes = total;
+        ensure!(value.len() <= capacity, "reference output buffer too small");
+        memory.write(&mut caller, ptr, value.as_bytes())?;
+        Ok(value.len() as i32)
+    } else {
+        Ok(0)
+    }
 }

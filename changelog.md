@@ -5,6 +5,70 @@
 Current development version: `0.1.0`. The earliest stable stage has not been
 reached; minor-version increments per commit begin after that milestone.
 
+### Marked scheduled bus departures
+
+- Show **Scheduled HH:MM** when a bus has no usable live estimate, including
+  timetable trips absent from a successful real-time response. Live predictions
+  retain priority for the same trip, service date and stop sequence.
+- Import service IDs, weekday calendars, date exceptions and boarding types.
+  Consider only the next three hours; handle overnight/DST service dates, and
+  preserve cancellations, skipped calls and stop reassignments.
+- Page selected-stop timetable references into bounded groups, build a per-run
+  trip index and memoise metadata lookups. Existing templates display the marker;
+  typed rows expose `status=scheduled` and `scheduled-at`, leaving live estimate
+  and countdown fields null for timetable entries.
+- Added native/compiled regression coverage and updated the canvas screenshot,
+  design and usage documentation. The real archive with an empty live feed
+  produced **44 · Enniskerry · Scheduled 23:45** for stop 2813.
+
+Validation: `sh scripts/check.sh` passed all 138 Rust tests, formatting,
+host/guest Clippy and five Wasm builds. TypeScript/frontend builds and the
+Dublin Bus browser flow passed, including exact preview/display equality;
+the updated screenshot was reviewed and Mermaid diagrams rendered. A replay
+with the real public archive and no live updates verified calendar-based
+fallback. The restarted local service preserved layout revision 7 and the key,
+and returned **44 · Enniskerry · Scheduled 23:45** with `status=scheduled`, a
+separate timetable timestamp and no live estimate/countdown value.
+Version remains `0.1.0`; Pi and physical-display validation are pending.
+
+### Dublin Bus and shared reference data
+
+- Added a compiled Dublin Bus connector for up to eight numbered stops per
+  connection, with private NTA-key settings, route filters, per-stop/combined
+  templates and typed predictions. First requested stop: 2813, Ranelagh Road.
+- Use one compact NTA protobuf feed for all selected stops. Decode borrowed
+  slices, bound candidates, preserve cancellation/skipped/unavailable states,
+  handle valid trips without IDs and avoid invented scheduled/destination data.
+  Join signed delays to selected-stop timetables, propagate sparse updates
+  forward with NO_DATA/SKIPPED semantics, and handle service dates, overnight
+  times and Dublin daylight-saving boundaries.
+- Added explicit secret-header grants, bounded larger work profiles and generic
+  immutable reference lookups using the existing HTTP pool. Ordinary connector
+  budgets remain unchanged; keys are absent from URLs and public settings reads.
+- Added enabled-only conditional ZIP/CSV imports, byte-range extraction, CRC and
+  size checks, grouped selected-stop streaming, durable last-good tables,
+  shared memory admission, automatic
+  refresh/retry and preparation status. Generic multiline settings support stop
+  lists without removing their text/byte limits.
+- Added synthetic fixtures, host/guest/browser coverage, design/operator docs
+  and attribution. NTA's token policy requires 60-second spacing; a private-key
+  probe returned a 763,765-byte protobuf feed on 2026-11-11.
+
+Validation: `sh scripts/check.sh` passed all 134 Rust tests, formatting,
+host/guest Clippy and five Wasm builds. TypeScript/frontend builds and all 15
+Chromium flows passed; the bus flow was rechecked after the final guest fix.
+Mermaid diagrams rendered and both new screenshots were reviewed. Two
+quota-spaced captures exercised real protobuf feeds and streamed public schedules
+without committing private keys or live captures. The replay exposed sparse
+delay propagation and inconsistent descriptor-route separators; exact trip joins
+now resolve route/headsign data while known conflicting routes remain unavailable.
+One desktop replay used about 113 million fuel, 10.6 MB guest memory and 37 ms;
+the explicit bus grant is 500 million fuel, leaving default budgets unchanged.
+The backed-up local service retained layout revision 7, all settings and the key.
+Its live 2813 board returned route 44 to Enniskerry, an arrival estimate, explicit
+unavailable-time content and matching observation times across all three datasets.
+Version remains `0.1.0`; Pi and physical-display validation are pending.
+
 ### Luas departures
 
 - Added a Rust/Wasm Luas connector using one shared-host HTTPS request for both

@@ -144,3 +144,9 @@ See [connection operations](../usage/connections.md).
 
 The [weather/RSS layer](weather-and-rss.md) adds decimal/URL settings and
 validated component templates exposed from configured connections in the editor.
+
+Text settings can opt into a multiline editor using `multiline: true`; the value
+remains one bounded UTF-8 string under the same server validation. Dublin Bus
+uses this for comma/newline stop lists. Authentication headers are granted by
+trusted registration to required secret setting IDs, not editable arbitrary
+header names. See [Dublin Bus](dublin-bus.md).

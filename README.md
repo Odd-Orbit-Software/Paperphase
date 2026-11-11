@@ -36,7 +36,8 @@ thresholds, and serialized completion/retry behaviour. Initial real-source plugi
 work runs before physical hardware. The first weather/RSS plugins now include
 hourly/daily forecasts, plugin-owned monochrome icons, feed headlines, and reusable
 connection templates. Luas stop boards now support both directions and shared
-polling; air quality remains planned as a separate plugin.
+polling. Dublin Bus adds numbered multi-stop boards through a shared NTA feed
+and reference cache; air quality remains planned as a separate plugin.
 Remaining integrations, Pi measurements, and hardware validation are pending.
 The initial target is a Raspberry Pi Zero 2 W running 64-bit Raspberry
 Pi OS Lite with a Waveshare 7.5-inch monochrome e-paper HAT. The exact panel
@@ -63,6 +64,8 @@ revision and resolution remain to be confirmed.
 - [Weather/RSS design](docs/design/weather-and-rss.md)
 - [Set up Luas departures](docs/usage/luas.md)
 - [Luas design](docs/design/luas.md)
+- [Set up Dublin Bus](docs/usage/dublin-bus.md)
+- [Dublin Bus and reference-cache design](docs/design/dublin-bus.md)
 - [Plugin-owned icon design](docs/design/plugin-icons.md)
 - [Use or replace plugin icons](docs/usage/plugin-icons.md)
 - [Changelog](changelog.md)

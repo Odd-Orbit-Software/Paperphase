@@ -11,7 +11,7 @@ type Dataset = { connection_id: string; connection_label?: string; dataset_id: s
 type Report = { id: string; state: string; warnings: string[]; blocks: BlockPlacement[] };
 type Preview = { png_base64: string; components: Report[] };
 type ComponentTemplate = { id: string; name: string; component: Component };
-type SettingInput = { type: 'url'; default?: string | null } | { type: 'number'; min: number; max: number; default?: number | null } | { type: 'text'; max_bytes: number; default?: string | null } | { type: 'secret'; max_bytes: number } | { type: 'integer'; min: number; max: number; default?: number | null } | { type: 'boolean'; default?: boolean | null } | { type: 'choice'; options: { value: string; label: string }[]; default?: string | null };
+type SettingInput = { type: 'url'; default?: string | null } | { type: 'number'; min: number; max: number; default?: number | null } | { type: 'text'; multiline?: boolean; max_bytes: number; default?: string | null } | { type: 'secret'; max_bytes: number } | { type: 'integer'; min: number; max: number; default?: number | null } | { type: 'boolean'; default?: boolean | null } | { type: 'choice'; options: { value: string; label: string }[]; default?: string | null };
 type SettingDefinition = { id: string; label: string; help: string; required: boolean; input: SettingInput };
 type ConnectorDefinition = { id: string; name: string; description: string; min_poll_secs: number; default_poll_secs: number; templates?: ComponentTemplate[]; settings: SettingDefinition[] };
 type FetchStatus = { status: string; can_fetch: boolean; fetch_after: number; next_fetch_at: number; last_attempt_at: number | null; last_success_at: number | null; last_error: string | null };
@@ -903,7 +903,7 @@ function renderConnections() {
   const current = connectionDraft;
   if (!current) {
     const empty = node('div', 'empty-properties');
-    empty.append(node('span', '', '≋'), node('h3', '', connectionStore.connections.length ? 'Choose a connection.' : 'Start with a data source.'), node('p', '', 'Keep each location or account in its own connection. The settings form comes from its connector definition.'));
+    empty.append(node('span', '', '≋'), node('h3', '', connectionStore.connections.length ? 'Choose a connection.' : 'Start with a data source.'), node('p', '', 'Choose a connection to adjust its settings, polling and saved credentials.'));
     parent.append(empty); connectionButtons(); return;
   }
   const definition = connectorDefinitions.find(d => d.id === current.connector_id)!;
@@ -925,7 +925,7 @@ function renderConnections() {
   for (const field of definition.settings) {
     const inputDefinition = field.input;
     const value = current.settings[field.id];
-    let input: HTMLInputElement | HTMLSelectElement;
+    let input: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
     if (inputDefinition.type === 'choice') {
       input = node('select');
       if (!field.required) { const option = node('option', '', 'Not set'); option.value = ''; input.append(option); }
@@ -933,6 +933,9 @@ function renderConnections() {
       input.value = typeof value === 'string' ? value : '';
       input.onchange = () => { current.settings[field.id] = input.value === '' ? null : input.value; connectionButtons(); };
       input.required = field.required;
+    } else if (inputDefinition.type === 'text' && inputDefinition.multiline) {
+      input = node('textarea'); input.rows = 3; input.maxLength = inputDefinition.max_bytes; input.required = field.required; input.value = typeof value === 'string' ? value : '';
+      input.oninput = () => { current.settings[field.id] = input.value; connectionButtons(); };
     } else {
       input = node('input');
       if (inputDefinition.type === 'boolean') {
@@ -992,6 +995,7 @@ function updateFetchControl(container: HTMLElement, connection: Connection) {
   fetch.disabled = !status.can_fetch || connectionBusy;
   fetch.title = 'Fetch using saved connection settings.';
   const details = container.querySelector<HTMLElement>('[data-fetch-details]')!;
+  if (status.status === 'preparing') { details.textContent = 'Preparing reference data…'; fetch.title = 'Fetching will start once the reference data is ready.'; return; }
   if (status.status === 'settings_only') {
     details.textContent = 'Plugin not loaded by this service. Settings and components alone do not fetch data.';
     fetch.title = 'Load the plugin and restart the service. See Enable fetching below.';

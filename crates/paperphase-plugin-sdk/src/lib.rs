@@ -24,6 +24,15 @@ unsafe extern "C" {
     fn host_source_url(ptr: i32, capacity: i32) -> i32;
     #[link_name = "settings_json"]
     fn host_settings_json(ptr: i32, capacity: i32) -> i32;
+    #[link_name = "reference_lookup"]
+    fn host_reference_lookup(
+        table_ptr: i32,
+        table_len: i32,
+        key_ptr: i32,
+        key_len: i32,
+        out_ptr: i32,
+        capacity: i32,
+    ) -> i32;
     #[link_name = "http_get"]
     fn host_http_get(url_ptr: i32, url_len: i32, out_ptr: i32, capacity: i32) -> i32;
     #[link_name = "publish"]
@@ -66,10 +75,18 @@ pub fn source_url() -> Result<String, Error> {
 }
 
 pub fn http_get(url: &str) -> Result<Vec<u8>, Error> {
+    http_get_bounded(url, 64 * 1024)
+}
+
+/// Larger responses require a matching host registration; default remains 64 KiB.
+pub fn http_get_bounded(url: &str, capacity: usize) -> Result<Vec<u8>, Error> {
+    if !(1..=8 * 1024 * 1024).contains(&capacity) {
+        return Err(Error::InvalidResponse);
+    }
     #[cfg(target_arch = "wasm32")]
     {
         let length = i32::try_from(url.len()).map_err(|_| Error::InvalidResponse)?;
-        let mut bytes = vec![0; 64 * 1024];
+        let mut bytes = vec![0; capacity];
         // SAFETY: Both buffers remain allocated for the duration of the host call.
         let received = unsafe {
             host_http_get(
@@ -134,4 +151,41 @@ pub fn publish_with_metadata(publication: &Publication) -> Result<(), Error> {
 /// Shared clock formatting for location-local forecast labels.
 pub mod clock {
     pub use paperphase_core::{ClockContent, ClockSpec, DateFormat, HourCycle};
+}
+
+/// Read a named, host-granted immutable table. No guest paths or SQL are accepted.
+pub fn reference_lookup(table: &str, key: &str) -> Result<Option<Vec<String>>, Error> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        if table.len() > 64 || key.len() > 192 {
+            return Err(Error::InvalidResponse);
+        }
+        let mut bytes = vec![0; 4096];
+        // SAFETY: Input slices and the allocated output buffer live through the call.
+        let len = unsafe {
+            host_reference_lookup(
+                table.as_ptr() as i32,
+                table.len() as i32,
+                key.as_ptr() as i32,
+                key.len() as i32,
+                bytes.as_mut_ptr() as i32,
+                bytes.len() as i32,
+            )
+        };
+        let len = usize::try_from(len).map_err(|_| Error::InvalidResponse)?;
+        if len == 0 {
+            return Ok(None);
+        }
+        if len > bytes.len() {
+            return Err(Error::InvalidResponse);
+        }
+        serde_json::from_slice(&bytes[..len])
+            .map(Some)
+            .map_err(|_| Error::InvalidResponse)
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = (table, key);
+        Err(Error::UnsupportedTarget)
+    }
 }

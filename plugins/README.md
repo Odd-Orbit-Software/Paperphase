@@ -3,7 +3,8 @@
 - `weather`: Open-Meteo current conditions plus hourly and daily forecasts.
 - `rss`: bounded UTF-8 RSS 2.0 and Atom headline extraction.
 - `luas`: Luas stop forecasts, both directions and service messages.
-- `bindings.example.json`: local module registration for all three plugins.
+- `dublin-bus`: numbered multi-stop NTA bus forecasts with shared reference data.
+- `bindings.example.json`: local module registration for all four plugins.
 
 All compile to portable Wasm and use host HTTP, settings, dataset publication,
 polling, caching, and rendering. Definitions/templates currently live in
@@ -17,3 +18,7 @@ optional `icon_manifest`. See [icon operation](../docs/usage/plugin-icons.md).
 
 See [Luas setup](../docs/usage/luas.md), [design](../docs/design/luas.md) and its
 [data attribution notice](luas/NOTICE.md).
+
+Dublin Bus needs an NTA key in its private settings form. Its public reference
+cache is host-managed. See [setup](../docs/usage/dublin-bus.md) and
+[design](../docs/design/dublin-bus.md).

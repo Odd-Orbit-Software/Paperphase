@@ -22,6 +22,114 @@
       "source_url": "https://luasforecasts.rpa.ie/xml/get.ashx",
       "origin_interval_secs": 60,
       "stale_after_secs": 120
+    },
+    {
+      "connector_id": "transport.dublin-bus",
+      "wasm": "../target/wasm32-unknown-unknown/release/paperphase_dublin_bus_plugin.wasm",
+      "source_url": "https://api.nationaltransport.ie/gtfsr/v2/TripUpdates",
+      "request_headers": {
+        "x-api-key": "api_key"
+      },
+      "work_budget": {
+        "response_bytes": 8388608,
+        "fuel": 500000000
+      },
+      "origin_interval_secs": 60,
+      "stale_after_secs": 120,
+      "reference_archive": {
+        "url": "https://www.transportforireland.ie/transitData/Data/GTFS_Realtime.zip",
+        "cache": "../.paperphase/reference/nta.json",
+        "refresh_secs": 3600,
+        "tables": [
+          {
+            "id": "stops",
+            "file": "stops.txt",
+            "key": "stop_code",
+            "fields": [
+              "stop_id",
+              "stop_name"
+            ],
+            "filter": {
+              "column": "stop_id",
+              "contains": "DB"
+            }
+          },
+          {
+            "id": "routes",
+            "file": "routes.txt",
+            "key": "route_id",
+            "fields": [
+              "route_short_name"
+            ]
+          },
+          {
+            "id": "trips",
+            "file": "trips.txt",
+            "key": "trip_id",
+            "fields": [
+              "route_id",
+              "trip_headsign",
+              "service_id"
+            ]
+          },
+          {
+            "id": "feed",
+            "file": "feed_info.txt",
+            "key": "feed_version",
+            "fields": [
+              "feed_version"
+            ]
+          },
+          {
+            "id": "times",
+            "file": "stop_times.txt",
+            "key": "stop_id",
+            "fields": [
+              "trip_id",
+              "stop_sequence",
+              "arrival_time",
+              "departure_time",
+              "pickup_type"
+            ],
+            "select": {
+              "column": "stop_id",
+              "table": "stops",
+              "value_index": 0
+            },
+            "streaming": true,
+            "group": true,
+            "page_size": 32
+          },
+          {
+            "id": "calendar",
+            "file": "calendar.txt",
+            "key": "service_id",
+            "fields": [
+              "monday",
+              "tuesday",
+              "wednesday",
+              "thursday",
+              "friday",
+              "saturday",
+              "sunday",
+              "start_date",
+              "end_date"
+            ]
+          },
+          {
+            "id": "exceptions",
+            "file": "calendar_dates.txt",
+            "key": "service_id",
+            "key_suffix": [
+              "date"
+            ],
+            "fields": [
+              "exception_type"
+            ]
+          }
+        ],
+        "selection_setting": "stop_numbers"
+      }
     }
   ]
 }

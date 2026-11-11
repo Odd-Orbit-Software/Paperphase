@@ -81,7 +81,9 @@ hourly/daily forecasts, generated settings, and reusable templates.
 [Plugin-owned monochrome icon packs](../design/plugin-icons.md) and editable
 icon elements now support these templates. The user prioritised transport next:
 [Luas stop boards](../design/luas.md) now support both directions, with Charlemont
-as the first live setup. The HTTPS response and attribution were checked; a
+as the first live setup. [Dublin Bus](../design/dublin-bus.md) follows with
+multiple numbered stops per connection, private NTA authentication and a shared
+reference cache. The Luas HTTPS response and attribution were checked; a
 published numeric polling allowance remains unconfirmed. Air quality remains a
 separate planned plugin. Google
 Calendar setup feasibility remains a parallel foundation task when credentials

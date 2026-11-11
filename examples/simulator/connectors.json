@@ -1550,6 +1550,310 @@
           }
         }
       ]
+    },
+    {
+      "id": "transport.dublin-bus",
+      "name": "Dublin Bus departures",
+      "description": "Dublin-area bus predictions for one or more numbered stops, using one NTA feed request per minute.",
+      "min_poll_secs": 60,
+      "default_poll_secs": 60,
+      "settings": [
+        {
+          "id": "stop_numbers",
+          "label": "Bus stop numbers",
+          "help": "Up to eight stop numbers, separated by commas or newlines. 2813 is Ranelagh Road.",
+          "required": true,
+          "input": {
+            "type": "text",
+            "max_bytes": 512,
+            "default": "2813",
+            "multiline": true
+          }
+        },
+        {
+          "id": "api_key",
+          "label": "NTA API key",
+          "help": "Your GTFS-Realtime subscription key. Saved privately; leave blank later to retain it.",
+          "required": true,
+          "input": {
+            "type": "secret",
+            "max_bytes": 256
+          }
+        },
+        {
+          "id": "routes",
+          "label": "Routes to include",
+          "help": "Optional comma-separated route numbers, for example 11, 46A. Leave blank for all routes at your stops.",
+          "required": false,
+          "input": {
+            "type": "text",
+            "max_bytes": 256,
+            "default": ""
+          }
+        },
+        {
+          "id": "max_arrivals",
+          "label": "Buses per stop",
+          "help": "Maximum upcoming departures shown at each stop.",
+          "required": true,
+          "input": {
+            "type": "integer",
+            "min": 1,
+            "max": 6,
+            "default": 3
+          }
+        }
+      ],
+      "templates": [
+        {
+          "id": "bus-stop",
+          "name": "Bus stop board",
+          "component": {
+            "id": "bus-stop",
+            "rect": {
+              "x": 0,
+              "y": 0,
+              "width": 464,
+              "height": 304
+            },
+            "padding": 12,
+            "gap": 6,
+            "border": true,
+            "content_layout": "positioned",
+            "refresh_hint": "automatic",
+            "blocks": [
+              {
+                "id": "title",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "stops",
+                    "field_id": "title",
+                    "row": 0,
+                    "decimals": null,
+                    "prefix": "",
+                    "suffix": ""
+                  }
+                },
+                "font_size": 22,
+                "align": "left",
+                "overflow": "wrap",
+                "rect": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 440,
+                  "height": 28
+                }
+              },
+              {
+                "id": "arrivals",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "stops",
+                    "field_id": "arrivals",
+                    "row": 0,
+                    "decimals": null,
+                    "prefix": "",
+                    "suffix": ""
+                  }
+                },
+                "font_size": 16,
+                "align": "left",
+                "overflow": "wrap",
+                "rect": {
+                  "x": 0,
+                  "y": 36,
+                  "width": 440,
+                  "height": 128
+                }
+              },
+              {
+                "id": "details",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "stops",
+                    "field_id": "details-status",
+                    "row": 0,
+                    "decimals": null,
+                    "prefix": "",
+                    "suffix": ""
+                  }
+                },
+                "font_size": 11,
+                "align": "left",
+                "overflow": "wrap",
+                "rect": {
+                  "x": 0,
+                  "y": 174,
+                  "width": 440,
+                  "height": 24
+                }
+              },
+              {
+                "id": "updated",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "stops",
+                    "field_id": "updated-label",
+                    "row": 0,
+                    "decimals": null,
+                    "prefix": "",
+                    "suffix": ""
+                  }
+                },
+                "font_size": 10,
+                "align": "left",
+                "overflow": "wrap",
+                "rect": {
+                  "x": 0,
+                  "y": 204,
+                  "width": 440,
+                  "height": 18
+                }
+              },
+              {
+                "id": "attribution",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "stops",
+                    "field_id": "attribution",
+                    "row": 0,
+                    "decimals": null,
+                    "prefix": "",
+                    "suffix": ""
+                  }
+                },
+                "font_size": 9,
+                "align": "left",
+                "overflow": "wrap",
+                "rect": {
+                  "x": 0,
+                  "y": 228,
+                  "width": 440,
+                  "height": 32
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "bus-overview",
+          "name": "All bus stops",
+          "component": {
+            "id": "bus-overview",
+            "rect": {
+              "x": 0,
+              "y": 0,
+              "width": 600,
+              "height": 384
+            },
+            "padding": 12,
+            "gap": 6,
+            "border": true,
+            "content_layout": "positioned",
+            "refresh_hint": "automatic",
+            "blocks": [
+              {
+                "id": "title",
+                "source": {
+                  "kind": "literal",
+                  "text": "BUS DEPARTURES"
+                },
+                "font_size": 18,
+                "align": "left",
+                "overflow": "wrap",
+                "rect": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 576,
+                  "height": 24
+                }
+              },
+              {
+                "id": "board",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "overview",
+                    "field_id": "board",
+                    "row": 0,
+                    "decimals": null,
+                    "prefix": "",
+                    "suffix": ""
+                  }
+                },
+                "font_size": 14,
+                "align": "left",
+                "overflow": "wrap",
+                "rect": {
+                  "x": 0,
+                  "y": 30,
+                  "width": 576,
+                  "height": 252
+                }
+              },
+              {
+                "id": "updated",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "overview",
+                    "field_id": "updated-label",
+                    "row": 0,
+                    "decimals": null,
+                    "prefix": "",
+                    "suffix": ""
+                  }
+                },
+                "font_size": 10,
+                "align": "left",
+                "overflow": "wrap",
+                "rect": {
+                  "x": 0,
+                  "y": 292,
+                  "width": 576,
+                  "height": 18
+                }
+              },
+              {
+                "id": "attribution",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "overview",
+                    "field_id": "attribution",
+                    "row": 0,
+                    "decimals": null,
+                    "prefix": "",
+                    "suffix": ""
+                  }
+                },
+                "font_size": 9,
+                "align": "left",
+                "overflow": "wrap",
+                "rect": {
+                  "x": 0,
+                  "y": 316,
+                  "width": 576,
+                  "height": 24
+                }
+              }
+            ]
+          }
+        }
+      ]
     }
   ]
 }

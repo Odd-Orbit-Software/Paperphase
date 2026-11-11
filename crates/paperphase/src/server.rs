@@ -31,6 +31,7 @@ use tokio::sync::{Mutex as AsyncMutex, Semaphore};
 use crate::simulator::read_json;
 mod connections;
 mod fetching;
+mod reference;
 mod scheduling;
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -405,6 +406,7 @@ pub fn run(
                 same_origin,
             ))
             .with_state(Arc::clone(&app));
+        let reference_scheduler = fetching::start_references(Arc::clone(&app));
         let fetch_scheduler = fetching::start(Arc::clone(&app));
         let scheduler = scheduling::start(app);
         let browser_address = if address.ip().is_unspecified() {
@@ -427,6 +429,7 @@ pub fn run(
             })
             .await?;
         scheduler.abort();
+        reference_scheduler.abort();
         fetch_scheduler.abort();
         Ok(())
     })
