@@ -12,7 +12,7 @@ UI remains separate planned work.
 
 ## Air quality and pollen
 
-In **Connections → New connection → Air quality and pollen**, enter the location
+In **Data sources → Add data source → Air quality and pollen**, enter the location
 label and coordinates. Dublin is the starting default. Choose forecast hours
 and a pollen focus, then save. Add **Air quality now**, **Air quality outlook**
 or **Pollen board** from the layout editor.
@@ -42,7 +42,7 @@ clock tick. For personal/mixed mode, set a shorter polling interval (for example
 300 seconds) if you want selection to follow midnight more closely.
 
 Add the **Daily quote** component. Long quotes may need a larger text box or
-smaller font through **Edit contents**; the usual overflow reports apply.
+smaller font through **Position → Position elements freely** (or **Edit individual elements** for an existing positioned component); the usual overflow reports apply.
 
 ## Generic JSON
 

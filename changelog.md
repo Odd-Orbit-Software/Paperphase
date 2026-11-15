@@ -5,6 +5,77 @@
 Current development version: `0.1.0`. The earliest stable stage has not been
 reached; minor-version increments per commit begin after that milestone.
 
+### Redesign the owner workspace on UIUX
+
+- Implemented the owner's chosen canvas/task-dock layout: compact navigation,
+  large display preview, right inspector and component strip below. Content is
+  editable before geometry and styling; conversion to free element positioning
+  is explicit. Retained placement, bindings, templates and draft history; the
+  owner-reported deletion/internal-designer regressions below remain open.
+- Made Data sources a dedicated working page with a service chooser, separate
+  demo/testing connectors, grouped plugin fields and forecast options. Google
+  accounts have their own view, advanced app setup and prerequisite handling
+  before calendar creation. A non-secret same-browser intent resumes calendar
+  creation after successful linking.
+- Moved quiet hours and advanced refresh policy into Device. Added semantic
+  colours, larger readable controls, visible focus, human component names and
+  narrower-width reflow. Retained focus through selection, numeric/Tab edits,
+  movement and status updates; connection polling updates unchanged lists in place.
+- Added recoverable initial loading and optional-metadata failures, plus named
+  confirmations for saved connection deletion and account disconnection. Removed
+  an unsupported unchanged-frame promise because removal can queue new pixels.
+- Added the approved Odd Orbit logo and “Developed by Odd Orbit Software” footer,
+  with Orbi on About only. Artwork is served locally from the Rust executable;
+  the portrait loads lazily and both PNGs carry their supplied-artwork provenance.
+- Recorded the implemented system in `DESIGN.md`, `.impeccable/design.json` and
+  `docs/design/owner-workspace.md`; updated operator navigation and saved actual
+  local screenshots. Kept the approved plan and earlier alternatives in
+  `docs/planning`.
+- Triaged the four completion-hook findings and recorded file-scoped detector
+  exceptions in `.impeccable/config.json`: the dynamically populated frame image,
+  hidden/centered canvas chrome and the owner's explicitly approved paper palette.
+  No rules or files were globally disabled; application styling is unchanged.
+
+Validation: frontend TypeScript/build passed; `sh scripts/check.sh` passed all
+166 Rust tests and host/Wasm checks. A clean synthetic fixture passed all 26
+Chromium tests, including six new UX regression tests. Both confirmation tests
+passed again after the final copy correction. Independent finish review scored
+its two material fixes resolved: secret-field construction and an element-editor
+capture taken during redraw. Fifteen final screens were captured from the
+compiled service without UI asset overrides; image loads, page errors, bounds,
+documentation links and whitespace were checked. The local synthetic preview
+remains available; no Pi, real Google account or physical panel validation was
+performed. Version remains `0.1.0`.
+
+Owner acceptance and merge: the owner approved the design for merging to `main`,
+with two known issues scheduled alongside the next plugin-specific component
+designer: Delete does not reliably remove mouse-highlighted components/elements,
+and the internal designer is missing from their interactive workflow. Recorded
+visible-entry, mouse-selection/deletion, text-input protection and undo criteria
+in `docs/planning/delivery-plan.md`. The passing tests above do not cover these
+reported paths; this merge does not claim either issue fixed. The UIUX work is
+committed and merged locally; publishing to GitHub is separate.
+
+### Review owner workflows and propose a UI redesign
+
+- Recorded the confirmed everyday-owner audience, desktop priority, warm
+  paper/green identity and separate advanced controls in `PRODUCT.md`.
+- Completed two independent local reviews covering display editing, data
+  sources, Google setup, display settings, keyboard behaviour and recovery.
+  Recorded findings and implementation priorities in
+  `docs/planning/ui-ux-review-2026-11-15.md`.
+- Prepared three workspace directions and four supporting screen/branding
+  proposals using synthetic data and approved Odd Orbit/Orbi references.
+  Workspace structure and mascot placement await owner feedback.
+
+Validation: inspected the synthetic local fixture in headless Chromium and
+source; rendered seven static proposals at 1440 × 900 and checked loaded images,
+document bounds and material clipping/state consistency. Review fixture and
+reviewer overlay helper exited; the feedback comparison page remains available.
+No application source, saved data, real Google setup or Pi state changed.
+Runtime suites were not rerun for documentation/proposals. Version remains
+`0.1.0`; no commit or push performed.
+
 ### Audit source before GitHub publication
 
 - Reviewed Git-includable files and all 12 reachable commits for credentials,

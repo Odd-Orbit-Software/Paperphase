@@ -1,5 +1,26 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
+
+async function properties(page: Page, tab: 'Content' | 'Position' | 'Style') {
+  await page.getByRole('tab', {name: tab, exact: true}).click();
+}
+async function selectComponent(page: Page, id: string) {
+  if (await page.locator('#device-page').isVisible()) await page.getByRole('button', {name: 'Display', exact:true}).click();
+  if (await page.locator('#add-picker').isVisible()) await page.getByRole('button', {name:'Close component picker',exact:true}).click();
+  await page.locator('#component-list').locator(`[data-component="${id}"]`).click();
+}
+async function insertComponent(page: Page, label: string) {
+  if (!await page.locator('#add-picker').isVisible()) await page.locator('#add-open').click();
+  await page.getByRole('button', {name: label, exact:true}).click();
+}
+async function editElements(page: Page) {
+  await properties(page, 'Position');
+  await page.getByRole('button', {name: /^(Position elements freely|Edit individual elements)$/}).click();
+}
+async function googleAccounts(page: Page) {
+  await page.getByRole('button', {name:'Google accounts', exact:true}).click();
+}
+
 
 test.beforeEach(async ({ request }) => {
   const current = await (await request.get('/api/state')).json();
@@ -13,12 +34,17 @@ test('clock presentation and quiet hours are editable, undoable and persistent',
   await page.goto('/');
   const before = await (await request.get('/api/display.png')).body();
   await page.getByRole('button', { name: 'Edit layout' }).click();
-  await page.getByRole('button', { name: 'Time & date', exact: false }).click();
+  await insertComponent(page, 'Time & date');
+  await properties(page, 'Content');
   await page.getByLabel('Timezone', { exact: true }).first().selectOption('Asia/Kolkata');
+  await properties(page, 'Content');
   await page.getByLabel('Timezone', { exact: true }).nth(1).selectOption('Asia/Kolkata');
+  await properties(page, 'Content');
   await page.getByLabel('Time format', { exact: true }).selectOption('twelve');
+  await properties(page, 'Content');
   await page.getByLabel('Date format', { exact: true }).selectOption('iso');
-  await page.getByRole('button', { name: 'Display settings', exact: true }).click();
+  await page.getByRole('button', { name: 'Device', exact: true }).click();
+  await page.locator('#device-settings-body details summary').click();
   await page.getByRole('checkbox', { name: 'Enable quiet hours' }).check();
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
   await expect(page.getByRole('checkbox', { name: 'Enable quiet hours' })).not.toBeChecked();
@@ -43,7 +69,8 @@ test('clock presentation and quiet hours are editable, undoable and persistent',
   await page.reload();
   await expect(page.locator('#device-status')).toContainText('paused');
   await page.getByRole('button', { name: 'Edit layout' }).click();
-  await page.getByRole('button', { name: 'Display settings', exact: true }).click();
+  await page.getByRole('button', { name: 'Device', exact: true }).click();
+  await page.locator('#device-settings-body details summary').click();
   await expect(page.getByRole('checkbox', { name: 'Enable quiet hours' })).toBeChecked();
   await expect(page.locator('#frame')).toHaveAttribute('src', /^data:image\/png/);
   if (process.env.CAPTURE_SCREENSHOTS === '1') await page.screenshot({ path: '../docs/design/images/clock-quiet-hours.png' });
@@ -65,14 +92,15 @@ test('desktop edit, collision recovery, bindings, history, save and discard', as
   await expect(page.locator('#frame')).toHaveJSProperty('naturalWidth', 800);
   const displayedBefore = await (await request.get('/api/display.png')).body();
   await page.getByRole('button', { name: 'Edit layout' }).click();
-  await page.getByRole('button', { name: 'Select header', exact: true }).click();
+  await selectComponent(page, 'header');
+  await properties(page, 'Position');
   await page.getByLabel('X', { exact: true }).fill('24');
   await page.getByLabel('X', { exact: true }).press('Tab');
   await expect(page.getByLabel('X', { exact: true })).toHaveValue('24');
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
   await expect(page.getByLabel('X', { exact: true })).toHaveValue('16');
 
-  await page.getByRole('button', { name: 'Select weather', exact: true }).click();
+  await selectComponent(page, 'weather');
   const board = (await page.locator('#board').boundingBox())!;
   const scale = board.width / 800;
   const start = { x: board.x + 100 * scale, y: board.y + 150 * scale };
@@ -94,21 +122,26 @@ test('desktop edit, collision recovery, bindings, history, save and discard', as
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
   await expect(page.getByLabel('Width', { exact: true })).toHaveValue('240');
 
-  await page.getByRole('button', { name: 'Select header', exact: true }).click();
+  await selectComponent(page, 'header');
+  await properties(page, 'Content');
   await page.getByLabel('Text', { exact: true }).first().fill('Morning, Dublin.');
   await expect.poll(async () => (await page.locator('#frame').getAttribute('src'))?.startsWith('data:image/png')).toBe(true);
   expect(await (await request.get('/api/display.png')).body()).toEqual(displayedBefore);
   await page.getByRole('button', { name: 'On display', exact: true }).click();
   await expect(page.locator('#frame')).toHaveAttribute('src', /\/api\/display.png/);
   await page.getByRole('button', { name: 'Draft', exact: true }).click();
-  await page.getByRole('button', { name: 'Data field' }).click();
+  await insertComponent(page, 'Data field');
+  await properties(page, 'Content');
   await page.getByLabel('Dataset', { exact: true }).selectOption('luas.ranelagh/departures');
+  await properties(page, 'Content');
   await page.getByLabel('Field', { exact: true }).selectOption('minutes');
+  await properties(page, 'Content');
   await page.getByLabel('Suffix', { exact: true }).fill(' min to Broombridge');
+  await properties(page, 'Style');
   await page.getByLabel('Font size (px)', { exact: true }).fill('26');
   await page.getByLabel('Font size (px)', { exact: true }).press('Tab');
   await expect(page.locator('#render-report')).toContainText('stale');
-  await page.getByRole('button', { name: 'Select weather', exact: true }).click();
+  await selectComponent(page, 'weather');
   await expect(page.locator('#frame')).toHaveAttribute('src', /^data:image\/png/);
   if (process.env.CAPTURE_SCREENSHOTS === '1') await page.screenshot({ path: '../docs/design/images/editor-overview.png' });
   await page.getByRole('button', { name: 'Save to display' }).click();
@@ -121,11 +154,12 @@ test('desktop edit, collision recovery, bindings, history, save and discard', as
   expect(await (await request.get('/api/display.png')).body()).toEqual(Buffer.from(rendered.png_base64, 'base64'));
   await page.reload();
   await page.getByRole('button', { name: 'Edit layout' }).click();
-  await page.getByRole('button', { name: 'Select header', exact: true }).click();
+  await selectComponent(page, 'header');
+  await properties(page, 'Content');
   await page.getByLabel('Text', { exact: true }).first().fill('Discard this edit');
   await page.getByRole('button', { name: 'Discard', exact: true }).click();
   await page.getByRole('button', { name: 'Edit layout' }).click();
-  await page.getByRole('button', { name: 'Select header', exact: true }).click();
+  await selectComponent(page, 'header');
   await expect(page.getByLabel('Text', { exact: true }).first()).toHaveValue('Morning, Dublin.');
   expect(errors).toEqual([]);
 });
@@ -133,7 +167,8 @@ test('desktop edit, collision recovery, bindings, history, save and discard', as
 test('another tab cannot silently overwrite a retained draft', async ({ page, request }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Edit layout' }).click();
-  await page.getByRole('button', { name: 'Select header', exact: true }).click();
+  await selectComponent(page, 'header');
+  await properties(page, 'Content');
   await page.getByLabel('Text', { exact: true }).first().fill('Keep my draft');
   const state = await (await request.get('/api/state')).json();
   state.layout.components[0].blocks[0].source.text = 'Saved from another tab';
@@ -143,7 +178,7 @@ test('another tab cannot silently overwrite a retained draft', async ({ page, re
   await expect(page.getByRole('button', { name: 'Save to display' })).toBeDisabled();
   await page.getByRole('button', { name: 'Discard', exact: true }).click();
   await page.getByRole('button', { name: 'Edit layout' }).click();
-  await page.getByRole('button', { name: 'Select header', exact: true }).click();
+  await selectComponent(page, 'header');
   await expect(page.getByLabel('Text', { exact: true }).first()).toHaveValue('Saved from another tab');
 });
 
@@ -151,7 +186,7 @@ test('keyboard placement, block ordering, removal and redo stay in the draft', a
   await page.goto('/');
   const initial = await (await request.get('/api/state')).json();
   await page.getByRole('button', { name: 'Edit layout' }).click();
-  await page.getByRole('button', { name: 'Move header', exact: true }).focus();
+  await page.locator('.component-box[data-component=\"header\"]').focus();
   await page.keyboard.press('ArrowRight');
   await expect(page.getByLabel('X', { exact: true })).toHaveValue('17');
   await page.keyboard.press('Control+z');
@@ -159,15 +194,16 @@ test('keyboard placement, block ordering, removal and redo stay in the draft', a
   await page.keyboard.press('Control+Shift+z');
   await expect(page.getByLabel('X', { exact: true })).toHaveValue('17');
   await page.getByRole('button', { name: 'Add text block', exact: true }).click();
+  await properties(page, 'Content');
   await page.getByLabel('Text', { exact: true }).nth(2).fill('A new block');
   await page.getByRole('button', { name: 'Move block up', exact: true }).nth(2).click();
   await expect(page.getByLabel('Text', { exact: true }).nth(1)).toHaveValue('A new block');
-  await page.getByRole('button', { name: 'Move header', exact: true }).focus();
+  await page.locator('.component-box[data-component=\"header\"]').focus();
   await page.keyboard.press('Delete');
   await expect(page.locator('#component-count')).toHaveText('2');
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
   await expect(page.locator('#component-count')).toHaveText('3');
-  await page.getByRole('button', { name: 'Aa Text A note, heading, or quotation +' }).click();
+  await insertComponent(page, 'Text');
   await expect(page.locator('#component-count')).toHaveText('4');
   await page.getByRole('button', { name: 'Remove component', exact: true }).click();
   await expect(page.locator('#component-count')).toHaveText('3');
@@ -179,12 +215,15 @@ test('keyboard placement, block ordering, removal and redo stay in the draft', a
 test('generated connection forms save typed settings and never prefill secrets', async ({ page, request }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Edit layout' }).click();
-  await page.getByRole('button', { name: 'Select header', exact: true }).click();
+  await selectComponent(page, 'header');
+  await properties(page, 'Content');
   await page.getByLabel('Text', { exact: true }).first().fill('My layout draft stays here');
-  await page.getByRole('button', { name: 'Connections', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Connections', exact: true });
-  await expect(dialog).toContainText('Fetch now updates connection data');
-  await page.getByRole('button', { name: 'New connection' }).click();
+  await page.getByRole('button', { name: 'Data sources', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Data sources', exact: true });
+  await expect(dialog).toContainText('Fetch now checks for new data');
+  await page.getByRole('button', { name: 'Add data source', exact:true }).click();
+  await page.getByText('Advanced: demo & test connectors', {exact:true}).click();
+  await page.getByRole('button', {name: /^Demo weather settings/}).click();
   await expect(page.getByLabel('Location', { exact: true })).toHaveValue('Dublin');
   await expect(page.getByLabel('Include summary', { exact: true })).toBeChecked();
   await page.getByLabel('Connection name', { exact: true }).fill('My weather');
@@ -192,7 +231,7 @@ test('generated connection forms save typed settings and never prefill secrets',
   await page.getByLabel('Units', { exact: true }).selectOption('imperial');
   await page.getByLabel('Forecast days', { exact: true }).fill('5');
   await page.getByLabel('Include summary', { exact: true }).uncheck();
-  await page.getByLabel('Polling interval (seconds)', { exact: true }).fill('60');
+  await page.getByLabel('Update interval (seconds)', { exact: true }).fill('60');
   await page.getByLabel('Test secret', { exact: true }).fill('private-browser-test-value');
   await page.keyboard.press('Control+s');
   await expect(page.locator('#connections-notice')).toHaveText('Connection settings saved.');
@@ -221,8 +260,9 @@ test('generated connection forms save typed settings and never prefill secrets',
   expect(cleared.connections.find((c: { id: string }) => c.id === saved.id).secret_present).toEqual([]);
   await page.getByRole('button', { name: 'Configure My weather', exact: true }).click();
   await page.getByRole('button', { name: 'Delete connection', exact: true }).click();
+  await page.locator('#confirm-accept').click();
   await expect(page.locator('#connections-notice')).toHaveText('Connection deleted.');
-  await page.getByRole('button', { name: 'Close connections', exact: true }).click();
+  await page.getByRole('button', { name: 'Back to display', exact: true }).click();
   await expect(page.getByLabel('Text', { exact: true }).first()).toHaveValue('My layout draft stays here');
   await expect(page.getByRole('button', { name: 'Save to display' })).toBeEnabled();
 });
@@ -233,9 +273,10 @@ test('connection conflicts retain their form without conflicting a layout draft'
   expect((await request.put('/api/connections/conflict-test', { data: configuration })).ok()).toBeTruthy();
   await page.goto('/');
   await page.getByRole('button', { name: 'Edit layout' }).click();
-  await page.getByRole('button', { name: 'Select header', exact: true }).click();
+  await selectComponent(page, 'header');
+  await properties(page, 'Content');
   await page.getByLabel('Text', { exact: true }).first().fill('Independent layout draft');
-  await page.getByRole('button', { name: 'Connections', exact: true }).click();
+  await page.getByRole('button', { name: 'Data sources', exact: true }).click();
   await page.getByRole('button', { name: 'Configure Work', exact: true }).click();
   await page.getByLabel('Location', { exact: true }).fill('Retained local form');
   const latest = await (await request.get('/api/connections')).json();
@@ -245,7 +286,7 @@ test('connection conflicts retain their form without conflicting a layout draft'
   await expect(page.getByLabel('Location', { exact: true })).toHaveValue('Retained local form');
   await expect(page.getByRole('button', { name: 'Save connection', exact: true })).toBeDisabled();
   await page.getByRole('button', { name: 'Discard form', exact: true }).click();
-  await page.getByRole('button', { name: 'Close connections', exact: true }).click();
+  await page.getByRole('button', { name: 'Back to display', exact: true }).click();
   await expect(page.getByLabel('Text', { exact: true }).first()).toHaveValue('Independent layout draft');
   await expect(page.getByRole('button', { name: 'Save to display' })).toBeEnabled();
   await page.getByRole('button', { name: 'Save to display' }).click();
@@ -257,7 +298,7 @@ test('connection conflicts retain their form without conflicting a layout draft'
 test('compiled connector Fetch now publishes data that can be bound to the display', async ({ page, request }) => {
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
   await page.goto('/');
-  await page.getByRole('button', { name: 'Connections', exact: true }).click();
+  await page.getByRole('button', { name: 'Data sources', exact: true }).click();
   await page.getByRole('button', { name: 'Fetch Bench sensor now', exact: true }).click();
   await expect(page.locator('#connections-notice')).toContainText('Fetch started using saved settings');
   await expect(page.locator('[data-fetch-id="temperature.browser"]')).toContainText('Last fetched');
@@ -266,11 +307,14 @@ test('compiled connector Fetch now publishes data that can be bound to the displ
   await expect(page.getByLabel('Location label', { exact: true })).toHaveValue('Workshop');
   await expect(page.getByLabel('Display units', { exact: true })).toHaveValue('imperial');
   if (process.env.CAPTURE_SCREENSHOTS === '1') await page.screenshot({ path: '../docs/design/images/compiled-connector.png' });
-  await page.getByRole('button', { name: 'Close connections', exact: true }).click();
+  await page.getByRole('button', { name: 'Back to display', exact: true }).click();
   await page.getByRole('button', { name: 'Edit layout' }).click();
-  await page.getByRole('button', { name: 'Data field' }).click();
+  await insertComponent(page, 'Data field');
+  await properties(page, 'Content');
   await page.getByLabel('Dataset', { exact: true }).selectOption('temperature.browser/current-weather');
+  await properties(page, 'Content');
   await page.getByLabel('Field', { exact: true }).selectOption('display-temperature');
+  await properties(page, 'Style');
   await page.getByLabel('Font size (px)', { exact: true }).fill('34');
   await page.getByLabel('Font size (px)', { exact: true }).press('Tab');
   await page.getByRole('button', { name: 'Save to display' }).click();
@@ -298,11 +342,12 @@ test('internal elements preserve pixels on conversion and support visual placeme
   const before = await (await request.get('/api/display.png')).body();
   await page.goto('/');
   await page.getByRole('button', { name: 'Edit layout' }).click();
-  await page.getByRole('button', { name: 'Select card', exact: true }).click();
-  await page.getByRole('button', { name: 'Edit contents', exact: true }).click();
+  await selectComponent(page, 'card');
+  await editElements(page);
   await expect(page.locator('.element-box')).toHaveCount(2);
   // Conversion must use the host's measurement rather than browser font metrics.
   await expect.poll(async () => Buffer.from((await page.locator('#frame').getAttribute('src'))!.split(',')[1] ?? '', 'base64').equals(before)).toBe(true);
+  await properties(page, 'Position');
   await page.getByLabel('Element width', { exact: true }).fill('200');
   await page.getByLabel('Element width', { exact: true }).press('Tab');
   await page.getByRole('checkbox', { name: 'Snap', exact: true }).uncheck();
@@ -325,17 +370,20 @@ test('internal elements preserve pixels on conversion and support visual placeme
   await expect(page.getByLabel('Element X', { exact: true })).toHaveValue('0');
   await page.getByRole('button', { name: 'Redo', exact: true }).click();
   await expect(page.getByLabel('Element X', { exact: true })).toHaveValue('32');
-  await page.getByRole('button', { name: 'Move element heading', exact: true }).focus();
+  await page.locator('.element-box[data-element="heading"]').focus();
   await page.keyboard.press('Shift+ArrowRight');
   await expect(page.getByLabel('Element X', { exact: true })).toHaveValue('40');
-  await page.getByRole('button', { name: 'Data field', exact: false }).click();
+  await insertComponent(page, 'Data field');
   await expect(page.locator('.reserved-area')).toHaveCount(1);
   await expect(page.locator('.element-box')).toHaveCount(3);
   await page.getByRole('button', { name: 'Remove element', exact: true }).click();
   await expect(page.locator('.element-box')).toHaveCount(2);
-  await page.getByRole('button', { name: 'Time & date', exact: false }).click();
+  await insertComponent(page, 'Time & date');
+  await properties(page, 'Content');
   await page.getByLabel('Show', { exact: true }).selectOption('time');
+  await properties(page, 'Content');
   await page.getByLabel('Timezone', { exact: true }).selectOption('Europe/Dublin');
+  await properties(page, 'Position');
   await page.getByLabel('Element X', { exact: true }).fill('480');
   await page.getByLabel('Element X', { exact: true }).press('Tab');
   const finalPreview = page.waitForResponse(response => {
@@ -343,16 +391,18 @@ test('internal elements preserve pixels on conversion and support visual placeme
     const component = response.request().postDataJSON().components[0];
     return component.blocks[0].rect?.x === 40 && component.blocks.at(-1).rect?.x === 480 && component.blocks.at(-1).rect?.y === 24;
   });
+  await properties(page, 'Position');
   await page.getByLabel('Element Y', { exact: true }).fill('24');
   await page.getByLabel('Element Y', { exact: true }).press('Tab');
   const finalPixels = await (await finalPreview).json();
-  await page.getByRole('button', { name: 'Select element heading', exact: true }).click();
+  await page.locator('#component-list [data-element="heading"]').click();
   await expect(page.locator('#frame')).toHaveAttribute('src', `data:image/png;base64,${finalPixels.png_base64}`);
   if (process.env.CAPTURE_SCREENSHOTS === '1') await page.screenshot({ path: '../docs/design/images/internal-editor.png' });
   await page.getByRole('button', { name: 'Use vertical flow', exact: true }).click();
   await expect(page.locator('.element-box')).toHaveCount(0);
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
   await expect(page.getByLabel('Content layout', { exact: true })).toHaveValue('positioned');
+  await properties(page, 'Position');
   await page.getByLabel('Width', { exact: true }).fill('400');
   await page.getByLabel('Width', { exact: true }).press('Tab');
   await expect(page.getByLabel('Width', { exact: true })).toHaveValue('768');
@@ -368,8 +418,8 @@ test('internal elements preserve pixels on conversion and support visual placeme
   await expect(page.getByRole('button', { name: 'On display', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('#board')).toHaveCSS('width', '800px');
   await page.getByRole('button', { name: 'Edit layout' }).click();
-  await page.getByRole('button', { name: 'Select card', exact: true }).click();
-  await page.getByRole('button', { name: 'Edit contents', exact: true }).click();
+  await selectComponent(page, 'card');
+  await editElements(page);
   await expect(page.getByLabel('Element X', { exact: true })).toHaveValue('40');
   await page.getByRole('button', { name: 'Discard', exact: true }).click();
   expect(errors).toEqual([]);
@@ -378,24 +428,26 @@ test('internal elements preserve pixels on conversion and support visual placeme
 test('internal editing rejects hidden flow blocks and protects the data status strip', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Edit layout' }).click();
-  await page.getByRole('button', { name: 'Select header', exact: true }).click();
+  await selectComponent(page, 'header');
+  await properties(page, 'Style');
   await page.getByLabel('Font size (px)', { exact: true }).first().fill('128');
   await page.getByLabel('Font size (px)', { exact: true }).first().press('Tab');
-  await page.getByRole('button', { name: 'Edit contents', exact: true }).click();
+  await editElements(page);
   await expect(page.locator('#notice')).toContainText('no visible space');
   await expect(page.getByLabel('Content layout', { exact: true })).toHaveValue('flow');
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
-  await page.getByRole('button', { name: 'Select weather', exact: true }).click();
-  await page.getByRole('button', { name: 'Edit contents', exact: true }).click();
-  await page.getByRole('button', { name: 'Select element summary', exact: true }).click();
+  await selectComponent(page, 'weather');
+  await editElements(page);
+  await page.locator('#component-list [data-element="summary"]').click();
   const y = await page.getByLabel('Element Y', { exact: true }).inputValue();
   const height = await page.getByLabel('Element height', { exact: true }).inputValue();
+  await properties(page, 'Position');
   await page.getByLabel('Element Y', { exact: true }).fill(String(135 - Number(height)));
   await page.getByLabel('Element Y', { exact: true }).press('Tab');
   await expect(page.getByLabel('Element Y', { exact: true })).toHaveValue(y);
   await expect(page.locator('.reserved-area')).toHaveCount(1);
   await expect(page.locator('#notice')).toContainText('Element Y must be a whole number');
-  await page.getByRole('button', { name: 'Move element summary', exact: true }).focus();
+  await page.locator('.element-box[data-element="summary"]').focus();
   await page.keyboard.press('Escape');
   await expect(page.locator('#inspector-body')).toContainText('Choose an element');
   await page.keyboard.press('Escape');
@@ -411,8 +463,11 @@ test('refresh requests and maintenance settings persist while host policy contro
   };
   await page.goto('/');
   await page.getByRole('button', { name: 'Edit layout' }).click();
-  await page.getByRole('button', { name: 'Select header', exact: true }).click();
+  await selectComponent(page, 'header');
+  await properties(page, 'Style');
+  if (!await page.getByLabel('Refresh request', {exact:true}).isVisible()) await page.locator('#inspector-pane-style details summary').click();
   await page.getByLabel('Refresh request', { exact: true }).selectOption('full');
+  await properties(page, 'Content');
   await page.getByLabel('Text', { exact: true }).first().fill('Controller ready');
   await page.getByRole('button', { name: 'Save to display' }).click();
   let state = await waitIdle();
@@ -420,20 +475,25 @@ test('refresh requests and maintenance settings persist while host policy contro
   expect(state.refresh.last_completed.reason).toBe('component_request');
   expect(state.refresh.partial_count).toBe(0);
   await page.getByRole('button', { name: 'Edit layout' }).click();
-  await page.getByRole('button', { name: 'Display settings', exact: true }).click();
+  await page.getByRole('button', { name: 'Device', exact: true }).click();
+  await page.locator('#device-settings-body details summary').click();
   await page.getByLabel('Full refresh after partial updates', { exact: true }).fill('1');
   await page.getByLabel('Full refresh after partial updates', { exact: true }).press('Tab');
   await page.getByLabel('Minimum refresh interval (ms)', { exact: true }).fill('1000');
   await page.getByLabel('Minimum refresh interval (ms)', { exact: true }).press('Tab');
-  await page.getByRole('button', { name: 'Select header', exact: true }).click();
+  await selectComponent(page, 'header');
+  await properties(page, 'Style');
+  if (!await page.getByLabel('Refresh request', {exact:true}).isVisible()) await page.locator('#inspector-pane-style details summary').click();
   await page.getByLabel('Refresh request', { exact: true }).selectOption('partial');
+  await properties(page, 'Content');
   await page.getByLabel('Text', { exact: true }).first().fill('One small update');
   await page.getByRole('button', { name: 'Save to display' }).click();
   state = await waitIdle();
   expect(state.refresh.last_completed.mode).toBe('partial');
   expect(state.refresh.partial_count).toBe(1);
   await page.getByRole('button', { name: 'Edit layout' }).click();
-  await page.getByRole('button', { name: 'Select header', exact: true }).click();
+  await selectComponent(page, 'header');
+  await properties(page, 'Content');
   await page.getByLabel('Text', { exact: true }).first().fill('Two small updates');
   await page.getByRole('button', { name: 'Save to display' }).click();
   state = await waitIdle();
@@ -446,7 +506,8 @@ test('refresh requests and maintenance settings persist while host policy contro
   expect((await (await request.get('/api/state')).json()).frame_id).toBe(frame);
   await page.reload();
   await page.getByRole('button', { name: 'Edit layout' }).click();
-  await page.getByRole('button', { name: 'Display settings', exact: true }).click();
+  await page.getByRole('button', { name: 'Device', exact: true }).click();
+  await page.locator('#device-settings-body details summary').click();
   await expect(page.getByLabel('Full refresh after partial updates', { exact: true })).toHaveValue('1');
   await expect(page.getByLabel('Minimum refresh interval (ms)', { exact: true })).toHaveValue('1000');
   if (process.env.CAPTURE_SCREENSHOTS === '1') await page.screenshot({ path: '../docs/design/images/refresh-policy.png' });
@@ -478,7 +539,7 @@ test('refresh status distinguishes failure backoff from an active recovery opera
 test('weather forecasts and RSS use compiled plugins, typed forms and connection templates', async ({ page, request }) => {
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
   await page.goto('/');
-  await page.getByRole('button', { name: 'Connections', exact: true }).click();
+  await page.getByRole('button', { name: 'Data sources', exact: true }).click();
   await page.getByRole('button', { name: 'Configure Dublin forecast', exact: true }).click();
   await expect(page.getByLabel('Latitude', { exact: true })).toHaveValue('53.3498');
   await expect(page.getByLabel('Latitude', { exact: true })).toHaveAttribute('step', 'any');
@@ -500,16 +561,16 @@ test('weather forecasts and RSS use compiled plugins, typed forms and connection
   const connections = await (await request.get('/api/connections')).json();
   expect(connections.connections.find((connection: { id: string }) => connection.id === 'weather.browser').settings.latitude).toBe(53.35);
   expect(connections.connections.find((connection: { id: string }) => connection.id === 'rss.browser').fetch.can_fetch).toBe(false);
-  await page.getByRole('button', { name: 'Close connections', exact: true }).click();
+  await page.getByRole('button', { name: 'Back to display', exact: true }).click();
   await page.getByRole('button', { name: 'Edit layout' }).click();
-  await page.getByRole('button', { name: 'Add Weather now from Dublin forecast', exact: true }).click();
-  await page.getByRole('button', { name: 'Add Headlines from Local headlines', exact: true }).click();
+  await insertComponent(page, 'Add Weather now from Dublin forecast');
+  await insertComponent(page, 'Add Headlines from Local headlines');
   for (const id of ['weather', 'agenda']) {
-    await page.getByRole('button', { name: `Select ${id}`, exact: true }).click();
+    await selectComponent(page, id);
     await page.getByRole('button', { name: 'Remove component', exact: true }).click();
   }
-  await page.getByRole('button', { name: 'Add Hourly forecast from Dublin forecast', exact: true }).click();
-  await page.getByRole('button', { name: 'Add Daily forecast from Dublin forecast', exact: true }).click();
+  await insertComponent(page, 'Add Hourly forecast from Dublin forecast');
+  await insertComponent(page, 'Add Daily forecast from Dublin forecast');
   await page.getByRole('button', { name: 'Save to display' }).click();
   await expect(page.getByRole('button', { name: 'Edit layout' })).toBeVisible();
   await expect.poll(async () => (await (await request.get('/api/state')).json()).phase).toBe('idle');
@@ -530,20 +591,24 @@ test('weather forecasts and RSS use compiled plugins, typed forms and connection
   if (process.env.CAPTURE_SCREENSHOTS === '1') await page.screenshot({ path: '../docs/design/images/weather-rss-display.png' });
   await page.reload();
   await page.getByRole('button', { name: 'Edit layout' }).click();
+  await page.locator('#add-open').click();
   await expect(page.getByRole('button', { name: 'Add Hourly forecast from Dublin forecast', exact: true })).toBeVisible();
   const current = state.layout.components.find((component: { blocks: {id: string}[] }) => component.blocks.some(block => block.id === 'symbol'));
-  await page.getByRole('button', { name: `Select ${current.id}`, exact: true }).click();
-  await page.getByRole('button', { name: 'Edit contents', exact: true }).click();
-  await page.getByRole('button', { name: 'Select element symbol', exact: true }).click();
+  await selectComponent(page, current.id);
+  await editElements(page);
+  await page.locator('#component-list [data-element="symbol"]').click();
   await expect(page.getByLabel('Content source', { exact: true })).toHaveValue('icon');
   await expect(page.getByLabel('Field', { exact: true })).toHaveValue('icon-key');
+  await properties(page, 'Content');
   await page.getByLabel('Icon selection', { exact: true }).selectOption('literal');
+  await properties(page, 'Content');
   await page.getByLabel('Icon', { exact: true }).selectOption('clear_night');
   const iconResponse = page.waitForResponse(response => {
     if (!response.url().endsWith('/api/preview') || response.request().method() !== 'POST') return false;
     const layout = response.request().postDataJSON();
     return layout.components.some((c: {blocks: {id:string; source:{size?:number}}[]}) => c.blocks.some(b => b.id === 'symbol' && b.source.size === 32));
   });
+  await properties(page, 'Content');
   await page.getByLabel('Icon size (px)', { exact: true }).fill('32');
   await page.getByLabel('Icon size (px)', { exact: true }).press('Tab');
   const updatedIconPreview = await (await iconResponse).json();
@@ -560,9 +625,9 @@ test('weather forecasts and RSS use compiled plugins, typed forms and connection
   expect(await (await request.get('/api/display.png')).body()).toEqual(Buffer.from(iconPreview.png_base64, 'base64'));
   await page.reload();
   await page.getByRole('button', { name: 'Edit layout' }).click();
-  await page.getByRole('button', { name: `Select ${current.id}`, exact: true }).click();
-  await page.getByRole('button', { name: 'Edit contents', exact: true }).click();
-  await page.getByRole('button', { name: 'Select element symbol', exact: true }).click();
+  await selectComponent(page, current.id);
+  await editElements(page);
+  await page.locator('#component-list [data-element="symbol"]').click();
   await expect(page.getByLabel('Icon', { exact: true })).toHaveValue('clear_night');
   await expect(page.getByLabel('Icon size (px)', { exact: true })).toHaveValue('32');
   await page.getByRole('button', { name: 'Discard', exact: true }).click();
@@ -580,15 +645,16 @@ test('unloaded plugins and a fixed demo clock show actionable setup guidance', a
   await page.goto('/');
   await expect(page.locator('#runtime-warning')).toContainText('plugins are not loaded');
   await expect(page.locator('#runtime-warning')).toContainText('Restart without --now');
-  await page.getByRole('button', { name: 'Connections', exact: true }).click();
-  await expect(page.locator('.connections-scope')).toContainText('No fetch modules are loaded');
+  await page.getByRole('button', { name: 'Data sources', exact: true }).click();
+  await expect(page.locator('.connections-scope')).toContainText('Plugins are not loaded');
   await expect(page.getByRole('button', { name: 'Fetch Dublin forecast now', exact: true })).toBeDisabled();
   await expect(page.locator('[data-fetch-id="weather.browser"]')).toContainText('Plugin not loaded by this service');
-  await page.getByText('Enable fetching', { exact: true }).click();
+  await page.getByText('Advanced: enable fetching', { exact: true }).click();
   await expect(page.locator('#fetch-setup')).toContainText('--connector-bindings plugins/bindings.example.json');
   if (process.env.CAPTURE_SCREENSHOTS === '1') await page.screenshot({ path: '../docs/design/images/plugin-setup.png' });
-  await page.getByRole('button', { name: 'Close connections', exact: true }).click();
+  await page.getByRole('button', { name: 'Back to display', exact: true }).click();
   await page.getByRole('button', { name: 'Edit layout' }).click();
+  await page.locator('#add-open').click();
   await expect(page.getByRole('button', { name: 'Add Weather now from Dublin forecast', exact: true })).toHaveAttribute('title', /needs its plugin loaded/);
   await page.getByRole('button', { name: 'Discard', exact: true }).click();
 });
@@ -596,7 +662,7 @@ test('unloaded plugins and a fixed demo clock show actionable setup guidance', a
 test('Charlemont Luas shows both directions with configurable stops and saved display pixels', async ({page,request}) => {
   const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
   await page.goto('/');
-  await page.getByRole('button',{name:'Connections',exact:true}).click();
+  await page.getByRole('button',{name:'Data sources',exact:true}).click();
   await page.getByRole('button',{name:'Configure Charlemont trams',exact:true}).click();
   await expect(page.getByLabel('Luas stop',{exact:true})).toHaveValue('CHA');
   await expect(page.getByLabel('Luas stop',{exact:true}).locator('option')).toHaveCount(67);
@@ -614,13 +680,13 @@ test('Charlemont Luas shows both directions with configurable stops and saved di
   const catalog=await(await request.get('/api/catalog')).json();
   expect(catalog.filter((d:{connection_id:string})=>d.connection_id==='luas.browser').map((d:{dataset_id:string})=>d.dataset_id).sort()).toEqual(['arrivals','stop-board']);
   expect(catalog.find((d:{connection_id:string;dataset_id:string})=>d.connection_id==='luas.browser'&&d.dataset_id==='arrivals').rows).toBe(6);
-  await page.getByRole('button',{name:'Close connections',exact:true}).click();
+  await page.getByRole('button',{name:'Back to display',exact:true}).click();
   await page.getByRole('button',{name:'Edit layout'}).click();
   for (const id of ['weather','agenda']) {
-    await page.getByRole('button',{name:`Select ${id}`,exact:true}).click();
+    await selectComponent(page, id);
     await page.getByRole('button',{name:'Remove component',exact:true}).click();
   }
-  await page.getByRole('button',{name:'Add Luas board from Charlemont trams',exact:true}).click();
+  await insertComponent(page, 'Add Luas board from Charlemont trams');
   await expect(page.getByLabel('Component name',{exact:true})).toHaveValue('Charlemont trams · Luas board');
   await page.getByRole('button',{name:'Save to display'}).click();
   await expect(page.getByRole('button',{name:'Edit layout'})).toBeVisible();
@@ -639,9 +705,9 @@ test('Charlemont Luas shows both directions with configurable stops and saved di
   await expect(page.locator('#frame')).toHaveJSProperty('complete',true);
   if(process.env.CAPTURE_SCREENSHOTS==='1')await page.screenshot({path:'../docs/design/images/luas-display.png'});
   await page.reload();await page.getByRole('button',{name:'Edit layout'}).click();
-  await page.getByRole('button',{name:`Select ${board.id}`,exact:true}).click();
-  await page.getByRole('button',{name:'Edit contents',exact:true}).click();
-  await page.getByRole('button',{name:'Select element inbound',exact:true}).click();
+  await selectComponent(page, board.id);
+  await editElements(page);
+  await page.locator('#component-list [data-element="inbound"]').click();
   await expect(page.getByLabel('Field',{exact:true})).toHaveValue('inbound');
   if(process.env.CAPTURE_SCREENSHOTS==='1')await page.screenshot({path:'../docs/design/images/luas-editor.png'});
   await page.getByRole('button',{name:'Discard',exact:true}).click();
@@ -650,7 +716,7 @@ test('Charlemont Luas shows both directions with configurable stops and saved di
 
 test('Dublin Bus accepts multiple stop numbers with a private key and shared feed', async ({page,request})=>{
  const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
- await page.goto('/');await page.getByRole('button',{name:'Connections',exact:true}).click();
+ await page.goto('/');await page.getByRole('button',{name:'Data sources',exact:true}).click();
  await page.getByRole('button',{name:'Configure Dublin buses',exact:true}).click();
  await expect(page.getByLabel('NTA API key',{exact:true})).toHaveValue('');
  await expect(page.getByLabel('NTA API key',{exact:true})).toHaveAttribute('type','password');
@@ -668,9 +734,9 @@ test('Dublin Bus accepts multiple stop numbers with a private key and shared fee
  await page.getByRole('button',{name:'Discard form',exact:true}).click();
  const catalog=await(await request.get('/api/catalog')).json();expect(catalog.filter((d:{connection_id:string})=>d.connection_id==='bus.browser').map((d:{dataset_id:string})=>d.dataset_id).sort()).toEqual(['arrivals','overview','stops']);
  expect(catalog.find((d:{connection_id:string;dataset_id:string})=>d.connection_id==='bus.browser'&&d.dataset_id==='stops').rows).toBe(2);
- await page.getByRole('button',{name:'Close connections',exact:true}).click();await page.getByRole('button',{name:'Edit layout'}).click();
- for(const id of ['weather','agenda']){await page.getByRole('button',{name:`Select ${id}`,exact:true}).click();await page.getByRole('button',{name:'Remove component',exact:true}).click();}
- await page.getByRole('button',{name:'Add All bus stops from Dublin buses',exact:true}).click();
+ await page.getByRole('button',{name:'Back to display',exact:true}).click();await page.getByRole('button',{name:'Edit layout'}).click();
+ for(const id of ['weather','agenda']){await selectComponent(page, id);await page.getByRole('button',{name:'Remove component',exact:true}).click();}
+ await insertComponent(page, 'Add All bus stops from Dublin buses');
  await page.getByRole('button',{name:'Save to display'}).click();await expect(page.getByRole('button',{name:'Edit layout'})).toBeVisible();
  await expect.poll(async()=>{const s=await(await request.get('/api/state')).json();return !s.pending&&s.displayed_revision===s.revision;}).toBe(true);
  const state=await(await request.get('/api/state')).json();const component=state.layout.components.find((c:{label?:string})=>c.label==='Dublin buses · All bus stops');expect(component).toBeTruthy();
@@ -678,13 +744,14 @@ test('Dublin Bus accepts multiple stop numbers with a private key and shared fee
  expect(await(await request.get('/api/display.png')).body()).toEqual(Buffer.from(preview.png_base64,'base64'));
  await expect(page.locator('#frame')).toHaveAttribute('src',`/api/display.png?frame=${encodeURIComponent(state.frame_id)}`);await expect(page.locator('#frame')).toHaveJSProperty('complete',true);
  if(process.env.CAPTURE_SCREENSHOTS==='1')await page.screenshot({path:'../docs/design/images/dublin-bus-display.png'});
- await page.reload();await page.getByRole('button',{name:'Edit layout'}).click();await expect(page.getByRole('button',{name:'Add Bus stop board from Dublin buses',exact:true})).toBeVisible();await page.getByRole('button',{name:'Discard',exact:true}).click();expect(errors).toEqual([]);
+ await page.reload();await page.getByRole('button',{name:'Edit layout'}).click();await page.locator('#add-open').click();
+  await expect(page.getByRole('button',{name:'Add Bus stop board from Dublin buses',exact:true})).toBeVisible();await page.getByRole('button',{name:'Discard',exact:true}).click();expect(errors).toEqual([]);
 });
 
 async function placePluginBoard(page: import('@playwright/test').Page, request: import('@playwright/test').APIRequestContext, template: string, label: string, screenshot: string) {
  await page.getByRole('button',{name:'Edit layout',exact:true}).click();
- for(const id of ['weather','agenda']) {await page.getByRole('button',{name:`Select ${id}`,exact:true}).click();await page.getByRole('button',{name:'Remove component',exact:true}).click();}
- await page.getByRole('button',{name:template,exact:true}).click();await page.getByRole('button',{name:'Save to display',exact:true}).click();
+ for(const id of ['weather','agenda']) {await selectComponent(page, id);await page.getByRole('button',{name:'Remove component',exact:true}).click();}
+ await insertComponent(page, template);await page.getByRole('button',{name:'Save to display',exact:true}).click();
  await expect(page.getByRole('button',{name:'Edit layout',exact:true})).toBeVisible();
  await expect.poll(async()=>{const s=await(await request.get('/api/state')).json();return !s.pending&&s.displayed_revision===s.revision;}).toBe(true);
  const state=await(await request.get('/api/state')).json();const board=state.layout.components.find((c:{label:string})=>c.label===label);expect(board).toBeTruthy();
@@ -695,42 +762,43 @@ async function placePluginBoard(page: import('@playwright/test').Page, request: 
 }
 
 test('air quality and pollen preserve unavailable values and render a forecast board',async({page,request})=>{
- await page.goto('/');await page.getByRole('button',{name:'Connections',exact:true}).click();await page.getByRole('button',{name:'Configure Dublin air',exact:true}).click();
+ await page.goto('/');await page.getByRole('button',{name:'Data sources',exact:true}).click();await page.getByRole('button',{name:'Configure Dublin air',exact:true}).click();
  await expect(page.getByLabel('Pollen focus',{exact:true})).toHaveValue('all');await page.getByRole('checkbox',{name:'Enabled',exact:true}).check();await page.getByRole('button',{name:'Save connection',exact:true}).click();
  await expect(page.locator('[data-fetch-id="air.browser"]')).toContainText('Last fetched');
  const catalog=await(await request.get('/api/catalog')).json();expect(catalog.filter((d:{connection_id:string})=>d.connection_id==='air.browser').map((d:{dataset_id:string})=>d.dataset_id).sort()).toEqual(['current','hourly','pollen']);
- await page.getByRole('button',{name:'Configure Dublin air',exact:true}).click();if(process.env.CAPTURE_SCREENSHOTS==='1')await page.screenshot({path:'../docs/design/images/air-quality-settings.png'});await page.getByRole('button',{name:'Discard form',exact:true}).click();await page.getByRole('button',{name:'Close connections',exact:true}).click();
+ await page.getByRole('button',{name:'Configure Dublin air',exact:true}).click();if(process.env.CAPTURE_SCREENSHOTS==='1')await page.screenshot({path:'../docs/design/images/air-quality-settings.png'});await page.getByRole('button',{name:'Discard form',exact:true}).click();await page.getByRole('button',{name:'Back to display',exact:true}).click();
  await placePluginBoard(page,request,'Add Pollen board from Dublin air','Dublin air · Pollen board','air-quality-display');
 });
 
 test('personal quote rows can be added, removed and saved without an online fetch',async({page,request})=>{
- await page.goto('/');await page.getByRole('button',{name:'Connections',exact:true}).click();await page.getByRole('button',{name:'Configure Daily thought',exact:true}).click();
+ await page.goto('/');await page.getByRole('button',{name:'Data sources',exact:true}).click();await page.getByRole('button',{name:'Configure Daily thought',exact:true}).click();
  await expect(page.getByLabel('Quote selection',{exact:true})).toHaveValue('personal');
  await page.getByRole('button',{name:'Add row to Personal quotes',exact:true}).click();await page.getByLabel('Quote 1',{exact:true}).fill('Make space for curiosity and useful ideas.');await page.getByLabel('Author 1',{exact:true}).fill('Paperphase fixture');
  await page.getByRole('button',{name:'Add row to Personal quotes',exact:true}).click();await page.getByLabel('Quote 2',{exact:true}).fill('A second thought to remove.');await page.getByRole('button',{name:'Remove row 2 from Personal quotes',exact:true}).click();
  await page.getByRole('checkbox',{name:'Enabled',exact:true}).check();await page.getByRole('button',{name:'Save connection',exact:true}).click();await expect(page.locator('[data-fetch-id="quote.browser"]')).toContainText('Last fetched');
  await page.getByRole('button',{name:'Configure Daily thought',exact:true}).click();await expect(page.getByLabel('Quote 1',{exact:true})).toHaveValue('Make space for curiosity and useful ideas.');await expect(page.getByLabel('Quote 2',{exact:true})).toHaveCount(0);
- if(process.env.CAPTURE_SCREENSHOTS==='1')await page.screenshot({path:'../docs/design/images/daily-quote-settings.png'});await page.getByRole('button',{name:'Discard form',exact:true}).click();await page.getByRole('button',{name:'Close connections',exact:true}).click();
+ if(process.env.CAPTURE_SCREENSHOTS==='1')await page.screenshot({path:'../docs/design/images/daily-quote-settings.png'});await page.getByRole('button',{name:'Discard form',exact:true}).click();await page.getByRole('button',{name:'Back to display',exact:true}).click();
  await placePluginBoard(page,request,'Add Daily quote from Daily thought','Daily thought · Daily quote','daily-quote-display');
 });
 
 test('generic JSON mappings use editable rows and optional empty authentication',async({page,request})=>{
- await page.goto('/');await page.getByRole('button',{name:'Connections',exact:true}).click();await page.getByRole('button',{name:'Configure Room sensors',exact:true}).click();
+ await page.goto('/');await page.getByRole('button',{name:'Data sources',exact:true}).click();await page.getByRole('button',{name:'Configure Room sensors',exact:true}).click();
  await expect(page.getByLabel('Authorization header',{exact:true})).toHaveValue('');await expect(page.getByLabel('X-API-Key header',{exact:true})).toHaveValue('');
  await page.getByRole('button',{name:'Add row to Field mappings',exact:true}).click();await page.getByLabel('Field ID 2',{exact:true}).fill('room');await page.getByLabel('JSON Pointer 2',{exact:true}).fill('/name');await page.getByLabel('Type 2',{exact:true}).selectOption('text');
  await page.getByRole('button',{name:'Add row to Field mappings',exact:true}).click();await page.getByLabel('Field ID 3',{exact:true}).fill('open');await page.getByLabel('JSON Pointer 3',{exact:true}).fill('/open');await page.getByLabel('Type 3',{exact:true}).selectOption('boolean');
  await page.getByRole('checkbox',{name:'Enabled',exact:true}).check();await page.getByRole('button',{name:'Save connection',exact:true}).click();await expect(page.locator('[data-fetch-id="json.browser"]')).toContainText('Last fetched');
  const store=await(await request.get('/api/connections')).json();const connection=store.connections.find((c:{id:string})=>c.id==='json.browser');expect(connection.secret_present).toEqual([]);expect(connection.settings.mappings).toHaveLength(3);
  await page.getByRole('button',{name:'Configure Room sensors',exact:true}).click();await expect(page.getByLabel('Type 3',{exact:true})).toHaveValue('boolean');await page.getByLabel('Field ID 1',{exact:true}).scrollIntoViewIfNeeded();
- if(process.env.CAPTURE_SCREENSHOTS==='1')await page.screenshot({path:'../docs/design/images/generic-json-settings.png'});await page.getByRole('button',{name:'Discard form',exact:true}).click();await page.getByRole('button',{name:'Close connections',exact:true}).click();
+ if(process.env.CAPTURE_SCREENSHOTS==='1')await page.screenshot({path:'../docs/design/images/generic-json-settings.png'});await page.getByRole('button',{name:'Discard form',exact:true}).click();await page.getByRole('button',{name:'Back to display',exact:true}).click();
  await placePluginBoard(page,request,'Add JSON summary from Room sensors','Room sensors · JSON summary','generic-json-display');
 });
 
 test('Google setup keeps credentials private and returns cross-site callbacks to the originating editor', async ({page, request}) => {
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
   await page.goto('/');
-  await page.getByRole('button', {name:'Connections',exact:true}).click();
-  await page.locator('#google-accounts summary').click();
+  await page.getByRole('button', {name:'Data sources',exact:true}).click();
+  await googleAccounts(page);
+  if (!await page.getByLabel('Google OAuth client ID', {exact:true}).isVisible()) await page.locator('#google-setup summary').click();
   await page.getByLabel('Google OAuth client ID',{exact:true}).fill('browser-fixture.apps.googleusercontent.com');
   await page.getByLabel('Google OAuth client secret',{exact:true}).fill('fixture-browser-secret');
   await page.getByRole('button',{name:'Save Google setup',exact:true}).click();
@@ -753,7 +821,7 @@ test('Google setup keeps credentials private and returns cross-site callbacks to
   await page.getByRole('button',{name:'Link Google account',exact:true}).click();
   await expect(page).toHaveURL(/^https:\/\/accounts\.google\.com\//);
   await page.getByRole('link',{name:'Return to editor'}).click();
-  await expect(page.locator('#notice')).toContainText('Google account linking was declined');
+  await expect(page.locator('#connections-notice')).toContainText('Google account linking was declined');
   await expect(page).toHaveURL('http://127.0.0.1:8097/');
   const failure = await (await request.get('/api/google')).json();
   expect(failure.last_link_error.code).toBe('access_denied');
@@ -777,15 +845,16 @@ test('Google linking retains an unsaved layout instead of navigating away', asyn
   expect(config.ok()).toBeTruthy();
   await page.goto('/');
   await page.getByRole('button',{name:'Edit layout',exact:true}).click();
-  await page.getByRole('button',{name:'Select header',exact:true}).click();
+  await selectComponent(page, 'header');
+  await properties(page, 'Content');
   await page.getByLabel('Text',{exact:true}).first().fill('Retain this layout draft');
-  await page.getByRole('button',{name:'Connections',exact:true}).click();
-  await page.locator('#google-accounts summary').click();
+  await page.getByRole('button',{name:'Data sources',exact:true}).click();
+  await googleAccounts(page);
   await page.getByLabel('New Google account label',{exact:true}).fill('Work');
   await page.getByRole('button',{name:'Link Google account',exact:true}).click();
   await expect(page.locator('#connections-notice')).toContainText('Save or discard your layout');
   await expect(page).toHaveURL('http://127.0.0.1:8097/');
-  await page.getByRole('button',{name:'Close connections',exact:true}).click();
+  await page.getByRole('button',{name:'Back to display',exact:true}).click();
   await expect(page.getByLabel('Text',{exact:true}).first()).toHaveValue('Retain this layout draft');
   expect((await (await request.get('/api/state')).json()).revision).toBe(before.revision);
 });

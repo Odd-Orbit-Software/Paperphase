@@ -31,11 +31,12 @@ to other users who can reach that port.
 ## Edit and save
 
 1. **On display** shows the last completed simulator frame. **Edit layout** opens
-   a separate draft; select components on the canvas or in the left panel.
+   a separate draft; select components on the canvas or in the strip below it.
 2. Drag to move, or use the bottom-right handle to resize. Red means the proposed
    rectangle is invalid. Dropping it restores the last valid position. Snap uses
    an eight-pixel grid; numeric placement and arrow keys allow exact adjustments.
-3. Change content in Properties. Blocks flow vertically; fonts retain their size
+3. Change content in **Content**. Use **Position** for geometry and **Style** for
+   typography, spacing and borders. Blocks flow vertically; fonts retain their size
    as the component changes shape. Data blocks select a dataset, field, and row.
    Rendering warnings and stale-data information appear below the blocks.
 4. Use Undo/Redo or switch to On display to compare. Save writes the layout and
@@ -49,15 +50,17 @@ and Escape cancels a drag or clears selection. Text inputs use native text undo.
 
 ## Time, date, and quiet hours
 
-In Edit layout, add **Time & date**. It starts with separate time/date blocks in
+In Edit layout, choose **Add component → Time & date**. It starts with separate
+time/date blocks in
 Europe/Dublin, using 24-hour time. Each block has its own timezone; change both
 when moving the entire clock to another timezone. Choose time, date, or both,
-12/24-hour time, and long/short/ISO/weekday date formats in Properties. Typography
+12/24-hour time, and long/short/ISO/weekday date formats in **Content**. Typography
 and placement work like other blocks. With a real clock, time updates at minute
 boundaries and date-only blocks at local date boundaries. `--now` freezes both.
 
-**Display settings** opens quiet hours. Enable it, choose a timezone and pause/
-resume times, then Save. The interval may cross midnight. Equal start/end times
+**Device** opens quiet hours and starts a display draft if needed. Enable quiet
+hours, choose a timezone and pause/resume times, then Save. Advanced refresh
+policy is collapsed below the everyday controls. The interval may cross midnight. Equal start/end times
 are rejected; disable the checkbox to allow updates throughout the day. Undo,
 Redo, and Discard include these settings.
 
@@ -74,38 +77,42 @@ startup, so it does not preserve pre-restart pixels during a quiet period.
 See the [clock and refresh design](../design/clock-and-refresh.md) for state and
 boundary behaviour. Panel-specific refresh budgets and maintenance are pending.
 
-Use **Connections** in the top bar for [connector-defined settings forms](connections.md).
-These records save independently of layout drafts. The Demo weather settings
+Use **Data sources** in the top bar for [connector-defined settings forms](connections.md).
+These records save independently of layout drafts. Real services lead the picker;
+demo/testing connectors are under **Advanced: demo & test connectors**. The
+Demo weather settings
 descriptor is settings-only; the Temperature connector can
 [run through a registered compiled module](compiled-connectors.md).
 
-Refresh mode and its reason appear below the canvas. Configure component
+Refresh mode, reason and saved/displayed revisions are available in **Device**.
+Configure component
 requests and maintenance thresholds using the [refresh policy guide](refresh-controller.md).
 
 ## Edit inside a component
 
-Select a component in **Edit layout**, then choose **Edit contents** in its
-properties. Existing vertical content converts to positioned boxes using the
+Select a component in **Edit layout**, then choose **Position → Position elements
+freely**. For an existing positioned component, choose **Edit individual elements**.
+This explicit action converts vertical content to positioned boxes using the
 Rust renderer's measurements. If some blocks are hidden or their measured boxes
 cannot fit without overlap, enlarge the component or adjust the font sizes/gap
 and try again.
 
 The canvas now focuses on that component. Select an element on the canvas or in
-the left panel, drag it, or resize with its corner handle. **Element X/Y** are
+the strip below the canvas, drag it, or resize with its corner handle. **Element X/Y** are
 relative to the content area, after padding. Numeric width/height and font size
 are independent. Snap, arrows, Shift-arrows, undo/redo, and Save/Discard work here
-too. The left panel adds text, data, or a clock inside the component.
+too. **Add element** opens the picker for text, data or a clock inside the component.
 
 Elements cannot overlap or occupy the hatched data-status strip. Increasing
 padding, adding a data binding, or shrinking the component must leave every box
 inside the available area. Resize or move its elements first when necessary.
 Delete removes the selected element; a component must keep at least one.
 
-**← Components** returns to the full layout. **Use vertical flow** restores
+**Back to components** returns to the full layout. **Use vertical flow** restores
 automatic top-to-bottom arrangement; Undo recovers the positioned boxes. Escape
 clears the element selection, and a second Escape returns to the full layout.
-Save applies the complete layout and returns to **On display**. Icons, repeating
-lists, and charts are not available yet.
+Save applies the complete layout and returns to **On display**. Plugin icon packs
+are supported; repeating lists and charts remain planned.
 
 ## Alternate layouts, fixtures, and backup
 

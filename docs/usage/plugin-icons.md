@@ -8,8 +8,8 @@ The host binary contains no Meteocons artwork.
 
 Add a new Weather now, Hourly forecast or Daily forecast template to use icons.
 Existing saved components retain their layout and font symbols. To change one,
-select it, choose **Edit contents**, select/add an element, then choose **Icon**
-as its content source. Choose the pack, size and either a fixed icon or a dataset
+select it, choose **Position → Position elements freely** (or **Edit individual elements** for an existing positioned component), select/add an element, then choose **Icon**
+under **Content → Change content type**. Choose the pack, size and either a fixed icon or a dataset
 field. For weather, bind `icon-key` from the desired current/hourly/daily row.
 Move or resize its element box as usual, then **Save to display**.
 

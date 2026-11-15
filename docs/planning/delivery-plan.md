@@ -33,6 +33,31 @@ and renewal are still pending; the next-work order above is unchanged. See
 
 ### Component design before placement
 
+The owner approved merging the UIUX redesign on 2026-11-15 and confirmed this
+as the next feature. Keep its canvas/task-dock layout, Content/Position/Style
+organisation, paper/green palette and separate advanced controls; follow
+[DESIGN.md](../../DESIGN.md) and the
+[owner workspace](../design/owner-workspace.md).
+
+Address these owner-reported regressions as part of this work:
+
+- Delete no longer reliably removes a highlighted display component or an
+  internal element during ordinary mouse-driven editing. The current shortcut
+  guard requires focus inside the canvas/list/viewport; selecting with the mouse
+  can leave focus elsewhere. Restore selection-based deletion in editor context
+  while preserving native Delete/Backspace in text inputs and protecting dialogs.
+- The internal component UI designer is missing from the owner's workflow.
+  Restore a clear, reachable entry point for existing components and reuse it for
+  plugin-specific custom designs. Do not treat the presence of an advanced tab
+  or a source function as proof the interactive workflow is accessible.
+
+Add regression coverage that clicks a component/element with the mouse and then
+presses Delete, verifies undo restores it, and preserves the existing last-element
+constraint. Verify text-field deletion edits text rather than removing its
+component. Exercise entering, editing and leaving the internal designer through
+the visible UI. The earlier 26 passing browser tests did not establish these
+owner-reported paths; both issues remain open until fixed and checked.
+
 Every loaded plugin should offer a way to design a custom component before
 adding it to the display. Existing component editing does not solve the current
 failure: a default template must first fit a free display rectangle, so an

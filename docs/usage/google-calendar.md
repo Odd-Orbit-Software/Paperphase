@@ -88,7 +88,7 @@ existing registration file. Restart the service after adding its module.
 
 Open the editor on the Pi's LAN using its real address, for example
 `http://kitchen-pi.local:8080` or `http://192.168.1.53:8080`. Save/discard layout
-and connection drafts before leaving for Google. Open **Connections → Google
+and connection drafts before leaving for Google. Open **Data sources → Google
 accounts**, enter the client ID/secret and hosted callback URL, and save setup.
 A blank secret preserves a saved secret for the same client ID.
 
@@ -120,7 +120,7 @@ values. Account and calendar labels/IDs remain visible in the LAN editor.
 ## Troubleshooting account linking
 
 A failed callback shows a specific message when its Pi session is still known.
-The same guidance is available under **Connections → Google accounts**. A new
+The same guidance is available under **Data sources → Google accounts**. A new
 attempt clears the previous diagnostic. No credentials or provider payloads are
 included in these messages or the log's fixed failure codes.
 

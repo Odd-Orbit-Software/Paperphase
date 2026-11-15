@@ -1,7 +1,7 @@
 # Positioned elements inside components
 
 The desktop editor can now move and resize individual text, data, and clock
-elements inside a component. **Edit contents** opens a cropped view of that
+elements inside a component. **Position → Position elements freely** opens a cropped view of that
 component, with an element list and properties for the selected element.
 The Rust renderer supplies all preview pixels and the initial element boxes.
 
@@ -56,7 +56,7 @@ sequenceDiagram
     participant User
     participant Browser
     participant Renderer as Rust preview endpoint
-    User->>Browser: Edit contents
+    User->>Browser: Position elements freely
     Browser->>Renderer: Preview current draft layout
     Renderer-->>Browser: PNG and measured block boxes
     Browser->>Browser: Check draft and selection are still current
@@ -77,7 +77,7 @@ while the request was running.
 
 **Use vertical flow** removes the rectangles and restores block order and gap.
 It is one undoable edit. Undo restores the exact positioned geometry; opening
-Edit contents again resumes that arrangement.
+Edit individual elements again resumes that arrangement.
 
 ## Drawing and interaction
 

@@ -30,7 +30,7 @@ target/debug/paperphase serve \
 
 Open <http://127.0.0.1:8080>, then:
 
-1. Open Connections and add a **Temperature connector** record. Set its name,
+1. Open Data sources and add a **Temperature connector** record. Set its name,
    location label, units, and polling interval, then Save.
 2. The enabled connection is fetched automatically when due. Fetch now requests
    an earlier fetch when eligible; its disabled button shows the next eligibility

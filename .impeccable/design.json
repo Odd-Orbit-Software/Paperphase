@@ -1,0 +1,539 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-15T16:37:12.584220Z",
+  "title": "Design System: Paperphase",
+  "extensions": {
+    "colorMeta": {
+      "paper": {
+        "role": "neutral",
+        "displayName": "Warm paper",
+        "canonical": "#f5f4ef",
+        "tonalRamp": [
+          "oklch(15% 0.0017 97.35)",
+          "oklch(26% 0.0037 97.35)",
+          "oklch(38% 0.0054 97.35)",
+          "oklch(50% 0.0067 97.35)",
+          "oklch(62% 0.0067 97.35)",
+          "oklch(74% 0.0057 97.35)",
+          "oklch(86% 0.0034 97.35)",
+          "oklch(95% 0.0012 97.35)"
+        ]
+      },
+      "panel": {
+        "role": "neutral",
+        "displayName": "Near-white paper",
+        "canonical": "#fffef9",
+        "tonalRamp": [
+          "oklch(15% 0.0017 97.35)",
+          "oklch(26% 0.0037 97.35)",
+          "oklch(38% 0.0053 97.35)",
+          "oklch(50% 0.0067 97.35)",
+          "oklch(62% 0.0067 97.35)",
+          "oklch(74% 0.0057 97.35)",
+          "oklch(86% 0.0033 97.35)",
+          "oklch(95% 0.0012 97.35)"
+        ]
+      },
+      "canvas": {
+        "role": "neutral",
+        "displayName": "Pale canvas",
+        "canonical": "#eeeee7",
+        "tonalRamp": [
+          "oklch(15% 0.0023 106.58)",
+          "oklch(26% 0.0051 106.58)",
+          "oklch(38% 0.0074 106.58)",
+          "oklch(50% 0.0093 106.58)",
+          "oklch(62% 0.0093 106.58)",
+          "oklch(74% 0.0079 106.58)",
+          "oklch(86% 0.0047 106.58)",
+          "oklch(95% 0.0017 106.58)"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Green ink",
+        "canonical": "#25352d",
+        "tonalRamp": [
+          "oklch(15% 0.0064 162.77)",
+          "oklch(26% 0.0141 162.77)",
+          "oklch(38% 0.0204 162.77)",
+          "oklch(50% 0.0256 162.77)",
+          "oklch(62% 0.0256 162.77)",
+          "oklch(74% 0.0217 162.77)",
+          "oklch(86% 0.0128 162.77)",
+          "oklch(95% 0.0046 162.77)"
+        ]
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Muted green",
+        "canonical": "#566453",
+        "tonalRamp": [
+          "oklch(15% 0.0079 140.14)",
+          "oklch(26% 0.0175 140.14)",
+          "oklch(38% 0.0254 140.14)",
+          "oklch(50% 0.0317 140.14)",
+          "oklch(62% 0.0317 140.14)",
+          "oklch(74% 0.0270 140.14)",
+          "oklch(86% 0.0159 140.14)",
+          "oklch(95% 0.0057 140.14)"
+        ]
+      },
+      "green": {
+        "role": "primary",
+        "displayName": "Forest green",
+        "canonical": "#2f5745",
+        "tonalRamp": [
+          "oklch(15% 0.0137 163.41)",
+          "oklch(26% 0.0302 163.41)",
+          "oklch(38% 0.0440 163.41)",
+          "oklch(50% 0.0550 163.41)",
+          "oklch(62% 0.0550 163.41)",
+          "oklch(74% 0.0467 163.41)",
+          "oklch(86% 0.0275 163.41)",
+          "oklch(95% 0.0099 163.41)"
+        ]
+      },
+      "green-hover": {
+        "role": "primary",
+        "displayName": "Deep forest green",
+        "canonical": "#244535",
+        "tonalRamp": [
+          "oklch(15% 0.0121 161.57)",
+          "oklch(26% 0.0266 161.57)",
+          "oklch(38% 0.0386 161.57)",
+          "oklch(50% 0.0483 161.57)",
+          "oklch(62% 0.0483 161.57)",
+          "oklch(74% 0.0410 161.57)",
+          "oklch(86% 0.0241 161.57)",
+          "oklch(95% 0.0087 161.57)"
+        ]
+      },
+      "selected": {
+        "role": "primary",
+        "displayName": "Selection wash",
+        "canonical": "#e3ebdd",
+        "tonalRamp": [
+          "oklch(15% 0.0051 131.46)",
+          "oklch(26% 0.0113 131.46)",
+          "oklch(38% 0.0164 131.46)",
+          "oklch(50% 0.0205 131.46)",
+          "oklch(62% 0.0205 131.46)",
+          "oklch(74% 0.0174 131.46)",
+          "oklch(86% 0.0102 131.46)",
+          "oklch(95% 0.0037 131.46)"
+        ]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Quiet line",
+        "canonical": "#d4dbcd",
+        "tonalRamp": [
+          "oklch(15% 0.0051 128.72)",
+          "oklch(26% 0.0112 128.72)",
+          "oklch(38% 0.0163 128.72)",
+          "oklch(50% 0.0203 128.72)",
+          "oklch(62% 0.0203 128.72)",
+          "oklch(74% 0.0173 128.72)",
+          "oklch(86% 0.0102 128.72)",
+          "oklch(95% 0.0037 128.72)"
+        ]
+      },
+      "input-line": {
+        "role": "neutral",
+        "displayName": "Field line",
+        "canonical": "#788b70",
+        "tonalRamp": [
+          "oklch(15% 0.0114 136.43)",
+          "oklch(26% 0.0250 136.43)",
+          "oklch(38% 0.0364 136.43)",
+          "oklch(50% 0.0455 136.43)",
+          "oklch(62% 0.0455 136.43)",
+          "oklch(74% 0.0387 136.43)",
+          "oklch(86% 0.0227 136.43)",
+          "oklch(95% 0.0082 136.43)"
+        ]
+      },
+      "danger": {
+        "role": "functional",
+        "displayName": "Error",
+        "canonical": "#923c30",
+        "tonalRamp": [
+          "oklch(15% 0.0298 30.16)",
+          "oklch(26% 0.0655 30.16)",
+          "oklch(38% 0.0953 30.16)",
+          "oklch(50% 0.1191 30.16)",
+          "oklch(62% 0.1191 30.16)",
+          "oklch(74% 0.1012 30.16)",
+          "oklch(86% 0.0595 30.16)",
+          "oklch(95% 0.0214 30.16)"
+        ]
+      },
+      "error-surface": {
+        "role": "functional",
+        "displayName": "Error surface",
+        "canonical": "#fff0ec",
+        "tonalRamp": [
+          "oklch(15% 0.0043 35.34)",
+          "oklch(26% 0.0094 35.34)",
+          "oklch(38% 0.0137 35.34)",
+          "oklch(50% 0.0172 35.34)",
+          "oklch(62% 0.0172 35.34)",
+          "oklch(74% 0.0146 35.34)",
+          "oklch(86% 0.0086 35.34)",
+          "oklch(95% 0.0031 35.34)"
+        ]
+      },
+      "amber": {
+        "role": "functional",
+        "displayName": "Warning / draft",
+        "canonical": "#795013",
+        "tonalRamp": [
+          "oklch(15% 0.0228 71.61)",
+          "oklch(26% 0.0501 71.61)",
+          "oklch(38% 0.0729 71.61)",
+          "oklch(50% 0.0911 71.61)",
+          "oklch(62% 0.0911 71.61)",
+          "oklch(74% 0.0774 71.61)",
+          "oklch(86% 0.0456 71.61)",
+          "oklch(95% 0.0164 71.61)"
+        ]
+      },
+      "amber-surface": {
+        "role": "functional",
+        "displayName": "Warning surface",
+        "canonical": "#f7edd8",
+        "tonalRamp": [
+          "oklch(15% 0.0074 85.56)",
+          "oklch(26% 0.0164 85.56)",
+          "oklch(38% 0.0238 85.56)",
+          "oklch(50% 0.0297 85.56)",
+          "oklch(62% 0.0297 85.56)",
+          "oklch(74% 0.0253 85.56)",
+          "oklch(86% 0.0149 85.56)",
+          "oklch(95% 0.0054 85.56)"
+        ]
+      },
+      "focus": {
+        "role": "primary",
+        "displayName": "Focus green",
+        "canonical": "#2e6849",
+        "tonalRamp": [
+          "oklch(15% 0.0199 157.83)",
+          "oklch(26% 0.0438 157.83)",
+          "oklch(38% 0.0638 157.83)",
+          "oklch(50% 0.0797 157.83)",
+          "oklch(62% 0.0797 157.83)",
+          "oklch(74% 0.0678 157.83)",
+          "oklch(86% 0.0399 157.83)",
+          "oklch(95% 0.0144 157.83)"
+        ]
+      },
+      "topbar": {
+        "role": "neutral",
+        "displayName": "Topbar paper",
+        "canonical": "#faf9f4",
+        "tonalRamp": [
+          "oklch(15% 0.0017 97.35)",
+          "oklch(26% 0.0037 97.35)",
+          "oklch(38% 0.0053 97.35)",
+          "oklch(50% 0.0067 97.35)",
+          "oklch(62% 0.0067 97.35)",
+          "oklch(74% 0.0057 97.35)",
+          "oklch(86% 0.0033 97.35)",
+          "oklch(95% 0.0012 97.35)"
+        ]
+      },
+      "field": {
+        "role": "neutral",
+        "displayName": "Field white",
+        "canonical": "#fffffc",
+        "tonalRamp": [
+          "oklch(15% 0.0010 106.47)",
+          "oklch(26% 0.0022 106.47)",
+          "oklch(38% 0.0032 106.47)",
+          "oklch(50% 0.0039 106.47)",
+          "oklch(62% 0.0039 106.47)",
+          "oklch(74% 0.0033 106.47)",
+          "oklch(86% 0.0020 106.47)",
+          "oklch(95% 0.0007 106.47)"
+        ]
+      },
+      "white": {
+        "role": "neutral",
+        "displayName": "Frame white",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "oklch(15% 0.0000 89.88)",
+          "oklch(26% 0.0000 89.88)",
+          "oklch(38% 0.0000 89.88)",
+          "oklch(50% 0.0000 89.88)",
+          "oklch(62% 0.0000 89.88)",
+          "oklch(74% 0.0000 89.88)",
+          "oklch(86% 0.0000 89.88)",
+          "oklch(95% 0.0000 89.88)"
+        ]
+      },
+      "element": {
+        "role": "functional",
+        "displayName": "Inner-element selection",
+        "canonical": "#486f8a",
+        "tonalRamp": [
+          "oklch(15% 0.0153 239.70)",
+          "oklch(26% 0.0338 239.70)",
+          "oklch(38% 0.0491 239.70)",
+          "oklch(50% 0.0614 239.70)",
+          "oklch(62% 0.0614 239.70)",
+          "oklch(74% 0.0522 239.70)",
+          "oklch(86% 0.0307 239.70)",
+          "oklch(95% 0.0110 239.70)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Page h1 headings."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Panel h2 headings."
+      },
+      "section": {
+        "displayName": "Section",
+        "purpose": "Section h3 headings; inspector property headings locally use 15px."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Paragraph copy; body size is 14px and paragraph line-height is 1.6."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Visible form labels; controls inherit surrounding typography."
+      },
+      "button": {
+        "displayName": "Button",
+        "purpose": "Base button text."
+      },
+      "help": {
+        "displayName": "Help",
+        "purpose": "Muted help, descriptions and small text."
+      },
+      "caption": {
+        "displayName": "Caption",
+        "purpose": "Canvas, dock and status metadata."
+      },
+      "brand": {
+        "displayName": "Brand",
+        "purpose": "Paperphase wordmark; 23px at max-width 620px."
+      },
+      "about-headline": {
+        "displayName": "About Headline",
+        "purpose": "About page headline."
+      }
+    },
+    "shadows": [
+      {
+        "name": "display-frame",
+        "value": "0 5px 18px #263d2c0d",
+        "purpose": "Restrained lift beneath the real monochrome frame."
+      },
+      {
+        "name": "component-picker",
+        "value": "0 12px 40px #263d2c26",
+        "purpose": "Floating source-grouped component picker."
+      }
+    ],
+    "motion": [],
+    "breakpoints": [
+      {
+        "name": "wide-desktop-min",
+        "value": "1700px"
+      },
+      {
+        "name": "compact-desktop-max",
+        "value": "1250px"
+      },
+      {
+        "name": "stacked-inspector-max",
+        "value": "950px"
+      },
+      {
+        "name": "small-screen-max",
+        "value": "620px"
+      }
+    ],
+    "mediaQueries": [
+      {
+        "query": "(min-width: 1700px)",
+        "purpose": "360px inspector."
+      },
+      {
+        "query": "(max-width: 1250px)",
+        "purpose": "20px gutters, 300px inspector, 16px studio gap; host address and dock heading hide."
+      },
+      {
+        "query": "(max-width: 950px)",
+        "purpose": "Inspector stacks; source settings become one column; service summary hides."
+      },
+      {
+        "query": "(max-width: 620px)",
+        "purpose": "Wrapped navigation/actions, 12px main gutters, stacked forms and footer."
+      },
+      {
+        "query": "(prefers-reduced-motion: reduce)",
+        "purpose": "Force scroll-behavior: auto on elements and pseudo-elements."
+      }
+    ],
+    "focus": {
+      "value": "2px solid var(--focus)",
+      "offset": "3px",
+      "purpose": "Shared keyboard focus treatment for native and canvas controls."
+    },
+    "dialogBackdrop": {
+      "value": "#25352d66",
+      "purpose": "Native confirmation dialog backdrop."
+    },
+    "tonalRampProvenance": "All eight-step OKLCH ramps are synthesized dark-to-light panel metadata from the extracted canonical colors; they are not additional application tokens or approved palette variants.",
+    "motionNotes": "No transitions or decorative animations are declared. Selection, expansion and text update directly.",
+    "sources": [
+      "web/src/app.css",
+      "web/src/index.html",
+      "web/src/app.ts",
+      "PRODUCT.md",
+      "docs/planning/uiux-direction.md",
+      ".impeccable/review/desktop.png",
+      ".impeccable/review/sources.png",
+      ".impeccable/review/device.png",
+      ".impeccable/review/about.png",
+      ".impeccable/review/mobile.png"
+    ],
+    "assetProvenance": {
+      "readme": "web/assets/brand/README.md",
+      "ownership": "Existing supplied and owner-approved Odd Orbit artwork; no new generation or license claim.",
+      "logo": {
+        "path": "web/assets/brand/odd-orbit.png",
+        "source": "../Odd-Orbit-Brand/avatars/odd-orbit-avatar-128.png",
+        "usage": "Favicon, footer and About maker card; retain original colors, proportions and opaque tile."
+      },
+      "portrait": {
+        "path": "web/assets/brand/orbi.png",
+        "source": "../Orbi/hd/reference-panels/hero-portrait.png",
+        "usage": "About only; preserve opaque background, crop with object-fit cover and object-position center 25%."
+      }
+    }
+  },
+  "components": [
+    {
+      "name": "Primary button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Explicit save or begin-edit action.",
+      "html": "<button class=\"ds-primary\">Save to display</button>",
+      "css": ".ds-primary{font-family:ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif;font-size:14px;color:var(--ink,#25352d);display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:40px;border:1px solid var(--line,#d4dbcd);border-radius:7px;padding:9px 14px;background:var(--panel,#fffef9);cursor:pointer;font-weight:600;line-height:1.3;}.ds-primary:hover:enabled{background:var(--selected,#e3ebdd);border-color:var(--input-line,#788b70);}.ds-primary:disabled{opacity:.45;cursor:default;}.ds-primary:focus-visible{outline:2px solid var(--focus,#2e6849);outline-offset:3px;}.ds-primary{color:white;background:var(--green,#2f5745);border-color:var(--green,#2f5745);}.ds-primary:hover:enabled{background:var(--green-hover,#244535);}"
+    },
+    {
+      "name": "Secondary button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Routine action beside the main save action.",
+      "html": "<button class=\"ds-secondary\">Refresh display</button>",
+      "css": ".ds-secondary{font-family:ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif;font-size:14px;color:var(--ink,#25352d);display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:40px;border:1px solid var(--line,#d4dbcd);border-radius:7px;padding:9px 14px;background:var(--panel,#fffef9);cursor:pointer;font-weight:600;line-height:1.3;}.ds-secondary:hover:enabled{background:var(--selected,#e3ebdd);border-color:var(--input-line,#788b70);}.ds-secondary:disabled{opacity:.45;cursor:default;}.ds-secondary:focus-visible{outline:2px solid var(--focus,#2e6849);outline-offset:3px;}"
+    },
+    {
+      "name": "Quiet button",
+      "kind": "button",
+      "refersTo": "button-quiet",
+      "description": "Low-emphasis header or toolbar action.",
+      "html": "<button class=\"ds-quiet\">About</button>",
+      "css": ".ds-quiet{font-family:ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif;font-size:14px;color:var(--ink,#25352d);display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:40px;border:1px solid var(--line,#d4dbcd);border-radius:7px;padding:9px 14px;background:var(--panel,#fffef9);cursor:pointer;font-weight:600;line-height:1.3;}.ds-quiet:hover:enabled{background:var(--selected,#e3ebdd);border-color:var(--input-line,#788b70);}.ds-quiet:disabled{opacity:.45;cursor:default;}.ds-quiet:focus-visible{outline:2px solid var(--focus,#2e6849);outline-offset:3px;}.ds-quiet{border-color:transparent;background:transparent;}"
+    },
+    {
+      "name": "Labelled text field",
+      "kind": "input",
+      "refersTo": "field",
+      "description": "Visible owner-facing label and native text input.",
+      "html": "<label class=\"ds-field\"><span>Component name</span><input aria-label=\"Component name\" value=\"Paperphase\"></label>",
+      "css": ".ds-field{font-family:ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif;font-size:14px;color:var(--ink,#25352d);display:block;font-size:13px;font-weight:600;}.ds-field>span{display:block;margin-bottom:7px;}.ds-field input{font:inherit;color:inherit;width:100%;min-width:0;border:1px solid var(--input-line,#788b70);border-radius:6px;background:var(--field,#fffffc);padding:10px 11px;line-height:1.5;}.ds-field input:focus-visible{outline:2px solid var(--focus,#2e6849);outline-offset:3px;}"
+    },
+    {
+      "name": "Main navigation",
+      "kind": "nav",
+      "refersTo": "nav-active",
+      "description": "Current page uses a selection wash and page semantics.",
+      "html": "<nav class=\"ds-nav\" aria-label=\"Main navigation\"><button aria-current=\"page\">Display</button><button>Data sources</button><button>Device</button></nav>",
+      "css": ".ds-nav{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}.ds-nav button{font-family:ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif;font-size:14px;color:var(--ink,#25352d);display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:40px;border:1px solid var(--line,#d4dbcd);border-radius:7px;padding:9px 14px;background:var(--panel,#fffef9);cursor:pointer;font-weight:600;line-height:1.3;}.ds-nav button:hover:enabled{background:var(--selected,#e3ebdd);border-color:var(--input-line,#788b70);}.ds-nav button:disabled{opacity:.45;cursor:default;}.ds-nav button:focus-visible{outline:2px solid var(--focus,#2e6849);outline-offset:3px;}.ds-nav button{background:transparent;border-color:transparent;}.ds-nav button[aria-current=page]{background:var(--selected,#e3ebdd);color:var(--green,#2f5745);}"
+    },
+    {
+      "name": "Draft badge",
+      "kind": "chip",
+      "refersTo": "badge-draft",
+      "description": "Non-interactive indicator alongside the page title.",
+      "html": "<span class=\"ds-badge\">Editing draft</span>",
+      "css": ".ds-badge{font-family:ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif;font-size:14px;color:var(--ink,#25352d);display:inline-block;background:var(--amber-surface,#f7edd8);color:var(--amber,#795013);padding:5px 9px;font-size:12px;border-radius:5px;white-space:nowrap;}"
+    },
+    {
+      "name": "Settings panel",
+      "kind": "card",
+      "refersTo": "panel",
+      "description": "Flat bordered paper surface with section divider.",
+      "html": "<section class=\"ds-panel\"><div class=\"ds-section\"><h3>Refresh &amp; quiet hours</h3><p>Choose when your display updates.</p></div></section>",
+      "css": ".ds-panel{font-family:ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif;font-size:14px;color:var(--ink,#25352d);background:var(--panel,#fffef9);border:1px solid var(--line,#d4dbcd);border-radius:12px;min-width:0;}.ds-section{padding:28px;border-bottom:1px solid var(--line,#d4dbcd);}.ds-section h3{font-size:16px;letter-spacing:-.02em;font-weight:650;line-height:1.25;margin:0 0 14px;}.ds-section p{line-height:1.6;color:var(--muted,#566453);max-width:75ch;margin:0;}"
+    },
+    {
+      "name": "Inspector tabs",
+      "kind": "nav",
+      "refersTo": "inspector-tab",
+      "description": "Content, precision position and styling states.",
+      "html": "<div class=\"ds-tabs\" role=\"tablist\" aria-label=\"Component properties\"><button role=\"tab\" aria-selected=\"true\" tabindex=\"0\">Content</button><button role=\"tab\" aria-selected=\"false\" tabindex=\"-1\">Position</button><button role=\"tab\" aria-selected=\"false\" tabindex=\"-1\">Style</button></div>",
+      "css": ".ds-tabs{display:flex;border-bottom:1px solid var(--line,#d4dbcd);padding:0 12px;background:var(--panel,#fffef9);}.ds-tabs button{font-family:ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif;font-size:14px;color:var(--ink,#25352d);display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:40px;border:1px solid var(--line,#d4dbcd);border-radius:7px;padding:9px 14px;background:var(--panel,#fffef9);cursor:pointer;font-weight:600;line-height:1.3;}.ds-tabs button:hover:enabled{background:var(--selected,#e3ebdd);border-color:var(--input-line,#788b70);}.ds-tabs button:disabled{opacity:.45;cursor:default;}.ds-tabs button:focus-visible{outline:2px solid var(--focus,#2e6849);outline-offset:3px;}.ds-tabs button{flex:1;background:transparent;border:none;border-radius:0;font-size:13px;padding:12px 8px;font-weight:500;}.ds-tabs button[aria-selected=true]{color:var(--green,#2f5745);border-bottom:2px solid var(--green,#2f5745);font-weight:650;}"
+    },
+    {
+      "name": "Selected component dock item",
+      "kind": "button",
+      "refersTo": "component-item-selected",
+      "description": "Selected component with a clipped title and geometry summary.",
+      "html": "<button class=\"ds-item\" aria-label=\"Select Paperphase\"><span><span class=\"ds-item-name\">Paperphase</span><small>768 × 80 · 16, 16</small></span></button>",
+      "css": ".ds-item{font-family:ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif;font-size:14px;color:var(--ink,#25352d);display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:40px;border:1px solid var(--line,#d4dbcd);border-radius:7px;padding:9px 14px;background:var(--panel,#fffef9);cursor:pointer;font-weight:600;line-height:1.3;}.ds-item:hover:enabled{background:var(--selected,#e3ebdd);border-color:var(--input-line,#788b70);}.ds-item:disabled{opacity:.45;cursor:default;}.ds-item:focus-visible{outline:2px solid var(--focus,#2e6849);outline-offset:3px;}.ds-item{flex:0 0 150px;width:150px;text-align:left;white-space:normal;padding:8px 10px;min-height:52px;font-size:13px;background:var(--selected,#e3ebdd);border-color:#7c9679;}.ds-item-name{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:170px;}.ds-item small{display:block;font-size:12px;font-weight:400;margin-top:4px;color:var(--muted,#566453);line-height:1.6;}"
+    },
+    {
+      "name": "Canvas component selection",
+      "kind": "custom",
+      "refersTo": "canvas-selection",
+      "description": "Square selection follows the monochrome display geometry.",
+      "html": "<div class=\"ds-canvas\"><div class=\"ds-selection\" role=\"button\" tabindex=\"0\" aria-pressed=\"true\" aria-label=\"Move Paperphase\"><span class=\"ds-tag\">Paperphase</span><span class=\"ds-handle\" aria-hidden=\"true\"></span></div></div>",
+      "css": ".ds-canvas{font-family:ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif;font-size:14px;color:var(--ink,#25352d);position:relative;background:white;width:260px;height:100px;box-shadow:0 5px 18px #263d2c0d;}.ds-selection{position:absolute;left:16px;top:24px;width:228px;height:56px;border:2px solid var(--focus,#2e6849);cursor:grab;}.ds-selection:hover{background:#537b6010;}.ds-tag{position:absolute;top:-23px;left:-2px;background:var(--green,#2f5745);color:white;font-size:12px;padding:3px 5px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:0;}.ds-selection:focus-visible .ds-tag{opacity:1;}.ds-handle{position:absolute;bottom:-5px;right:-5px;width:12px;height:12px;background:white;border:2px solid var(--green,#2f5745);cursor:nwse-resize;}.ds-selection:focus-visible{outline:2px solid var(--focus,#2e6849);outline-offset:3px;}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Warm paper, green, calm utilitarian desktop editor",
+    "overview": "Paperphase is a warm paper and green, calm utilitarian desktop editor. It uses familiar native controls, clear labels and quiet borders so owners can arrange a readable e-paper display. System fonts keep the local application self-contained and consistent with the approved code-led prototype.\n\nPaperphase leads the workspace identity. The supplied Odd Orbit logo and “Developed by Odd Orbit Software” attribution provide a modest maker signature throughout; Orbi appears on About only. The parent brand’s dark and violet artwork stays within its supplied asset and About maker card.",
+    "keyCharacteristics": [
+      "Warm paper surfaces, forest green actions and dark green ink.",
+      "Restrained controls, fine borders and limited shadows.",
+      "Desktop mouse and keyboard editing with accessible surrounding controls at narrower widths.",
+      "Original supplied maker artwork, with Orbi on About only."
+    ],
+    "rules": [
+      {
+        "name": "The Paperphase Identity Rule",
+        "body": "Keep the editor's paper and green palette; the Odd Orbit artwork is a contained maker signature, not a replacement UI palette.",
+        "section": "colors"
+      }
+    ],
+    "dos": [
+      "Do use the current paper/green tokens and local system font stack.",
+      "Do pair state color with text, selection borders or accessible control state.",
+      "Do keep content labels visible and advanced controls separately expandable.",
+      "Do preserve explicit save/discard actions and distinguish saved, pending and displayed state.",
+      "Do preserve the supplied Odd Orbit artwork, proportions and opaque backgrounds."
+    ],
+    "donts": [
+      "Don't extend Odd Orbit’s dark/violet palette across the Paperphase workspace.",
+      "Don't put Orbi in the routine editor, Data sources or Device pages.",
+      "Don't add decorative entrance animation or replace the local font stack with externally loaded fonts.",
+      "Don't blur or smooth the monochrome display frame; retain its pixelated rendering.",
+      "Don't present narrow-screen adaptations as a promise of full phone/tablet editing."
+    ]
+  }
+}

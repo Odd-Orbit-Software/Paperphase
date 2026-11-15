@@ -11,6 +11,12 @@ physical-display integration**. The
 addresses defaults that cannot be added because they do not fit, and requires a
 blank or template-based design flow for every loaded plugin before placement.
 
+The owner approved the UIUX design for merge on 2026-11-15. Custom component
+design per loaded plugin is next, keeping that design system. Include the
+owner-reported Delete-key regression for highlighted components/internal elements
+and the missing internal-designer workflow in this feature; see the
+[entry and regression criteria](delivery-plan.md#component-design-before-placement).
+
 ## Air quality and pollen
 
 Use Open-Meteo's air-quality API with current European AQI, pollutant values,
@@ -87,7 +93,9 @@ The owner requested these follow-ups after the first successful real login:
   enforced filesystem/sandbox restrictions when an actual access boundary is
   needed. An outside-project path alone is not such a boundary.
 
-This records later work; no JSON importer or UX redesign is implemented yet.
+The UIUX redesign implements clearer account guidance, advanced setup separation
+and the transition toward calendar selection. Client JSON import and the shared
+public OAuth service remain planned.
 
 ## Later: Leave in X minutes
 

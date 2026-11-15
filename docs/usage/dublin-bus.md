@@ -12,7 +12,7 @@ is stored in `.paperphase/reference/nta.json` by the example configuration.
 
 1. Create an account at the [NTA developer portal](https://developer.nationaltransport.ie/),
    subscribe to GTFS-Realtime and obtain your key.
-2. In **Connections**, choose **New connection → Dublin Bus departures**.
+2. In **Data sources**, choose **Add data source → Dublin Bus departures**.
 3. Enter one or more **Bus stop numbers**, separated by commas or lines. The
    requested first stop is **2813**, Ranelagh Road. Up to eight unique stops are
    supported; repeated numbers and leading zeros are normalised.
@@ -21,12 +21,12 @@ is stored in `.paperphase/reference/nta.json` by the example configuration.
    Save the enabled connection. Future edits can leave the key blank to retain it.
 5. Allow the first reference import to finish (including streamed timetable data). **Preparing reference data** is
    distinct from fetching the live feed. Subsequent starts reuse a valid cache.
-6. Close Connections and enter **Edit layout**. Add **All bus stops** for one
+6. Return from Data sources and enter **Edit layout**. Add **All bus stops** for one
    combined board, or **Bus stop board** for the first stop. Make room, then Save.
 
 The combined board needs a 600 × 384 area; the single-stop template needs
 464 × 304. More stops/long names may need larger element boxes or fewer displayed
-buses. **Edit contents** exposes normal position, size, font and binding controls.
+buses. **Position → Position elements freely** (or **Edit individual elements** for an existing positioned component) exposes normal position, size, font and binding controls.
 For custom departure-row designs, bind `status` to show the `scheduled` marker
 and `scheduled-at` for the timetable timestamp. `expected-at` and `due-minutes`
 are empty for scheduled rows so they cannot silently appear as live countdowns.
@@ -83,7 +83,7 @@ ranges and supply the expected CSV columns. Import errors retain prior data and
 are logged without your API key. Check connectivity, disk permissions and the
 reference-import log if preparation does not complete.
 
-A 401 fetch error usually needs a valid subscribed key; correct it in Connections.
+A 401 fetch error usually needs a valid subscribed key; correct it in Data sources.
 A malformed/unsupported response or exceeded budget retains last good content.
 Unknown stop numbers fail before making the real-time request. Double-check your
 number and allow the reference import to complete before retrying.

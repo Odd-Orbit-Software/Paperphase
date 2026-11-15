@@ -1,11 +1,11 @@
 # Simulated refresh policy
 
-The information below the canvas shows the active or last completed refresh
+In **Device**, the display-status disclosure shows the active or last completed refresh
 mode and its reason. Hover the mode to see its pixel region and layout revision.
 Saved content can be queued while an older refresh is active; **On display**
 continues to show the last completed frame until that operation finishes.
 
-In **Edit layout → Display settings**, adjust:
+In **Device → Advanced refresh policy**, adjust:
 
 - **Minimum refresh interval (ms)**: minimum wait after a successful update before
   another starts. The simulator enforces a floor of 250 ms.
@@ -21,7 +21,8 @@ Save applies these settings; Undo and Discard work as for layout edits. More
 permissive settings never bypass profile limits. These are synthetic simulator
 values, not recommended settings for any Waveshare panel.
 
-Select a component and use **Refresh request** to choose Automatic, Prefer
+Select a component, open **Style → Advanced: display updates**, and use
+**Refresh request** to choose Automatic, Prefer
 partial, or Request full. Requests apply when its area changes. The host can
 promote partial to full for maintenance, area, capability, or recovery reasons.
 

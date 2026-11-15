@@ -14,7 +14,7 @@ profile is not a confirmed identification of the owner's physical panel.
 ## Views and interaction
 
 **On display** opens by default and shows the last completed simulated frame.
-**Edit layout** creates a browser-local draft. The left panel selects components
+**Edit layout** creates a browser-local draft. The bottom strip selects components
 and adds text/data templates; the right panel controls geometry, spacing, borders,
 and ordered text blocks. Blocks support literal text or a connection/dataset/
 field/row binding, numeric precision, affixes, fixed font size, alignment, and
@@ -23,7 +23,7 @@ available to every component.
 
 [Internal element editing](internal-editor.md) now adds positioned text/data/clock
 boxes and a cropped component canvas. Existing components retain vertical flow
-until the user chooses Edit contents.
+until the user explicitly chooses Position → Position elements freely.
 
 Dragging converts pointer distances from CSS pixels into native display pixels.
 Optional snapping rounds coordinates/sizes to an eight-pixel grid. Each proposed
@@ -149,3 +149,7 @@ a competing save. Pi resource use, Google accounts, and physical display
 behaviour still require separate validation.
 
 See [running and testing the editor](../usage/desktop-editor.md).
+
+The owner workspace redesign and current navigation are documented in
+[owner workspace](owner-workspace.md). Historical screenshots below may show
+the earlier three-column layout.

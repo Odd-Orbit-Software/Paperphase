@@ -10,19 +10,19 @@ The example registration includes weather, RSS and Luas, so build all registered
 modules before starting. Omit `--now` for live operation. No Luas API key is needed
 for the inspected public feed.
 
-1. Open **Connections**, add a connection and choose **Luas departures**.
+1. Open **Data sources**, add a connection and choose **Luas departures**.
 2. Select **Green · Charlemont** and **Both directions**. Both are defaults.
    Keep three trams per direction initially and leave the destination filter
    blank. Give the connection a recognisable name, such as **Charlemont trams**.
 3. Save the enabled connection. The host fetches when eligible; check its status
    for a completed fetch or a retained-data error.
-4. Close Connections, enter **Edit layout**, and add **Luas board** from that
+4. Return from Data sources, enter **Edit layout**, and add **Luas board** from that
    connection. Make a free 464 × 320 area first if needed. The narrower template
    needs 320 × 288. Save to display.
 
 The main board shows separate inbound/outbound sections, destinations, minutes,
 the feed's service message, last update and attribution. Direction labels come
-from the provider; use destinations to confirm your journey. **Edit contents**
+from the provider; use destinations to confirm your journey. **Position → Position elements freely** (or **Edit individual elements** for an existing positioned component)
 lets you move/resize either direction or bind individual `arrivals` rows to your
 own text elements. The aggregate fields are in `stop-board`.
 

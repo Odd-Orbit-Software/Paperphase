@@ -394,6 +394,24 @@ pub fn run(
                     )
                 }),
             )
+            .route(
+                "/brand/odd-orbit.png",
+                get(|| async {
+                    asset(
+                        "image/png",
+                        include_bytes!("../../../web/assets/brand/odd-orbit.png"),
+                    )
+                }),
+            )
+            .route(
+                "/brand/orbi.png",
+                get(|| async {
+                    asset(
+                        "image/png",
+                        include_bytes!("../../../web/assets/brand/orbi.png"),
+                    )
+                }),
+            )
             .route("/api/state", get(state))
             .route("/api/catalog", get(catalog))
             .route(

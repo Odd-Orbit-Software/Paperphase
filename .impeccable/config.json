@@ -1,0 +1,35 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "broken-image",
+        "value": "*",
+        "files": [
+          "web/src/index.html"
+        ],
+        "createdAt": "2026-11-15T16:50:35.543Z",
+        "reason": "Agent reviewed: the sole src-less image is the dynamic #frame. app.ts sets its display/draft URL; initialization and failure hide the workspace. Chromium verified loaded frames in the final captures."
+      },
+      {
+        "rule": "cramped-padding",
+        "value": "*",
+        "files": [
+          "web/src/index.html"
+        ],
+        "createdAt": "2026-11-15T16:50:35.653Z",
+        "reason": "Agent and independent finish reviewer: canvas-heading is display:none. The compact caption centers text beside 32px controls and retains 16px horizontal inset; final desktop and narrow captures show no clipping. These two reports are false positives."
+      },
+      {
+        "rule": "cream-palette",
+        "value": "*",
+        "files": [
+          "web/src/index.html"
+        ],
+        "createdAt": "2026-11-15T16:50:35.784Z",
+        "reason": "User confirmed: retain the paper-inspired green palette and approved option A on 2026-11-15. The warm paper background is an explicit product requirement."
+      }
+    ]
+  }
+}

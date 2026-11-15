@@ -4,52 +4,52 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f5f4ef">
-  <title>Paperphase · Display studio</title>
+  <title>Paperphase · Your display</title>
+  <link rel="icon" type="image/png" href="/brand/odd-orbit.png">
   <link rel="stylesheet" href="/app.css">
   <script type="module" src="/app.js"></script>
 </head>
 <body>
+  <a class="skip-link" href="#main">Skip to workspace</a>
   <header class="topbar">
-    <a class="brand" href="/" aria-label="Paperphase home"><span class="brand-mark" aria-hidden="true">◒</span> paperphase<span class="experimental">LAB</span></a>
-    <span class="product-label">DISPLAY STUDIO</span>
-    <button id="connections-open" class="small">Connections</button>
-    <div class="device"><span class="status-dot"></span><strong id="device-status">Connecting</strong><span class="divider"></span><span id="host-address">—</span></div>
+    <a class="brand" href="/" aria-label="Paperphase home"><svg class="brand-mark" viewBox="0 0 36 36" aria-hidden="true"><circle cx="18" cy="18" r="15" fill="none" stroke="currentColor"/><path d="M6 27A15 15 0 0 0 30 9Z" fill="currentColor"/></svg>paperphase</a>
+    <nav aria-label="Main navigation"><button id="display-open" class="nav-button active" aria-current="page">Display</button><button id="connections-open" class="nav-button">Data sources</button><button id="display-settings" class="nav-button">Device</button></nav>
+    <div class="device"><span class="status-dot"></span><strong id="device-status">Connecting…</strong><span id="host-address">—</span></div>
+    <button id="about-open" class="quiet">About</button>
   </header>
-  <main>
-    <section class="page-heading">
-      <div><div class="eyebrow">YOUR SPACE, AT A GLANCE</div><h1>A little less screen.</h1><p>Make room for the information that matters.</p></div>
-      <div class="heading-actions"><span id="save-state" class="subtle">Loading workspace…</span><button id="refresh" disabled>↻ Refresh display</button><button id="discard" hidden>Discard</button><button id="save" class="primary" hidden>Save to display <span aria-hidden="true">↗</span></button><button id="edit" class="primary">Edit layout <span aria-hidden="true">↗</span></button></div>
-    </section>
-    <div id="runtime-warning" class="runtime-warning" role="status" hidden></div>
+  <main id="main" tabindex="-1">
+    <section id="loading-state" class="loading-state" role="status"><h1 id="loading-title">Loading your display…</h1><p id="loading-message">Connecting to the Paperphase service.</p><button id="retry-start" hidden>Retry connection</button></section>
     <div id="notice" role="status" aria-live="polite" hidden></div>
-    <section class="studio" aria-label="Display editor">
-      <aside class="library">
-        <div class="panel-heading"><h2 id="library-title">Components</h2><span id="component-count" class="count">0</span></div>
-        <p class="panel-description" id="library-description">Your saved arrangement.</p>
-        <div id="component-list" class="component-list"></div>
-        <div id="add-tools" hidden><div class="section-label" id="add-target">ADD TO YOUR DISPLAY</div><button id="add-text" class="template"><span class="template-icon">Aa</span><span><strong>Text</strong><small>A note, heading, or quotation</small></span><span>+</span></button><button id="add-data" class="template"><span class="template-icon">≋</span><span><strong>Data field</strong><small>Connect a dataset value</small></span><span>+</span></button><button id="add-clock" class="template"><span class="template-icon">◷</span><span><strong>Time &amp; date</strong><small>Keep time in your timezone</small></span><span>+</span></button><button id="display-settings" class="wide-button">Display settings</button></div>
-        <div id="plugin-templates" hidden></div>
-        <div class="library-note"><span class="tiny-orbit">◌</span><strong>A place for everything.</strong><p id="placement-note">Components sit side by side. Each one owns its space on the display.</p></div>
-      </aside>
-      <div class="canvas-panel">
-        <div class="canvas-toolbar"><div class="view-switch" role="group" aria-label="Canvas view"><button id="view-current" class="active" aria-pressed="true">On display</button><button id="view-draft" aria-pressed="false" disabled>Draft</button></div><div class="canvas-tools"><button id="undo" aria-label="Undo" title="Undo (Ctrl/Cmd Z)" disabled>↶</button><button id="redo" aria-label="Redo" title="Redo (Ctrl/Cmd Shift Z)" disabled>↷</button><span class="divider"></span><label class="check"><input id="snap" type="checkbox" checked> Snap</label><label class="check"><input id="grid" type="checkbox"> Grid</label></div></div>
-        <div class="canvas-heading"><span><span class="status-dot muted-dot"></span> <strong id="canvas-title">Last completed frame</strong></span><span id="dimensions">—</span></div>
-        <div id="content-mode-bar" hidden><button id="exit-content" class="small">← Components</button><span>Positions are inside the content area.</span><button id="use-flow" class="small">Use vertical flow</button></div>
-        <div id="viewport" tabindex="-1"><div id="board-wrap"><div id="board" aria-label="Display canvas"><img id="frame" alt="Monochrome frame rendered by Paperphase" draggable="false"><div id="grid-overlay"></div><div id="overlays"></div></div></div></div>
-        <div class="canvas-caption"><span id="canvas-caption">Exactly the pixels sent to the simulated display.</span><div class="zoom-tools"><button id="zoom-out" aria-label="Zoom out">−</button><span id="zoom-label">100%</span><button id="zoom-in" aria-label="Zoom in">+</button><button id="zoom-fit">Fit</button></div></div>
-        <div class="refresh-summary" role="status"><strong id="refresh-mode">Software simulator</strong><span id="refresh-detail">Loading refresh policy…</span></div>
-        <div class="canvas-footer"><span class="simulation-badge">SIMULATOR</span><span id="data-mode">Monochrome · Sample data</span><span id="revision-label" class="push-right">—</span></div>
-      </div>
-      <aside class="inspector"><div class="panel-heading"><h2>Properties</h2><span class="properties-symbol">☷</span></div><div id="inspector-body"><div class="empty-properties"><span>↖</span><h3>Your display, your way.</h3><p>Choose <strong>Edit layout</strong> to arrange components and customise their content.</p></div></div></aside>
-    </section>
-    <footer class="page-footer"><span>ODD ORBIT SOFTWARE <span class="footer-orbit">◌</span> Small tools. Considered spaces.</span><span id="keyboard-hint">Paperphase 0.1.0 · Experimental</span></footer>
+    <div id="metadata-warning" class="runtime-warning" hidden><span id="metadata-message"></span> <button id="retry-metadata" class="small">Retry options</button></div>
+    <div id="display-workspace" hidden>
+      <section class="page-heading">
+        <div class="heading-title"><h1 id="page-title">Your display</h1><span id="draft-badge" class="badge amber" hidden>Editing draft</span></div>
+        <div class="heading-actions"><span id="save-state" class="subtle">Loading workspace…</span><button id="refresh" disabled>Refresh display</button><button id="discard" hidden>Discard</button><button id="save" class="primary" hidden>Save to display</button><button id="edit" class="primary" disabled>Edit layout</button></div>
+      </section>
+      <div id="runtime-warning" class="runtime-warning" role="status" hidden></div>
+      <section id="display-page" class="studio" aria-label="Display editor">
+        <div class="canvas-panel">
+          <div class="canvas-toolbar"><div class="view-switch" role="group" aria-label="Canvas view"><button id="view-current" class="active" aria-pressed="true">On display</button><button id="view-draft" aria-pressed="false" disabled>Draft</button></div><div class="canvas-tools"><button id="undo" aria-label="Undo" title="Undo (Ctrl/Cmd Z)" disabled data-icon="undo"></button><button id="redo" aria-label="Redo" title="Redo (Ctrl/Cmd Shift Z)" disabled data-icon="redo"></button><label class="check"><input id="snap" type="checkbox" checked> Snap</label><label class="check"><input id="grid" type="checkbox"> Grid</label></div></div>
+          <div class="canvas-heading"><strong id="canvas-title">Last completed frame</strong><span id="dimensions">—</span></div>
+          <div id="content-mode-bar" hidden><button id="exit-content" class="small">Back to components</button><span>Positions are inside this component.</span><button id="use-flow" class="small">Use vertical flow</button></div>
+          <div id="viewport" tabindex="-1"><div id="board-wrap"><div id="board" aria-label="Display canvas"><img id="frame" alt="Monochrome frame rendered by Paperphase" draggable="false"><div id="grid-overlay"></div><div id="overlays"></div></div></div></div>
+          <div class="canvas-caption"><span><span id="dimensions-caption"></span><span id="canvas-caption">The last completed display frame.</span></span><div class="zoom-tools"><button id="zoom-out" aria-label="Zoom out" data-icon="minus"></button><span id="zoom-label">100%</span><button id="zoom-in" aria-label="Zoom in" data-icon="plus"></button><button id="zoom-fit">Fit</button></div></div>
+          <div class="component-dock"><div class="dock-heading"><h2 id="library-title">Components</h2><span id="component-count" class="count">0</span></div><div id="component-list" class="component-list"></div><button id="add-open" hidden aria-expanded="false" aria-controls="add-picker">Add component</button></div>
+
+        </div>
+        <aside class="inspector" aria-label="Selected component"><div id="inspector-body"></div></aside>
+      </section>
+      <section id="device-page" class="device-page" aria-label="Display settings" hidden><aside class="settings-intro"><h2>Display settings</h2><p>Choose when your display updates. Changes are saved with your display draft.</p><details class="display-status"><summary><span id="refresh-mode">Software simulator</span><span id="revision-label">—</span></summary><p id="refresh-detail">Loading refresh policy…</p><p id="data-mode">Monochrome · Sample data</p></details><button id="device-undo" aria-label="Undo">Undo last change</button><button id="device-redo" aria-label="Redo">Redo last change</button></aside><div id="device-settings-body" class="settings-body"></div></section>
+    </div>
+    <dialog id="connections-dialog" aria-labelledby="connections-title">
+      <header class="connections-heading"><div><h1 id="connections-title">Data sources</h1><p>Connect the information you want on your display.</p></div><button id="connections-close" aria-label="Back to display">Back to display</button></header>
+      <div id="connections-notice" role="status" aria-live="polite" hidden></div>
+      <div class="connections-workspace"><aside class="source-sidebar"><button id="connection-new" class="primary wide-button">Add data source</button><div id="connections-list"></div><button id="google-open" class="wide-button">Google accounts</button><p class="connections-scope">Load connections to check plugin and fetch status.</p><details id="fetch-setup" class="fetch-setup" hidden><summary>Advanced: enable fetching</summary><p>Load the compiled plugins when starting the service. Build the bundled plugins as described in the setup guide, then run from the repository root:</p><code>cargo run --locked -p paperphase -- serve --connector-bindings plugins/bindings.example.json</code><p>For live data, omit <code>--now</code>; that option fixes the clock for tests. Other plugins need their own registration file.</p></details></aside><section id="connection-properties" aria-label="Connection settings"></section><section id="google-panel" aria-label="Google accounts" hidden></section></div>
+    </dialog>
+    <section id="about-page" class="about-page" hidden aria-labelledby="about-title"><div class="about-copy"><h1 id="about-title">A display with your day on it.</h1><p>Paperphase helps you arrange useful information on an e-paper display. Keep a weather forecast, a few headlines or your next appointment in view.</p><a class="maker-card" href="https://oddorbit.software" target="_blank" rel="noreferrer"><img src="/brand/odd-orbit.png" alt="Odd Orbit logo" width="64" height="64"><span><strong>Developed by Odd Orbit Software</strong><small>oddorbit.software</small></span></a><p>Meet Orbi, Odd Orbit’s curious, resourceful mascot. She’s at home tinkering with small tools and useful ideas.</p><p class="subtle">Paperphase 0.1.0 · Experimental</p><button id="about-close">Back to display</button></div><img class="orbi-portrait" src="/brand/orbi.png" alt="Orbi, with violet hair and goggles, wearing an Odd Orbit utility hoodie" loading="lazy" width="300" height="430"></section>
   </main>
-  <dialog id="connections-dialog" aria-labelledby="connections-title">
-    <header class="connections-heading"><div><div class="eyebrow">YOUR DATA SOURCES</div><h2 id="connections-title">Connections</h2></div><button id="connections-close" aria-label="Close connections">×</button></header>
-    <p class="connections-scope">Load connections to check plugin and fetch status.</p>
-    <div id="connections-notice" role="status" aria-live="polite" hidden></div>
-    <details id="fetch-setup" class="fetch-setup" hidden><summary>Enable fetching</summary><p>Load the compiled plugins when starting the service. For the bundled weather and RSS plugins, build them as described in the setup guide, then run from the repository root:</p><code>cargo run --locked -p paperphase -- serve --connector-bindings plugins/bindings.example.json</code><p>For live data, omit <code>--now</code>; that option fixes the clock for tests. Other plugins need their own registration file.</p></details>
-    <div class="connections-workspace"><aside><button id="connection-new" class="wide-button">+ New connection</button><div id="connections-list"></div></aside><section id="connection-properties" aria-label="Connection settings"></section></div>
-  </dialog>
+  <section id="add-picker" class="add-picker" aria-labelledby="add-title" hidden><header><div><h2 id="add-title">Add a component</h2><p id="add-target">Choose what to put on your display.</p></div><button id="add-close" aria-label="Close component picker" data-icon="close"></button></header><div id="add-tools"><button id="add-text" aria-label="Text" class="template"><span data-icon="text"></span><span><strong>Text</strong><small>A note, heading, or quotation</small></span></button><button id="add-data" aria-label="Data field" class="template"><span data-icon="data"></span><span><strong>Data field</strong><small>Connect a dataset value</small></span></button><button id="add-clock" aria-label="Time & date" class="template"><span data-icon="clock"></span><span><strong>Time &amp; date</strong><small>Keep time in your timezone</small></span></button></div><div id="plugin-templates"></div><p id="placement-note" class="subtle">Each component needs its own space on the display.</p></section>
+  <dialog id="confirm-dialog" aria-labelledby="confirm-title" aria-describedby="confirm-description"><form method="dialog"><h2 id="confirm-title"></h2><p id="confirm-description"></p><div class="confirm-actions"><button value="cancel" autofocus>Cancel</button><button id="confirm-accept" class="danger" value="confirm">Confirm</button></div></form></dialog>
+  <footer class="page-footer"><a class="maker" href="https://oddorbit.software" target="_blank" rel="noreferrer"><img src="/brand/odd-orbit.png" alt="" width="32" height="32"><span>Developed by <strong>Odd Orbit Software</strong></span></a><span id="keyboard-hint">Paperphase 0.1.0 · Experimental</span></footer>
 </body>
 </html>

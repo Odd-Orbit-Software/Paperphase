@@ -19,14 +19,14 @@ still experimental and needs separate Pi resource measurements.
 
 ## Weather
 
-1. Open **Connections → New connection**, then choose **Open-Meteo weather**.
+1. Open **Data sources → Add data source**, then choose **Open-Meteo weather**.
 2. Give the connection a useful name. Set the location label and latitude/
    longitude; the label does not perform a location search. Dublin coordinates
    are provided as defaults. Set Celsius/Fahrenheit, hourly/daily lengths, and
    the probability threshold for the rain summary.
 3. Save. An enabled connection fetches automatically; Fetch now uses the same
    cooldown rules. It defaults to every 15 minutes, with a 10-minute minimum.
-4. Close Connections, choose **Edit layout**, and select **Weather now**,
+4. Return from Data sources, choose **Edit layout**, and select **Weather now**,
    **Hourly forecast**, or **Daily forecast** under **From your connections**.
    These create independent components already bound to this connection.
 5. Arrange them, edit their contents if needed, then **Save to display**.
@@ -82,7 +82,7 @@ Check the connection's fetch status before changing component bindings:
 - **Plugin not loaded** means the settings/template exists but the service has
   no executable module for it. Restart with
   `--connector-bindings plugins/bindings.example.json` after building the guests.
-  The Connections panel also shows **Enable fetching** with the launch command.
+  The Data sources page also shows **Advanced: enable fetching** with the launch command.
 - A fixed-clock warning means the service was started with `--now`. Remove that
   option for real API use; otherwise future polling deadlines never arrive and
   live observations can appear stale against the old clock.

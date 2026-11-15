@@ -32,7 +32,6 @@ let saved: Workspace;
 let draft: Layout;
 let draftSettings: RefreshSettings;
 let zones: string[] = [];
-let settingsSelected = false;
 let catalog: Dataset[] = [];
 let iconPacks: IconPack[] = [];
 let editing = false;
@@ -60,6 +59,102 @@ let lastEdit = 0;
 let connected = true;
 let lastInspectedId: string | null = null;
 let drag: { id: string; blockId?: string; startX: number; startY: number; original: Rect; last: Rect; baseline: EditState; resize: boolean; pointerId: number; invalid: boolean } | undefined;
+type Page = 'display' | 'sources' | 'device' | 'about';
+let currentPage: Page = 'display';
+let inspectorTab = 'content';
+let googleView = false;
+let choosingSource = false;
+let pendingCalendar = false;
+const iconPaths: Record<string, string> = {
+  undo: '<path d="M8 7H3V2M3 7a8 8 0 1 1-1 8"/>',
+  redo: '<path d="M16 7h5V2m0 5a8 8 0 1 0 1 8"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  minus: '<path d="M5 12h14"/>',
+  close: '<path d="m6 6 12 12M6 18 18 6"/>',
+  up: '<path d="m5 14 7-7 7 7"/>', down: '<path d="m5 10 7 7 7-7"/>',
+  text: '<path d="M4 5h16M12 5v14M8 19h8"/>',
+  data: '<path d="M4 6h16M4 12h16M4 18h16"/><circle cx="8" cy="6" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="9" cy="18" r="2"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/>',
+};
+function icon(kind: string) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor'); svg.setAttribute('stroke-width', '1.6');
+  svg.setAttribute('stroke-linecap', 'round'); svg.setAttribute('stroke-linejoin', 'round');
+  svg.setAttribute('aria-hidden', 'true'); svg.innerHTML = iconPaths[kind] ?? iconPaths.data!;
+  return svg;
+}
+for (const element of document.querySelectorAll<HTMLElement>('[data-icon]')) element.append(icon(element.dataset.icon!));
+
+const focusables = (root: ParentNode) => [...root.querySelectorAll<HTMLElement>('button, input, select, textarea, summary, a[href], [tabindex="0"]')];
+function focusKey(target: HTMLElement) {
+  if (target.id) return `id:${target.id}`;
+  const scope = target.closest<HTMLElement>('[data-block], [data-component], [data-element]');
+  return [scope?.dataset.block ?? scope?.dataset.component ?? scope?.dataset.element ?? '', target.tagName,
+    target.getAttribute('aria-label') ?? target.getAttribute('data-focus') ?? target.textContent?.trim()].join('|');
+}
+let tabDestination: { element: HTMLElement; key: string } | undefined;
+let changingControl: HTMLElement | undefined;
+document.addEventListener('keydown', event => {
+  if (event.key !== 'Tab') { tabDestination = undefined; return; }
+  const items = focusables(document).filter(el => !el.closest('[hidden], [inert]') && !el.matches(':disabled') && el.getClientRects().length);
+  const index = items.indexOf(document.activeElement as HTMLElement);
+  const next = items[index + (event.shiftKey ? -1 : 1)];
+  tabDestination = next ? { element: next, key: focusKey(next) } : undefined;
+  window.setTimeout(() => { tabDestination = undefined; }, 0);
+}, true);
+function retainFocus(root: HTMLElement, build: () => void) {
+  const activeElement = document.activeElement as HTMLElement | null;
+  const previous = activeElement && root.contains(activeElement) ? activeElement : changingControl && root.contains(changingControl) ? changingControl : activeElement;
+  const owned = !!previous && root.contains(previous);
+  const key = owned ? focusKey(previous!) : '';
+  const selection = previous instanceof HTMLTextAreaElement || previous instanceof HTMLInputElement && /^(text|password|url|search)$/.test(previous.type)
+    ? [previous.selectionStart, previous.selectionEnd] : null;
+  const scroll = root.scrollTop;
+  const disclosures = new Map([...root.querySelectorAll('details')].map(details => [details.id || details.querySelector('summary')?.textContent || '', details.open]));
+  build();
+  for (const details of root.querySelectorAll('details')) { const open = disclosures.get(details.id || details.querySelector('summary')?.textContent || ''); if (open !== undefined) details.open = open; }
+  if (!owned || previous?.isConnected) return;
+  const replacement = focusables(root).find(el => focusKey(el) === key);
+  replacement?.focus({ preventScroll: true });
+  if (selection && replacement && (replacement instanceof HTMLInputElement || replacement instanceof HTMLTextAreaElement)) {
+    try { replacement.setSelectionRange(selection[0] ?? null, selection[1] ?? null); } catch { /* Not a text field. */ }
+  }
+  root.scrollTop = scroll;
+  const destination = tabDestination;
+  if (destination) window.setTimeout(() => {
+    const next = destination.element.isConnected ? destination.element : focusables(document).find(el => focusKey(el) === destination.key);
+    next?.focus({ preventScroll: true });
+  });
+}
+async function confirmAction(title: string, description: string, accept: string): Promise<boolean> {
+  const dialog = $<HTMLDialogElement>('confirm-dialog');
+  if (dialog.open) return false;
+  $('confirm-title').textContent = title; $('confirm-description').textContent = description;
+  button('confirm-accept').textContent = accept;
+  dialog.returnValue = ''; dialog.showModal();
+  return new Promise(resolve => dialog.addEventListener('close', () => resolve(dialog.returnValue === 'confirm'), { once: true }));
+}
+function closePicker() { $('add-picker').hidden = true; button('add-open').setAttribute('aria-expanded', 'false'); }
+function showPage(page: Page) {
+  if (currentPage === 'sources' && page !== 'sources' && (connectionBusy || connectionDirty())) {
+    connectionNotice('Save or discard your form before leaving data sources.'); return false;
+  }
+  currentPage = page; closePicker();
+  $('display-workspace').hidden = page === 'sources' || page === 'about';
+  $('display-page').hidden = page !== 'display'; $('device-page').hidden = page !== 'device';
+  $('about-page').hidden = page !== 'about';
+  if (page === 'sources') { if (!connectionDialog().open) connectionDialog().show(); }
+  else connectionDialog().close();
+  for (const [id, active] of [['display-open', page === 'display'], ['connections-open', page === 'sources'], ['display-settings', page === 'device'], ['about-open', page === 'about']] as const) {
+    button(id).classList.toggle('active', active);
+    if (active) button(id).setAttribute('aria-current', 'page'); else button(id).removeAttribute('aria-current');
+  }
+  $('page-title').textContent = page === 'device' ? 'Display settings' : 'Your display';
+  document.title = `Paperphase · ${page === 'sources' ? 'Data sources' : page === 'about' ? 'About' : page === 'device' ? 'Display settings' : 'Your display'}`;
+  if (saved) render();
+  return true;
+}
 function capture(): EditState { return { layout: clone(draft), settings: clone(draftSettings) }; }
 function restore(state: EditState) { draft = clone(state.layout); draftSettings = clone(state.settings); }
 
@@ -149,7 +244,7 @@ async function enterContents() {
   converting = true;
   try {
     const preview = await api<Preview>('/api/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(baseline) });
-    if (!active() || selected !== id || !equal(baseline, draft)) { notice('The draft changed. Choose Edit contents again.'); return; }
+    if (!active() || selected !== id || !equal(baseline, draft)) { notice('The draft changed. Choose Position elements freely again.'); return; }
     const report = preview.components.find(report => report.id === id);
     const replacement = positioned(current, report?.blocks ?? []);
     change(layout => { layout.components[layout.components.findIndex(c => c.id === id)] = replacement; });
@@ -197,6 +292,11 @@ function renderReport() {
 function render(rebuildInspector = true) {
   const isDirty = dirty();
   button('edit').hidden = editing;
+  button('edit').disabled = !connected;
+  $('draft-badge').hidden = !editing;
+  button('add-open').hidden = !active();
+  button('device-undo').disabled = !active() || !undo.length;
+  button('device-redo').disabled = !active() || !redo.length;
   button('discard').hidden = !editing;
   button('save').hidden = !editing;
   button('save').disabled = !isDirty || saving || conflict || !connected;
@@ -213,17 +313,18 @@ function render(rebuildInspector = true) {
   button('undo').disabled = !active() || !undo.length;
   button('redo').disabled = !active() || !redo.length;
   $('add-tools').hidden = !active();
-  button('display-settings').hidden = editingContents();
-  $('add-target').textContent = editingContents() ? 'ADD INSIDE THIS COMPONENT' : 'ADD TO YOUR DISPLAY';
+  button('display-settings').disabled = !connected || saving;
+  $('add-target').textContent = editingContents() ? 'Add an element inside this component.' : 'Choose what to put on your display.';
   $('placement-note').textContent = editingContents() ? 'Elements each own a box. Padding and data status stay outside their space.' : 'Components sit side by side. Each one owns its space on the display.';
   $('library-title').textContent = editingContents() ? 'Elements' : 'Components';
-  $('library-description').textContent = editingContents() ? `Inside ${name(component()!)}` : active() ? 'Select a component to make it yours.' : 'Your saved arrangement.';
+  button('add-open').textContent = editingContents() ? 'Add element' : 'Add component';
   $('canvas-title').textContent = editingContents() ? `Content · ${name(component()!)}` : viewingDraft ? 'Draft preview' : 'Last completed frame';
-  $('canvas-caption').textContent = editingContents() ? 'Element boxes reflow text at fixed font sizes. Data status stays reserved.' : viewingDraft ? 'Rust-rendered pixels · Drag to move, corner to resize.' : 'Exactly the pixels sent to the simulated display.';
+  $('canvas-caption').textContent = editingContents() ? 'Element boxes reflow text at fixed font sizes. Data status stays reserved.' : viewingDraft ? 'Draft preview · Drag to move, corner to resize.' : 'The last completed display frame.';
   $('content-mode-bar').hidden = !editingContents();
   $('revision-label').textContent = `Displayed ${saved.displayed_revision} / saved ${saved.revision}`;
   $('data-mode').textContent = saved.connector_execution ? (saved.fixture_data ? 'Monochrome · Connectors + fixtures' : 'Monochrome · Connector data') : 'Monochrome · Sample data';
   const view = editingContents() ? component()!.rect : draft.display;
+  $('dimensions-caption').textContent = `${draft.display.width} × ${draft.display.height} px · `;
   $('dimensions').textContent = `${view.width} × ${view.height} px${editingContents() ? ' · component' : ''}`;
   $('keyboard-hint').textContent = active() ? 'Arrow keys: move · Shift: 8 px · Ctrl/Cmd Z: undo · Ctrl/Cmd S: save' : 'Paperphase 0.1.0 · Experimental';
   $('grid-overlay').style.display = viewingDraft && checked('grid') ? 'block' : 'none';
@@ -233,7 +334,7 @@ function render(rebuildInspector = true) {
   renderList();
   renderTemplates();
   renderOverlays();
-  if (rebuildInspector) renderInspector();
+  if (rebuildInspector) { renderInspector(); if (currentPage === 'device') retainFocus($('device-settings-body'), () => renderSettings($('device-settings-body'))); }
   fit();
 }
 function setDisplayedImage(force = false) {
@@ -247,14 +348,15 @@ function node<K extends keyof HTMLElementTagNameMap>(tag: K, className = '', con
   element.textContent = content;
   return element;
 }
-function renderList() {
+function renderList() { retainFocus($('component-list'), buildComponentList); }
+function buildComponentList() {
   const list = $('component-list');
   list.replaceChildren();
   if (editingContents()) {
     const c = component()!; $('component-count').textContent = String(c.blocks.length);
     for (const block of c.blocks) {
       const item = node('button', `component-item ${selectedElement === block.id ? 'selected' : ''}`);
-      item.setAttribute('aria-label', `Select element ${block.id}`);
+      item.setAttribute('aria-label', `Select element ${elementName(block)}`); item.dataset.element = block.id;
       item.append(node('span', 'component-icon', block.source.kind === 'clock' ? '◷' : block.source.kind === 'icon' ? '▧' : block.source.kind === 'field' ? '≋' : 'Aa'));
       const text = node('span'); text.append(node('span', 'item-name', elementName(block)));
       if (block.rect) text.append(node('small', '', `${block.rect.width} × ${block.rect.height} · ${block.rect.x}, ${block.rect.y}`));
@@ -266,13 +368,13 @@ function renderList() {
   $('component-count').textContent = String(layout.components.length);
   for (const c of layout.components) {
     const item = node('button', `component-item ${active() && selected === c.id ? 'selected' : ''}`);
-    item.setAttribute('aria-label', `Select ${c.id}`);
+    item.setAttribute('aria-label', `Select ${name(c)}`); item.dataset.component = c.id;
     item.append(node('span', 'component-icon', c.blocks.some(b => b.source.kind === 'clock') ? '◷' : c.blocks.some(b => b.source.kind === 'field') ? '≋' : 'Aa'));
     const text = node('span');
     text.append(node('span', 'item-name', name(c)), node('small', '', `${c.rect.width} × ${c.rect.height} · ${c.rect.x}, ${c.rect.y}`));
     item.append(text);
     item.disabled = !active();
-    item.onclick = () => { selected = c.id; contentMode = false; selectedElement = null; settingsSelected = false; render(); };
+    item.onclick = () => { selected = c.id; contentMode = false; selectedElement = null; render(); };
     list.append(item);
   }
 }
@@ -280,7 +382,7 @@ function renderRuntimeWarning() {
   const configured = connectionStore.connections.filter(connection => connection.enabled && (connectorDefinitions.find(definition => definition.id === connection.connector_id)?.templates?.length ?? 0) > 0);
   const missing = configured.filter(connection => connection.fetch?.status === 'settings_only');
   const messages: string[] = [];
-  if (missing.length) messages.push('Some configured plugins are not loaded. Components can be arranged, but new data cannot be fetched. Open Connections for setup.');
+  if (missing.length) messages.push('Some configured plugins are not loaded. Components can be arranged, but new data cannot be fetched. Open Data sources for setup.');
   if (configured.length && saved.clock_fixed) messages.push('The host clock is fixed for testing. Restart without --now for live data updates.');
   $('runtime-warning').hidden = !messages.length;
   $('runtime-warning').textContent = messages.join(' ');
@@ -295,14 +397,15 @@ function renderTemplates() {
     return (definition?.templates ?? []).map(template => ({ connection, template }));
   });
   if (!available.length) return;
-  parent.append(node('div', 'section-label', 'FROM YOUR CONNECTIONS'));
+  parent.append(node('h3', '', 'From your data sources'));
+  const groups = new Map<string, HTMLElement>();
   for (const { connection, template } of available) {
     const item = node('button', 'template plugin-template');
     item.setAttribute('aria-label', `Add ${template.name} from ${connection.label}`);
     const unloaded = connection.fetch?.status === 'settings_only';
     const caption = node('span'); caption.append(node('strong', '', template.name), node('small', '', `${connection.label}${unloaded ? ' · plugin not loaded' : ''}`));
-    if (unloaded) item.title = 'The template can be edited, but live fetching needs its plugin loaded. Open Connections for setup.';
-    item.append(node('span', 'template-icon', '≋'), caption, node('span', '', '+'));
+    if (unloaded) item.title = 'The template can be edited, but live fetching needs its plugin loaded. Open Data sources for setup.';
+    item.append(icon('data'), caption, icon('plus'));
     item.onclick = () => {
       const component = clone(template.component); component.id = identifier('component'); component.label = `${connection.label} · ${template.name}`;
       for (const block of component.blocks) { const binding = sourceBinding(block.source); if (binding) binding.connection_id = connection.id; }
@@ -310,18 +413,25 @@ function renderTemplates() {
         for (let x = 16; x + component.rect.width <= draft.display.width; x += 8) {
           component.rect.x = x; component.rect.y = y;
           if (validRect(component.rect, component.id)) {
-            selected = component.id; settingsSelected = false;
-            change(layout => { layout.components.push(component); }); return;
+            selected = component.id; inspectorTab = 'content';
+            change(layout => { layout.components.push(component); }); closePicker(); return;
           }
         }
       }
       notice(`No free ${component.rect.width} × ${component.rect.height} area is available. Make room for this template first.`);
     };
-    parent.append(item);
+    let group = groups.get(connection.id);
+    if (!group) {
+      const details = node('details', 'template-group'); details.open = true;
+      details.append(node('summary', '', `${connection.label}${connection.enabled ? '' : ' (paused)'}`));
+      group = node('div'); details.append(group); parent.append(details); groups.set(connection.id, group);
+    }
+    group.append(item);
   }
 }
 
-function renderOverlays() {
+function renderOverlays() { retainFocus($('overlays'), buildOverlays); }
+function buildOverlays() {
   const overlays = $('overlays');
   overlays.replaceChildren();
   if (!active()) return;
@@ -331,7 +441,7 @@ function renderOverlays() {
     box.dataset.component = c.id;
     box.setAttribute('role', 'button');
     box.setAttribute('aria-pressed', String(selected === c.id));
-    box.setAttribute('aria-label', `Move ${c.id}`);
+    box.setAttribute('aria-label', `Move ${name(c)}`);
     box.tabIndex = 0;
     const rect = drag?.id === c.id && drag.invalid ? proposedRect(drag, lastPointerX, lastPointerY) : c.rect;
     Object.assign(box.style, { left: `${rect.x}px`, top: `${rect.y}px`, width: `${rect.width}px`, height: `${rect.height}px` });
@@ -346,7 +456,7 @@ function renderOverlays() {
     }
     box.onfocus = () => {
       if (selected !== c.id) {
-        selected = c.id; settingsSelected = false; renderInspector(); renderList(); renderOverlays();
+        selected = c.id; renderInspector(); renderList(); renderOverlays();
         for (const next of overlays.querySelectorAll<HTMLElement>('[data-component]')) if (next.dataset.component === c.id) next.focus();
       }
     };
@@ -357,7 +467,7 @@ function fit() {
   if (!draft) return;
   const viewport = $('viewport');
   const view = editingContents() ? component()!.rect : { x: 0, y: 0, width: draft.display.width, height: draft.display.height };
-  if (autoFit) zoom = Math.min(editingContents() ? 2 : 1, (viewport.clientWidth - 68) / view.width, (viewport.clientHeight - 68) / view.height);
+  if (autoFit) zoom = Math.min(editingContents() ? 2 : 1, (viewport.clientWidth - 24) / view.width, (viewport.clientHeight - 24) / view.height);
   zoom = Math.max(.1, Math.min(2, zoom));
   Object.assign($('board').style, { width: `${view.width}px`, height: `${view.height}px`, transform: `scale(${zoom})` });
   Object.assign($('frame').style, { width: `${draft.display.width}px`, height: `${draft.display.height}px`, position: 'absolute', left: `${-view.x}px`, top: `${-view.y}px` });
@@ -379,7 +489,7 @@ function renderElementOverlays(overlays: HTMLElement) {
   for (const block of c.blocks) {
     if (!block.rect) continue;
     const box = node('div', `element-box ${selectedElement === block.id ? 'selected' : ''} ${drag?.blockId === block.id && drag.invalid ? 'invalid' : ''}`);
-    box.dataset.element = block.id; box.tabIndex = 0; box.setAttribute('role', 'button'); box.setAttribute('aria-label', `Move element ${block.id}`); box.setAttribute('aria-pressed', String(selectedElement === block.id));
+    box.dataset.element = block.id; box.tabIndex = 0; box.setAttribute('role', 'button'); box.setAttribute('aria-label', `Move element ${elementName(block)}`); box.setAttribute('aria-pressed', String(selectedElement === block.id));
     const rect = drag?.blockId === block.id && drag.invalid ? proposedRect(drag, lastPointerX, lastPointerY) : block.rect;
     Object.assign(box.style, { left: `${c.padding + rect.x}px`, top: `${c.padding + rect.y}px`, width: `${rect.width}px`, height: `${rect.height}px` });
     if (selectedElement === block.id) {
@@ -396,6 +506,13 @@ function renderElementOverlays(overlays: HTMLElement) {
 }
 
 function label(title: string, input: HTMLElement, parent: HTMLElement) {
+  // During blur-triggered change events the browser may already report BODY as
+  // active. Keep the initiating control until its synchronous redraw finishes.
+  const onChange = input.onchange;
+  if (onChange) input.onchange = event => {
+    const previous = changingControl; changingControl = input;
+    try { onChange.call(input, event); } finally { changingControl = previous; }
+  };
   input.setAttribute('aria-label', title);
   const element = node('label');
   element.append(node('span', '', title), input);
@@ -435,64 +552,81 @@ function action(text: string, title: string, parent: HTMLElement, callback: () =
 function section(title: string, parent: HTMLElement) {
   const result = node('section', 'property-section'); result.append(node('h3', '', title)); parent.append(result); return result;
 }
-function renderInspector() {
+function renderInspector() { retainFocus($('inspector-body'), buildInspector); }
+function buildInspector() {
   const inspector = $('inspector-body');
   const inspected = editingContents() ? `${selected}/${selectedElement}` : selected;
   if (lastInspectedId !== inspected) {
-    inspector.parentElement!.scrollTop = 0;
+    inspector.parentElement!.scrollTop = 0; inspectorTab = 'content';
     lastInspectedId = inspected;
   }
   inspector.replaceChildren();
-  if (active() && settingsSelected) { renderSettings(inspector); return; }
   const c = component();
   if (!active() || !c) {
     const empty = node('div', 'empty-properties');
-    empty.append(node('span', '', '↖'), node('h3', '', active() ? 'Start with a component.' : 'Your display, your way.'), node('p', '', active() ? 'Select one on the canvas, or add text and data from the library.' : 'Choose Edit layout to arrange components and customise their content.'));
+    empty.append(node('h3', '', active() ? 'Start with a component.' : editing ? 'Viewing your display.' : 'Your display, your way.'), node('p', '', active() ? 'Select one on the canvas or in the strip below it. Choose Add component for text, time and connected data.' : editing ? 'Switch to Draft to continue editing. Your changes are kept.' : 'Choose Edit layout to arrange components and customise their content.'));
     inspector.append(empty); return;
   }
   const id = c.id;
   const updateComponent = (fn: (c: Component) => void, key = '', rebuild = true) => change(l => fn(l.components.find(c => c.id === id)!), key, rebuild);
   if (editingContents() && !element()) {
-    const empty = node('div', 'empty-properties'); empty.append(node('span', '', '↖'), node('h3', '', 'Choose an element.'), node('p', '', 'Select text, a data field, or a clock on the canvas. Add another element from the left panel.')); inspector.append(empty); return;
+    const empty = node('div', 'empty-properties'); empty.append(node('h3', '', 'Choose an element.'), node('p', '', 'Select text, a data field, or a clock on the canvas. Add another element from the left panel.')); inspector.append(empty); return;
   }
+  inspector.append(node('div', 'inspector-heading', ''));
+  inspector.firstElementChild!.append(node('h2', '', editingContents() ? elementName(element()!) : name(c)));
+  const tabs = node('div', 'inspector-tabs'); tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', 'Component properties'); inspector.append(tabs);
+  const panes = new Map<string, HTMLElement>();
+  for (const [value, title] of [['content', 'Content'], ['position', 'Position'], ['style', 'Style']]) {
+    const tab = node('button', '', title); tab.type = 'button'; tab.id = `inspector-tab-${value}`;
+    tab.setAttribute('role', 'tab'); tab.setAttribute('aria-selected', String(inspectorTab === value)); tab.setAttribute('aria-controls', `inspector-pane-${value}`); tab.tabIndex = inspectorTab === value ? 0 : -1;
+    tab.onclick = () => { inspectorTab = value!; renderInspector(); button(`inspector-tab-${value}`).focus(); };
+    tab.onkeydown = event => { if (['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) { event.preventDefault(); const order = ['content','position','style']; inspectorTab = event.key === 'Home' ? 'content' : event.key === 'End' ? 'style' : order[(order.indexOf(value!) + (event.key === 'ArrowRight' ? 1 : 2)) % 3]!; renderInspector(); button(`inspector-tab-${inspectorTab}`).focus(); } };
+    tabs.append(tab);
+    const pane = node('div'); pane.id = `inspector-pane-${value}`; pane.setAttribute('role', 'tabpanel'); pane.setAttribute('aria-labelledby', tab.id); pane.hidden = inspectorTab !== value; panes.set(value!, pane); inspector.append(pane);
+  }
+  const positionPane = panes.get('position')!; const stylePane = panes.get('style')!;
   if (!editingContents()) {
-    const placement = section('PLACEMENT · NATIVE PIXELS', inspector);
-    textField('Component name', c.label ?? '', placement, value => updateComponent(c => { c.label = value.trim() ? value : undefined; }, `${id}.label`, false), false, 96);
+    const placement = section('Position & size', positionPane);
     const geometry = node('div', 'field-grid'); placement.append(geometry);
     for (const [key, title, min, max] of [['x', 'X', 0, draft.display.width - c.rect.width], ['y', 'Y', 0, draft.display.height - c.rect.height], ['width', 'Width', 32, draft.display.width], ['height', 'Height', 32, draft.display.height]] as const) {
       numeric(title, c.rect[key], min, max, geometry, n => updateComponent(c => { c.rect[key] = n; }));
     }
-    const spacing = node('div', 'field-grid'); placement.append(spacing);
+    const appearance = section('Spacing & border', stylePane);
+    const spacing = node('div', 'field-grid'); appearance.append(spacing);
     numeric('Padding', c.padding, 0, 64, spacing, n => updateComponent(c => { c.padding = n; }));
     numeric('Block gap', c.gap, 0, 64, spacing, n => updateComponent(c => { c.gap = n; }));
     const borderLabel = node('label', 'check'); const border = node('input'); border.type = 'checkbox'; border.checked = c.border;
-    border.onchange = () => updateComponent(c => { c.border = border.checked; }); borderLabel.append(border, document.createTextNode('Draw component border')); placement.append(borderLabel);
-    const refresh = section('DISPLAY UPDATES', inspector);
+    border.onchange = () => updateComponent(c => { c.border = border.checked; }); borderLabel.append(border, document.createTextNode('Draw component border')); appearance.append(borderLabel);
+    const advanced = node('details', 'advanced'); advanced.append(node('summary', '', 'Advanced: display updates')); stylePane.append(advanced);
+    const refresh = section('Refresh preference', advanced);
     select('Refresh request', c.refresh_hint ?? 'automatic', [['automatic', 'Automatic'], ['partial', 'Prefer partial'], ['full', 'Request full']], refresh, value => updateComponent(c => { c.refresh_hint = value as Component['refresh_hint']; }));
     refresh.append(node('p', 'render-report', 'The host may require a full refresh to respect display limits.'));
-    const layout = section('INTERNAL LAYOUT', inspector);
+    const layout = section('Element layout', positionPane);
     select('Content layout', c.content_layout ?? 'flow', [['flow', 'Vertical flow'], ['positioned', 'Positioned elements']], layout, value => { if (value === 'flow') useFlow(); else void enterContents(); });
-    action('Edit contents ↗', 'Edit contents', layout, () => { void enterContents(); }, converting).className = 'wide-button';
+    layout.append(node('p', 'render-report', 'Free positioning converts the current flow into individual element boxes. You can undo this change.'));
+    action(c.content_layout === 'positioned' ? 'Edit individual elements' : 'Position elements freely', c.content_layout === 'positioned' ? 'Edit individual elements' : 'Position elements freely', layout, () => { void enterContents(); }, converting).className = 'wide-button';
   }
-  const content = section(editingContents() ? 'SELECTED ELEMENT' : c.content_layout === 'positioned' ? 'POSITIONED CONTENT' : 'CONTENT · FLOWS FROM TOP TO BOTTOM', inspector);
+  const content = section(editingContents() ? 'Selected element' : 'Component content', panes.get('content')!);
+  if (!editingContents()) { const identity = section('Component name', stylePane); textField('Component name', c.label ?? '', identity, value => updateComponent(c => { c.label = value.trim() ? value : undefined; }, `${id}.label`, false), false, 96); }
   c.blocks.forEach((block, index) => {
     if (editingContents() && block.id !== selectedElement) return;
     const updateBlock = (fn: (b: Block) => void, key = '', rebuild = true) => updateComponent(c => fn(c.blocks.find(b => b.id === block.id)!), key, rebuild);
     const card = node('div', 'block-card'); card.dataset.block = block.id; content.append(card);
-    const heading = node('div', 'block-heading'); heading.append(node('strong', '', `${editingContents() ? 'Element' : 'Block'} ${index + 1}`)); card.append(heading);
+    const heading = node('div', 'block-heading'); heading.append(node('strong', '', `${block.source.kind === 'literal' ? 'Text' : block.source.kind === 'field' ? 'Data value' : block.source.kind === 'clock' ? 'Time & date' : 'Icon'} ${index + 1}`)); card.append(heading);
     const move = (direction: number) => updateComponent(c => { const i = c.blocks.findIndex(b => b.id === block.id); [c.blocks[i], c.blocks[i + direction]] = [c.blocks[i + direction]!, c.blocks[i]!]; });
     if (c.content_layout !== 'positioned') {
-      action('↑', 'Move block up', heading, () => move(-1), index === 0);
-      action('↓', 'Move block down', heading, () => move(1), index === c.blocks.length - 1);
+      action('', 'Move block up', heading, () => move(-1), index === 0).append(icon('up'));
+      action('', 'Move block down', heading, () => move(1), index === c.blocks.length - 1).append(icon('down'));
     }
-    action('×', editingContents() ? 'Remove element' : 'Remove block', heading, () => updateComponent(c => { c.blocks = c.blocks.filter(b => b.id !== block.id); }), c.blocks.length === 1);
+    action('', editingContents() ? 'Remove element' : 'Remove block', heading, () => updateComponent(c => { c.blocks = c.blocks.filter(b => b.id !== block.id); }), c.blocks.length === 1).append(icon('close'));
     if (editingContents() && block.rect) {
-      const geometry = node('div', 'field-grid'); card.append(geometry); const bounds = contentBounds(c);
+      const geometry = node('div', 'field-grid'); positionPane.append(geometry); const bounds = contentBounds(c);
       for (const [key, title, min, max] of [['x', 'Element X', 0, bounds.width - block.rect.width], ['y', 'Element Y', 0, bounds.height - block.rect.height], ['width', 'Element width', 8, bounds.width], ['height', 'Element height', 8, bounds.height]] as const) {
         numeric(title, block.rect[key], min, max, geometry, value => updateBlock(b => { b.rect![key] = value; }));
       }
     }
-    select('Content source', block.source.kind, [['literal', 'Text'], ['field', 'Dataset field'], ['clock', 'Time & date'], ['icon', 'Icon']], card, kind => updateBlock(b => {
+    const sourceOptions = node('details', 'content-type'); sourceOptions.append(node('summary', '', 'Change content type')); card.append(sourceOptions);
+    select('Content source', block.source.kind, [['literal', 'Text'], ['field', 'Dataset field'], ['clock', 'Time & date'], ['icon', 'Icon']], sourceOptions, kind => updateBlock(b => {
       if (kind === 'literal') b.source = { kind: 'literal', text: 'Your text' };
       else if (kind === 'clock') b.source = { kind: 'clock', clock: newClock('time') };
       else if (kind === 'icon') b.source = { kind: 'icon', pack_id: iconPacks[0]?.id ?? 'missing', icon: { kind: 'literal', icon_id: iconPacks[0]?.icons[0] ?? 'unknown' }, size: 48 };
@@ -545,17 +679,19 @@ function renderInspector() {
       textField('Prefix', binding.prefix ?? '', card, value => updateBinding(b => { b.prefix = value; }, `${id}.${block.id}.prefix`, false));
       textField('Suffix', binding.suffix ?? '', card, value => updateBinding(b => { b.suffix = value; }, `${id}.${block.id}.suffix`, false));
     }
-    const typography = node('div', 'field-grid'); card.append(typography);
+    card.append(sourceOptions);
+    const styles = section(elementName(block), stylePane); styles.dataset.block = block.id;
+    const typography = node('div', 'field-grid'); styles.append(typography);
     if (block.source.kind !== 'icon') numeric('Font size (px)', block.font_size, 8, 256, typography, value => updateBlock(b => { b.font_size = value; }));
     select('Alignment', block.align ?? 'left', [['left', 'Left'], ['center', 'Centre'], ['right', 'Right']], typography, value => updateBlock(b => { b.align = value; }));
-    if (block.source.kind !== 'icon') select('Overflow', block.overflow ?? 'wrap', [['wrap', 'Wrap'], ['clip', 'Clip'], ['ellipsis', 'Ellipsis']], card, value => updateBlock(b => { b.overflow = value; }));
+    if (block.source.kind !== 'icon') select('Overflow', block.overflow ?? 'wrap', [['wrap', 'Wrap'], ['clip', 'Clip'], ['ellipsis', 'Ellipsis']], styles, value => updateBlock(b => { b.overflow = value; }));
   });
   action(editingContents() ? '+ Add text element' : '+ Add text block', editingContents() ? 'Add text element' : 'Add text block', content, () => {
     if (c.content_layout === 'positioned') addElement('text'); else updateComponent(c => { c.blocks.push(newBlock()); });
   }, c.blocks.length >= 32).className = 'wide-button';
   const report = node('p', 'render-report'); report.id = 'render-report'; content.append(report); renderReport();
   if (!editingContents()) {
-    const remove = section('COMPONENT', inspector);
+    const remove = section('Component actions', inspector);
     action('Remove component', 'Remove component', remove, () => { change(l => { l.components = l.components.filter(c => c.id !== id); }); selected = null; render(); }).className = 'danger wide-button';
   }
 }
@@ -566,13 +702,15 @@ function identifier(prefix: string) { return `${prefix}-${Array.from(crypto.getR
 function newBlock(): Block { return { id: identifier('block'), source: { kind: 'literal', text: 'Your text' }, font_size: 20, align: 'left', overflow: 'wrap' }; }
 function newClock(content: ClockSpec['content']): ClockSpec { return { timezone: 'Europe/Dublin', content, hour_cycle: 'twenty_four', date_format: 'short' }; }
 function renderSettings(parent: HTMLElement) {
-  const panel = section('DISPLAY SETTINGS', parent);
+  parent.replaceChildren();
+  const panel = section('Refresh & quiet hours', parent);
   const toggle = node('label', 'check');
   const input = node('input'); input.type = 'checkbox'; input.checked = !!draftSettings.quiet_hours;
   input.onchange = () => change(() => { draftSettings.quiet_hours = input.checked ? { timezone: 'Europe/Dublin', start: '22:00', end: '07:00' } : null; });
   toggle.append(input, document.createTextNode('Enable quiet hours')); panel.append(toggle);
   panel.append(node('p', 'render-report', 'During quiet hours the displayed frame stays still. The clock continues; the latest saved layout is rendered when quiet hours end.'));
-  const policy = section('REFRESH POLICY', parent);
+  const advanced = node('details', 'advanced'); advanced.append(node('summary', '', 'Advanced refresh policy')); panel.append(advanced);
+  const policy = section('Refresh limits', advanced);
   policy.append(node('p', 'render-report', 'Software simulator only. These example limits are not validated for a physical panel. Profile limits always apply.'));
   const settings = draftSettings.policy;
   const profile = saved.refresh.profile;
@@ -589,6 +727,7 @@ function renderSettings(parent: HTMLElement) {
       label(title, time, panel);
     }
   }
+  panel.append(advanced);
   panel.append(node('p', 'render-report', 'Use Save to apply these settings, or Discard to restore them. Refresh display also respects quiet hours.'));
 }
 function addComponent(kind: 'text' | 'data' | 'clock') {
@@ -606,7 +745,7 @@ function addComponent(kind: 'text' | 'data' | 'clock') {
   for (let y = 16; y + c.rect.height <= draft.display.height; y += 8) {
     for (let x = 16; x + c.rect.width <= draft.display.width; x += 8) {
       c.rect.x = x; c.rect.y = y;
-      if (validRect(c.rect, c.id)) { selected = c.id; settingsSelected = false; change(l => { l.components.push(c); }); return; }
+      if (validRect(c.rect, c.id)) { selected = c.id; change(l => { l.components.push(c); }); inspectorTab = 'content'; closePicker(); renderInspector(); return; }
     }
   }
   notice('No free 256 × 128 area is available. Resize or remove a component to make room.');
@@ -624,7 +763,7 @@ function addElement(kind: 'text' | 'data' | 'clock') {
   block.rect = rect;
   if (!validElements(candidate)) { notice('Leave enough content space for every element and the data status strip.', true); return; }
   contentMode = true; selectedElement = block.id; autoFit = true;
-  change(layout => { layout.components.find(c => c.id === current.id)!.blocks.push(block); });
+  change(layout => { layout.components.find(c => c.id === current.id)!.blocks.push(block); }); closePicker();
 }
 
 let lastPointerX = 0;
@@ -647,7 +786,7 @@ $('board').addEventListener('pointerdown', event => {
   event.preventDefault();
   if (inside) selectedElement = box.dataset.element!;
   else selected = box.dataset.component!;
-  settingsSelected = false;
+
   const c = component()!;
   const rect = inside ? element()!.rect! : c.rect;
   drag = { id: c.id, blockId: inside ? selectedElement! : undefined, startX: event.clientX, startY: event.clientY, original: { ...rect }, last: { ...rect }, baseline: capture(), resize: !!target.closest('[data-resize]'), pointerId: event.pointerId, invalid: false };
@@ -705,7 +844,7 @@ async function save() {
   try {
     const result = await api<{ revision: number; phase: string }>('/api/layout', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ base_revision: saved.revision, layout: draft, refresh_settings: draftSettings }) });
     saved = { ...saved, revision: result.revision, layout: clone(draft), refresh_settings: clone(draftSettings), phase: result.phase };
-    editing = false; viewingDraft = false; selected = null; contentMode = false; selectedElement = null; undo = []; redo = [];
+    currentPage = 'display'; showPage('display'); editing = false; viewingDraft = false; selected = null; contentMode = false; selectedElement = null; undo = []; redo = [];
     ++previewSequence; previewAbort?.abort(); window.clearTimeout(previewTimer);
     notice(result.phase === 'paused' ? 'Saved. Display updates are paused for quiet hours.' : result.phase === 'pending' ? 'Saved. A display update is pending.' : result.phase === 'refreshing' ? 'Saved. The simulator is refreshing.' : 'Saved. The display is already up to date.');
     displayNoticePending = result.phase !== 'idle';
@@ -713,15 +852,15 @@ async function save() {
   finally { saving = false; render(); }
 }
 button('edit').onclick = () => {
-  editing = true; viewingDraft = true; draft = clone(saved.layout); draftSettings = clone(saved.refresh_settings); settingsSelected = false; contentMode = false; selectedElement = null; draftImage = $<HTMLImageElement>('frame').src;
+  editing = true; viewingDraft = true; draft = clone(saved.layout); draftSettings = clone(saved.refresh_settings); contentMode = false; selectedElement = null; draftImage = $<HTMLImageElement>('frame').src;
   undo = []; redo = []; selected = null; conflict = false; notice(); render(); queuePreview();
 };
 button('discard').onclick = async () => {
   if (drag) endDrag(true);
   try {
     const current = await api<Workspace>('/api/state');
-    saved = current; draft = clone(current.layout); draftSettings = clone(current.refresh_settings); settingsSelected = false; contentMode = false; selectedElement = null; editing = false; viewingDraft = false; selected = null; conflict = false;
-    ++previewSequence; previewAbort?.abort(); window.clearTimeout(previewTimer); notice(); render(); updateStatus();
+    saved = current; draft = clone(current.layout); draftSettings = clone(current.refresh_settings); contentMode = false; selectedElement = null; editing = false; viewingDraft = false; selected = null; conflict = false;
+    ++previewSequence; previewAbort?.abort(); window.clearTimeout(previewTimer); notice(); showPage('display'); render(); updateStatus();
   } catch (error) { notice(String(error), true); }
 };
 button('save').onclick = () => { void save(); };
@@ -729,7 +868,15 @@ button('view-current').onclick = () => { if (drag) endDrag(); viewingDraft = fal
 button('view-draft').onclick = () => { viewingDraft = true; render(); };
 button('undo').onclick = () => history('undo'); button('redo').onclick = () => history('redo');
 button('add-text').onclick = () => addComponent('text'); button('add-data').onclick = () => addComponent('data'); button('add-clock').onclick = () => addComponent('clock');
-button('display-settings').onclick = () => { settingsSelected = true; selected = null; contentMode = false; selectedElement = null; render(); };
+button('display-settings').onclick = () => { if (!saved || !connected || saving) return; if (currentPage === 'sources' && (connectionBusy || connectionDirty())) { connectionNotice('Save or discard your form before leaving data sources.'); return; } if (!editing) button('edit').click(); viewingDraft = true; showPage('device'); };
+button('device-undo').onclick = () => history('undo');
+button('device-redo').onclick = () => history('redo');
+button('display-open').onclick = () => { if (saved) showPage('display'); };
+button('about-open').onclick = () => { if (saved) showPage('about'); };
+button('about-close').onclick = () => showPage('display');
+button('add-open').onclick = () => { const open = $('add-picker').hidden; $('add-picker').hidden = !open; button('add-open').setAttribute('aria-expanded', String(open)); if (open) { renderTemplates(); button('add-text').focus(); } };
+button('add-close').onclick = () => { closePicker(); button('add-open').focus(); };
+document.addEventListener('pointerdown', event => { if (!(event.target as HTMLElement).closest('#add-picker, #add-open')) closePicker(); });
 button('exit-content').onclick = leaveContents;
 button('use-flow').onclick = useFlow;
 button('refresh').onclick = async () => {
@@ -749,21 +896,22 @@ button('zoom-out').onclick = () => { autoFit = false; zoom -= .1; fit(); };
 new ResizeObserver(() => { if (!drag) fit(); }).observe($('viewport'));
 window.addEventListener('beforeunload', event => { if (dirty() || connectionDirty()) { event.preventDefault(); event.returnValue = ''; } });
 document.addEventListener('keydown', event => {
-  if ($<HTMLDialogElement>('connections-dialog').open) return;
+  if ($<HTMLDialogElement>('confirm-dialog').open || currentPage === 'sources' || currentPage === 'about') return;
+  if (event.key === 'Escape' && !$('add-picker').hidden) { event.preventDefault(); closePicker(); button('add-open').focus(); return; }
   const typing = (event.target as HTMLElement).closest('input,textarea,select,[contenteditable=true]');
   const mod = event.ctrlKey || event.metaKey;
   if (mod && event.key.toLowerCase() === 's') { event.preventDefault(); void save(); return; }
   if (!active()) return;
   if (event.key === 'Escape') {
     if (drag) endDrag(true);
-    else if (editingContents()) { if (selectedElement) { selectedElement = null; render(); } else leaveContents(); }
-    else { selected = null; settingsSelected = false; render(); }
+    else if (editingContents()) { $('viewport').focus({preventScroll:true}); if (selectedElement) { selectedElement = null; render(); } else leaveContents(); }
+    else { $('viewport').focus({preventScroll:true}); selected = null; render(); }
     return;
   }
   if (typing || drag) return;
   if (mod && event.key.toLowerCase() === 'z') { event.preventDefault(); history(event.shiftKey ? 'redo' : 'undo'); return; }
   const c = component();
-  if (!c) return;
+  if (!c || currentPage !== 'display' || !(event.target as HTMLElement).closest('#overlays, #component-list, #viewport')) return;
   if (event.key === 'Delete' || event.key === 'Backspace') {
     event.preventDefault();
     if (editingContents()) {
@@ -831,27 +979,57 @@ async function poll() {
     if (changed) render(false);
   } catch { connected = false; if (saved) { updateStatus(); render(false); } }
 }
+let pollTimer = 0;
+async function loadMetadata() {
+  const requests = await Promise.allSettled([
+    api<Dataset[]>('/api/catalog'), api<string[]>('/api/timezones'),
+    api<{ connectors: ConnectorDefinition[] }>('/api/connectors'), api<Connections>('/api/connections'), api<IconPack[]>('/api/icon-packs'),
+  ]);
+  const [datasets, timezones, definitions, connections, packs] = requests;
+  if (datasets?.status === 'fulfilled') catalog = datasets.value as Dataset[];
+  if (timezones?.status === 'fulfilled') zones = timezones.value as string[];
+  if (definitions?.status === 'fulfilled') connectorDefinitions = (definitions.value as {connectors: ConnectorDefinition[]}).connectors;
+  if (connections?.status === 'fulfilled') connectionStore = connections.value as Connections;
+  if (packs?.status === 'fulfilled') iconPacks = packs.value as IconPack[];
+  const failures = requests.filter(result => result.status === 'rejected').length;
+  $('metadata-warning').hidden = !failures;
+  if (failures) $('metadata-message').textContent = 'Some data sources or editing options could not load. Your display is available. Retry to restore the missing options.';
+  render();
+}
 async function start() {
+  button('retry-start').disabled = true;
   try {
-    const [workspace, datasets, timezones, definitions, connections, packs] = await Promise.all([api<Workspace>('/api/state'), api<Dataset[]>('/api/catalog'), api<string[]>('/api/timezones'), api<{ connectors: ConnectorDefinition[] }>('/api/connectors'), api<Connections>('/api/connections'), api<IconPack[]>('/api/icon-packs')]);
-    iconPacks = packs;
-    saved = workspace; catalog = datasets; zones = timezones; connectorDefinitions = definitions.connectors; connectionStore = connections;
-    draft = clone(saved.layout); draftSettings = clone(saved.refresh_settings); updateStatus(); render();
+    saved = await api<Workspace>('/api/state'); connected = true;
+    draft = clone(saved.layout); draftSettings = clone(saved.refresh_settings);
+    $('loading-state').hidden = true; $('display-workspace').hidden = false;
+    updateStatus(); render(); await loadMetadata();
     const linked = new URL(location.href).searchParams.get('google');
     if (linked) {
       const url = new URL(location.href); url.searchParams.delete('google'); window.history.replaceState(null, '', url);
-      let message = 'Google account linking failed or expired. Check the OAuth client and try again from Connections.';
-      if (linked !== 'connected') {
-        try {
-          const google = await api<GoogleStatus>('/api/google');
-          if (google.last_link_error) message = `Google account linking failed. ${google.last_link_error.message}`;
-        } catch { /* Retain the generic failure when diagnostics are unavailable. */ }
-      }
-      notice(linked === 'connected' ? 'Google account connected. Choose its calendars in Connections.' : message, linked !== 'connected');
+      let message = 'Google account linking failed or expired. Try linking again from Data sources → Google accounts.';
+      try { googleStatus = await api<GoogleStatus>('/api/google'); if (googleStatus.last_link_error) message = `Google account linking failed. ${googleStatus.last_link_error.message}`; } catch { /* Retain recovery guidance. */ }
+      const returnToCalendar = sessionStorage.getItem('paperphase.pending-source') === 'calendar.google';
+      sessionStorage.removeItem('paperphase.pending-source');
+      await openConnections();
+      if (linked === 'connected' && returnToCalendar) {
+        const definition = connectorDefinitions.find(definition => definition.id === 'calendar.google');
+        if (definition) beginConnection(undefined, definition);
+      } else showGoogle();
+      connectionNotice(linked === 'connected' ? 'Google account connected. Choose a calendar for your display.' : message, linked !== 'connected');
     }
-    window.setInterval(() => { void poll(); }, 1000);
-  } catch (error) { notice(`Cannot load the workspace. ${String(error)} Reload after the service is available.`, true); button('edit').disabled = true; }
+    if (!pollTimer) pollTimer = window.setInterval(() => { void poll(); }, 1000);
+  } catch (error) {
+    connected = false; $('loading-state').hidden = false; $('display-workspace').hidden = true;
+    $('loading-title').textContent = 'Cannot connect to Paperphase';
+    $('loading-message').textContent = 'Check that the service is running, then retry. Your saved display has not changed.';
+    $('device-status').textContent = 'Service unavailable';
+    button('retry-start').hidden = false; button('edit').disabled = true;
+    notice(String(error), true);
+  } finally { button('retry-start').disabled = false; }
 }
+button('retry-start').onclick = () => { notice(); void start(); };
+button('retry-metadata').onclick = async () => { button('retry-metadata').disabled = true; try { await loadMetadata(); } finally { button('retry-metadata').disabled = false; } };
+
 void start();
 
 let connectorDefinitions: ConnectorDefinition[] = [];
@@ -872,27 +1050,47 @@ function connectionButtons() {
   if (save) save.disabled = connectionBusy || connectionConflict || (!connectionIsNew && !connectionDirty());
   button('connection-new').disabled = connectionBusy || !!connectionDraft || !connectorDefinitions.length;
   button('connections-close').disabled = connectionBusy;
+  button('google-open').disabled = connectionBusy || !!connectionDraft;
   $('connection-properties').inert = connectionBusy;
   $('connections-list').inert = connectionBusy;
   const google = document.getElementById('google-accounts'); if (google) google.inert = connectionBusy || !!connectionDraft;
 }
 async function loadConnections() {
-  const [catalog, store, google] = await Promise.all([api<{ connectors: ConnectorDefinition[] }>('/api/connectors'), api<Connections>('/api/connections'), api<GoogleStatus>('/api/google')]);
-  googleStatus = google;
-  connectorDefinitions = catalog.connectors; connectionStore = store;
-  document.querySelector('.connections-scope')!.textContent = store.execution === 'compiled' ? 'Fetch now updates connection data. Refresh display applies the latest saved layout and data, subject to quiet hours.' : 'No fetch modules are loaded. Settings and templates are available, but connections cannot fetch data.';
-  $('fetch-setup').hidden = !store.connections.some(connection => connection.fetch?.status === 'settings_only' && (connectorDefinitions.find(definition => definition.id === connection.connector_id)?.templates?.length ?? 0) > 0);
+  const [definitions, store, google] = await Promise.allSettled([api<{ connectors: ConnectorDefinition[] }>('/api/connectors'), api<Connections>('/api/connections'), api<GoogleStatus>('/api/google')]);
+  if (store.status === 'rejected') throw store.reason;
+  connectionStore = store.value;
+  if (definitions.status === 'fulfilled') connectorDefinitions = definitions.value.connectors;
+  googleStatus = google.status === 'fulfilled' ? google.value : undefined;
+  document.querySelector('.connections-scope')!.textContent = connectionStore.execution === 'compiled' ? 'Fetch now checks for new data using saved settings. Display updates respect quiet hours.' : 'Plugins are not loaded. You can save settings and arrange components; fetching needs service setup.';
+  $('fetch-setup').hidden = !connectionStore.connections.some(connection => connection.fetch?.status === 'settings_only');
   connectionDraft = undefined; connectionBaseline = ''; connectionConflict = false; connectionIsNew = false;
   renderGoogleAccounts(); renderConnections(); renderTemplates(); renderRuntimeWarning();
+  if (definitions.status === 'rejected' || google.status === 'rejected') connectionNotice('Some setup options are unavailable. Return to Display and reopen Data sources to retry.', true);
+}
+function showGoogle() {
+  if (connectionDraft || connectionBusy) return;
+  choosingSource = false; googleView = true; renderGoogleAccounts(); renderConnections();
+  $('google-panel').querySelector<HTMLElement>('h2')?.focus();
+}
+function chooseCalendar(account: GoogleAccount) {
+  const definition = connectorDefinitions.find(item => item.id === 'calendar.google');
+  if (!definition) { connectionNotice('The Google Calendar plugin is unavailable. Reload its plugin configuration and try again.', true); return; }
+  beginConnection(undefined, definition);
+  if (connectionDraft) { connectionDraft.settings.account_id = account.id; connectionDraft.settings.calendar_id = 'primary'; renderConnections(); }
 }
 function renderGoogleAccounts() {
-  let parent = document.getElementById('google-accounts');
-  if (!parent) { parent = node('details', 'google-accounts'); parent.id = 'google-accounts'; document.querySelector('.connections-scope')!.after(parent); }
-  parent.replaceChildren(node('summary', '', 'Google accounts'));
-  const status = googleStatus; if (!status) return;
-  parent.append(node('p', '', 'Link Google accounts here, then add one connection for each calendar. Stay on the Pi’s network while linking.'));
+  const parent = node('section', 'google-accounts'); parent.id = 'google-accounts'; $('google-panel').replaceChildren(parent);
+  const title = node('h2', '', 'Google accounts'); title.tabIndex = -1; parent.append(title);
+  parent.append(node('p', '', 'Connect an account, then choose a calendar for your display. Google will ask you to approve read-only calendar access.'));
+  const status = googleStatus;
+  if (!status) { parent.append(node('p', 'error', 'Google setup is unavailable. Reopen Data sources to retry.')); return; }
   if (status.last_link_error) parent.append(node('p', 'error', status.last_link_error.message));
-  const config = node('form', 'google-config'); parent.append(config);
+  if (!status.configured) parent.append(node('p', 'setup-guidance', 'This Paperphase needs a Google OAuth client before accounts can be connected. Create a Web application client in Google Cloud, enable Calendar API and register the hosted callback URL below.'));
+  const setup = node('details', 'advanced'); setup.id = 'google-setup'; setup.open = !status.configured;
+  setup.append(node('summary', '', status.configured ? 'Advanced: Google app setup' : 'Set up Google app'));
+  const guide = node('a', '', 'Google setup instructions'); guide.href = 'https://github.com/Odd-Orbit-Software/Paperphase/blob/main/docs/usage/google-calendar.md'; guide.target = '_blank'; guide.rel = 'noreferrer'; setup.append(guide);
+  parent.append(setup);
+  const config = node('form', 'google-config'); setup.append(config);
   const client = node('input'); client.required = true; client.value = status.client_id ?? ''; client.maxLength = 1024;
   label('Google OAuth client ID', client, config);
   const secret = node('input'); secret.type = 'password'; secret.autocomplete = 'new-password'; secret.required = !status.client_secret_present; secret.maxLength = 1024;
@@ -909,32 +1107,39 @@ function renderGoogleAccounts() {
   };
   for (const account of status.accounts) {
     const row = node('div', 'google-account'); row.append(node('span', '', account.label + (account.requires_reauth ? ' · Reconnect required' : ` · ${account.calendars.length} calendars`)));
+    const choose = node('button', 'small', 'Choose a calendar'); choose.type = 'button'; choose.setAttribute('aria-label', `Choose a calendar from ${account.label}`); choose.onclick = () => chooseCalendar(account);
     const reconnect = node('button', 'small', 'Reconnect'); reconnect.type = 'button'; reconnect.setAttribute('aria-label', `Reconnect ${account.label}`); reconnect.onclick = () => { void linkGoogle(account.label); };
     const remove = node('button', 'small', 'Disconnect'); remove.type = 'button'; remove.setAttribute('aria-label', `Disconnect ${account.label}`);
     remove.onclick = async () => {
+      if (!await confirmAction(`Disconnect ${account.label}?`, 'This removes the saved account access from this Paperphase. Calendar connections using it will need another account.', 'Disconnect account')) return;
       connectionBusy = true; connectionButtons();
       try { googleStatus = await api<GoogleStatus>(`/api/google/accounts/${encodeURIComponent(account.id)}`, {method:'DELETE'}); renderGoogleAccounts(); connectionNotice('Account disconnected from this Pi.'); }
       catch (error) { connectionNotice(String(error), true); }
       finally { connectionBusy = false; connectionButtons(); }
     };
-    row.append(reconnect, remove); parent.append(row);
+    row.append(choose, reconnect, remove); parent.append(row);
   }
   const form = node('form', 'google-link'); const accountLabel = node('input'); accountLabel.required = true; accountLabel.maxLength = 128; accountLabel.placeholder = 'Personal or work'; label('New Google account label', accountLabel, form);
   const link = node('button', 'primary', 'Link Google account'); link.type = 'submit'; link.disabled = !status.configured || status.accounts.length >= 8; form.append(link); parent.append(form);
   form.onsubmit = event => { event.preventDefault(); void linkGoogle(accountLabel.value); };
+  if (status.configured) parent.append(setup);
+  parent.append(node('p', 'field-help', 'Finish linking in this browser while on the same network as your Paperphase. Account access tokens are stored on your Paperphase, not on the public callback service.'));
 }
 async function linkGoogle(label: string) {
   if (dirty() || connectionDraft) { connectionNotice('Save or discard your layout and connection drafts before linking Google.', true); return; }
   connectionBusy = true; connectionButtons();
   try {
     const result = await api<{url:string}>('/api/google/begin', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({label})});
+    if (pendingCalendar) sessionStorage.setItem('paperphase.pending-source', 'calendar.google');
     window.location.assign(result.url);
   } catch (error) { connectionNotice(String(error), true); connectionBusy = false; connectionButtons(); }
 }
-function beginConnection(connection?: Connection) {
+function beginConnection(connection?: Connection, chosenDefinition?: ConnectorDefinition) {
   if (connectionDraft || connectionBusy) return;
-  const definition = connectorDefinitions[0];
-  if (!connection && !definition) return;
+  const definition = chosenDefinition;
+  if (!connection && !definition) { choosingSource = true; googleView = false; renderConnections(); return; }
+  if (!connection && definition?.id === 'calendar.google' && !googleStatus?.accounts.length) { pendingCalendar = true; showGoogle(); return; }
+  choosingSource = false; googleView = false; pendingCalendar = false;
   connectionIsNew = !connection;
   connectionDraft = connection ? clone(connection) : newConnection(definition!);
   // Treat setting IDs as literal keys, including names inherited by plain objects.
@@ -942,17 +1147,35 @@ function beginConnection(connection?: Connection) {
   connectionBaseline = connection ? JSON.stringify(connectionDraft) : '';
   connectionConflict = false; connectionNotice(); renderConnections();
 }
+function renderServicePicker(parent: HTMLElement) {
+  const picker = node('div', 'service-picker'); parent.append(picker);
+  picker.append(node('h2', '', 'What would you like to connect?'), node('p', '', 'Choose a service, then give the source a name and adjust its settings.'));
+  const list = node('div', 'service-list'); picker.append(list);
+  const advanced = node('details', 'advanced'); advanced.append(node('summary', '', 'Advanced: demo & test connectors'));
+  const advancedList = node('div', 'service-list'); advanced.append(advancedList);
+  for (const definition of connectorDefinitions) {
+    const choice = node('button', 'service-choice'); choice.type = 'button';
+    const text = node('span'); text.append(node('strong', '', definition.name), node('small', '', definition.description)); choice.append(text);
+    choice.onclick = () => beginConnection(undefined, definition);
+    (/^(demo|example)\./.test(definition.id) ? advancedList : list).append(choice);
+  }
+  if (advancedList.childElementCount) picker.append(advanced);
+  if (!list.childElementCount) picker.append(node('p', '', 'No live service plugins are available. Check the service plugin configuration.'));
+}
 function newConnection(definition: ConnectorDefinition): Connection {
   const settings: Connection['settings'] = Object.create(null);
   for (const field of definition.settings) if ('default' in field.input && field.input.default != null) settings[field.id] = clone(field.input.default);
   return { id: identifier('connection'), connector_id: definition.id, label: definition.name, enabled: true, poll_interval_secs: definition.default_poll_secs, settings, secret_present: [] };
 }
-function renderConnections() {
+function renderConnections() { retainFocus($('connections-dialog'), buildConnections); }
+function buildConnections() {
+  $('google-panel').hidden = !googleView; $('connection-properties').hidden = googleView;
+  button('google-open').disabled = !!connectionDraft || connectionBusy;
   const list = $('connections-list'); list.replaceChildren();
   for (const connection of connectionStore.connections) {
     const item = node('button', `connection-item ${connectionDraft?.id === connection.id ? 'selected' : ''}`);
-    item.setAttribute('aria-label', `Configure ${connection.label}`);
-    item.append(node('strong', '', connection.label), node('small', '', `${connection.fetch?.status === 'settings_only' ? 'Plugin not loaded' : connection.fetch?.status.replaceAll('_', ' ') ?? (connection.enabled ? 'Configured' : 'Disabled')} · ${connection.poll_interval_secs} s`));
+    item.setAttribute('aria-label', `Configure ${connection.label}`); item.dataset.focus = connection.id;
+    item.append(node('strong', '', connection.label), node('small', '', `${!connection.enabled ? 'Paused' : connection.fetch?.status === 'settings_only' ? 'Plugin not loaded' : connection.fetch?.status === 'fetching' ? 'Fetching' : 'Enabled'} · ${connection.poll_interval_secs >= 60 && connection.poll_interval_secs % 60 === 0 ? `${connection.poll_interval_secs / 60} min` : `${connection.poll_interval_secs} s`}`));
     item.disabled = !!connectionDraft;
     item.onclick = () => beginConnection(connection);
     list.append(item);
@@ -967,8 +1190,10 @@ function renderConnections() {
   const parent = $('connection-properties'); parent.replaceChildren();
   const current = connectionDraft;
   if (!current) {
+    if (choosingSource) { renderServicePicker(parent); connectionButtons(); return; }
     const empty = node('div', 'empty-properties');
-    empty.append(node('span', '', '≋'), node('h3', '', connectionStore.connections.length ? 'Choose a connection.' : 'Start with a data source.'), node('p', '', 'Choose a connection to adjust its settings, polling and saved credentials.'));
+    empty.append(node('h3', '', connectionStore.connections.length ? 'Choose a data source.' : 'Start with a data source.'), node('p', '', connectionStore.connections.length ? 'Select a source to adjust what it shows and how often it updates, or add another source.' : 'Add weather, a calendar, headlines or another source to bring useful information to your display.'));
+    action('Add data source', 'Add your first data source', empty, () => beginConnection());
     parent.append(empty); connectionButtons(); return;
   }
   const definition = connectorDefinitions.find(d => d.id === current.connector_id)!;
@@ -976,7 +1201,9 @@ function renderConnections() {
   const fields = node('div', 'connection-fields'); form.append(fields);
   fields.append(node('h3', '', connectionIsNew ? 'New connection' : current.label), node('p', 'connection-description', definition.description));
   if (connectionIsNew) select('Connector', definition.id, connectorDefinitions.map(d => [d.id, d.name]), fields, value => {
-    const next = newConnection(connectorDefinitions.find(d => d.id === value)!); next.id = current.id;
+    const nextDefinition = connectorDefinitions.find(d => d.id === value)!;
+    if (value === 'calendar.google' && !googleStatus?.accounts.length) { connectionDraft = undefined; connectionBaseline = ''; pendingCalendar = true; showGoogle(); return; }
+    const next = newConnection(nextDefinition); next.id = current.id;
     connectionDraft = next; renderConnections();
   });
   const labelInput = node('input'); labelInput.value = current.label; labelInput.required = true; labelInput.maxLength = 96;
@@ -986,8 +1213,15 @@ function renderConnections() {
   enabled.onchange = () => { current.enabled = enabled.checked; connectionButtons(); }; enabledLabel.append(enabled, document.createTextNode('Enabled')); fields.append(enabledLabel);
   const interval = node('input'); interval.type = 'number'; interval.min = String(definition.min_poll_secs); interval.max = '86400'; interval.step = '1'; interval.required = true; interval.value = String(current.poll_interval_secs);
   interval.oninput = () => { current.poll_interval_secs = interval.valueAsNumber; connectionButtons(); };
-  label('Polling interval (seconds)', interval, fields);
+  label('Update interval (seconds)', interval, fields);
+  const sourceSettings = node('div', 'source-settings'); fields.append(sourceSettings);
+  const forecast = node('details', 'advanced forecast-options'); forecast.append(node('summary', '', 'Forecast options'));
+  const forecastFields = node('div', 'source-settings'); forecast.append(forecastFields);
   for (const field of definition.settings) {
+    const group = node('div', 'connection-setting');
+    if (field.input.type === 'table' || field.input.type === 'secret' || field.input.type === 'url' || field.input.type === 'text' && field.input.multiline) group.classList.add('full-width');
+    const forecastOption = definition.id === 'weather.open-meteo' && ['forecast_hours', 'forecast_days', 'rain_threshold'].includes(field.id);
+    (forecastOption ? forecastFields : sourceSettings).append(group);
     const inputDefinition = field.input;
     const value = current.settings[field.id];
     let input: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
@@ -997,16 +1231,16 @@ function renderConnections() {
       const options: [string,string][] = field.id === 'account_id' ? accounts.map(a => [a.id, a.label + (a.requires_reauth ? ' (reconnect)' : '')]) : (account?.calendars ?? []).map(c => [c.id, c.label + (c.primary ? ' (primary)' : '')]);
       if (field.id === 'calendar_id' && account) options.unshift(['primary', 'Primary calendar']);
       const chosen = typeof value === 'string' ? value : '';
-      const control = select(field.label, chosen, [['', 'Choose…'], ...options], fields, selected => {
+      const control = select(field.label, chosen, [['', 'Choose…'], ...options], group, selected => {
         current.settings[field.id] = selected;
         if (field.id === 'account_id') { current.settings.calendar_id = 'primary'; renderConnections(); }
         connectionButtons();
       }); (control as HTMLSelectElement).required = true;
-      if (field.id === 'account_id' && !accounts.length) fields.append(node('small', 'field-help', 'Save or discard this form, then open Google accounts above to link an account.'));
+      if (field.id === 'account_id' && !accounts.length) group.append(node('small', 'field-help', 'No accounts are available. Discard this form and choose Google accounts to reconnect.'));
       continue;
     }
     if (inputDefinition.type === 'table') {
-      const section=node('section','setting-table');section.setAttribute('aria-label',field.label);fields.append(section);
+      const section=node('section','setting-table');section.setAttribute('aria-label',field.label);group.append(section);
       section.append(node('h4','',field.label));
       if(field.help)section.append(node('p','setting-help',field.help));
       const rows=(Array.isArray(value)?value:clone(inputDefinition.default)) as Record<string,string>[];
@@ -1072,19 +1306,20 @@ function renderConnections() {
           if (clear.checked) current.settings[field.id] = null; else delete current.settings[field.id];
           input.value = ''; input.required = field.required && (!present || clear.checked); connectionButtons();
         };
-        const group = node('div', 'secret-setting'); label(field.label, input, group);
-        const clearLabel = node('label', 'check'); clearLabel.append(clear, document.createTextNode(`Clear ${field.label}`)); group.append(clearLabel);
-        group.append(node('small', 'field-help', `${present ? 'A value is saved. ' : ''}${field.help}`)); fields.append(group);
+        const secretGroup = node('div', 'secret-setting'); label(field.label, input, secretGroup);
+        const clearLabel = node('label', 'check'); clearLabel.append(clear, document.createTextNode(`Clear ${field.label}`)); secretGroup.append(clearLabel);
+        secretGroup.append(node('small', 'field-help', `${present ? 'A value is saved. ' : ''}${field.help}`)); group.append(secretGroup);
         continue;
       } else {
         input.type = inputDefinition.type === 'url' ? 'url' : 'text'; input.maxLength = inputDefinition.type === 'url' ? 2048 : inputDefinition.max_bytes; input.required = field.required; input.value = typeof value === 'string' ? value : '';
         input.oninput = () => { current.settings[field.id] = input.value; connectionButtons(); };
       }
     }
-    label(field.label, input, fields);
+    label(field.label, input, group);
     if (inputDefinition.type === 'boolean') input.parentElement!.classList.add('boolean-setting');
-    if (field.help) fields.append(node('small', 'field-help', field.help));
+    if (field.help) group.append(node('small', 'field-help', field.help));
   }
+  if (forecastFields.childElementCount) fields.append(forecast);
   const actions = node('div', 'connection-actions'); form.append(actions);
   const discard = node('button', '', 'Discard form'); discard.type = 'button'; discard.onclick = async () => {
     connectionDraft = undefined; connectionBaseline = ''; connectionConflict = false;
@@ -1095,7 +1330,7 @@ function renderConnections() {
   const save = node('button', 'primary', 'Save connection'); save.type = 'submit'; save.id = 'connection-save'; actions.append(discard, save);
   if (!connectionIsNew) {
     const remove = node('button', 'danger', 'Delete connection'); remove.type = 'button';
-    remove.onclick = () => { void writeConnection(true); }; actions.prepend(remove);
+    remove.onclick = async () => { if (await confirmAction(`Delete ${current.label}?`, 'This removes the saved connection and its credentials. Components using this source will no longer receive its data.', 'Delete connection')) void writeConnection(true); }; actions.prepend(remove);
   }
   form.onsubmit = event => { event.preventDefault(); if (form.reportValidity()) void writeConnection(false); };
   connectionButtons();
@@ -1112,6 +1347,7 @@ function updateFetchControl(container: HTMLElement, connection: Connection) {
     fetch.title = 'Load the plugin and restart the service. See Enable fetching below.';
     return;
   }
+  if (!connection.enabled) { details.textContent = 'Paused. Enable this source to fetch new data.'; return; }
   details.textContent = status.status === 'fetching' ? 'Fetching…' : status.last_error ?? (status.last_success_at ? `Last fetched ${new Date(status.last_success_at * 1000).toLocaleTimeString()}` : 'Waiting for the first fetch.');
   if (!status.can_fetch && status.fetch_after > 0) fetch.title = `Next eligible: ${new Date(status.fetch_after * 1000).toLocaleString()}`;
 }
@@ -1120,12 +1356,13 @@ async function refreshConnectionStatus() {
   try {
     const current = await api<Connections>('/api/connections');
     if (!connectionDialog().open || connectionBusy) return;
-    if (connectionDraft) {
+    if (connectionDraft || current.revision === connectionStore.revision) {
       // Configuration and password inputs stay untouched while status changes.
       for (const container of $('connections-list').querySelectorAll<HTMLElement>('[data-fetch-id]')) {
         const connection = current.connections.find(c => c.id === container.dataset.fetchId);
         if (connection) updateFetchControl(container, connection);
       }
+      if (!connectionDraft) connectionStore = current;
     } else { connectionStore = current; renderConnections(); }
   } catch { /* Keep the current form during a transient service outage. */ }
 }
@@ -1151,20 +1388,26 @@ async function writeConnection(remove: boolean) {
   } catch (error) { if (error instanceof ApiFailure && error.status === 409) connectionConflict = true; connectionNotice(String(error), true); }
   finally { connectionBusy = false; connectionButtons(); }
 }
-button('connections-open').onclick = async () => {
-  connectionDialog().showModal(); connectionNotice('Loading connections…'); connectionBusy = true; connectionButtons();
-  try { await loadConnections(); connectionNotice(); } catch (error) { connectionNotice(String(error), true); }
+async function openConnections() {
+  if (!saved || saving) return;
+  if (!showPage('sources')) return;
+  if (connectionDraft) return;
+  connectionNotice('Loading data sources…'); connectionBusy = true; connectionButtons();
+  try { await loadConnections(); connectionNotice(); } catch (error) { connectionNotice(`Could not load data sources. ${String(error)} Return to Display and try again.`, true); }
   finally { connectionBusy = false; connectionButtons(); }
-};
+}
+button('connections-open').onclick = () => { void openConnections(); };
+button('google-open').onclick = showGoogle;
 button('connection-new').onclick = () => beginConnection();
 function closeConnections(event?: Event) {
   if (connectionBusy || connectionDirty()) { event?.preventDefault(); connectionNotice('Save or discard your form before closing connections.'); return; }
-  connectionDraft = undefined; connectionBaseline = ''; $('connection-properties').replaceChildren(); connectionDialog().close();
+  connectionDraft = undefined; connectionBaseline = ''; $('connection-properties').replaceChildren(); googleView = false; choosingSource = false; showPage('display');
   if (active()) renderInspector();
 }
 button('connections-close').onclick = () => closeConnections();
 connectionDialog().addEventListener('cancel', event => closeConnections(event));
 connectionDialog().addEventListener('keydown', event => {
+  if (event.key === 'Escape' && !$<HTMLDialogElement>('confirm-dialog').open) { event.preventDefault(); closeConnections(event); return; }
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
     event.preventDefault();
     if (!connectionBusy && !connectionConflict && (connectionIsNew || connectionDirty())) $<HTMLFormElement>('connection-form')?.requestSubmit();

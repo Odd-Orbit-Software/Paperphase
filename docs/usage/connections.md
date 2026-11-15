@@ -1,17 +1,17 @@
 # Configure connections
 
-Start the [desktop editor](desktop-editor.md), then choose **Connections** in the
-top bar. The bundled **Demo weather settings** descriptor exercises the form
+Start the [desktop editor](desktop-editor.md), then choose **Data sources** in the
+top bar. Choose **Add data source** to pick a real service. Demo/testing entries are under **Advanced: demo & test connectors**. The bundled **Demo weather settings** descriptor exercises the form
 builder. That descriptor saves settings only. The **Temperature connector** can
 [fetch through a registered compiled module](compiled-connectors.md).
 
-1. Select **New connection**, choose a descriptor, and name the record.
-2. Set enabled state and polling interval. Descriptor minimums are enforced;
+1. Select **Add data source**, choose a descriptor, and name the record.
+2. Set enabled state and update interval in seconds. Descriptor minimums are enforced;
    registered modules use them for polling and Fetch now eligibility.
 3. Edit generated text, integer, boolean, or choice controls. The demo's optional
    Test secret field exercises private-value handling and makes no API calls.
 4. Choose **Save connection**. Configure a saved record again to edit it, or use
-   **Delete connection** to remove it and its saved private values.
+   **Delete connection** to review a named confirmation before removing it and its saved private values.
 
 Secret inputs are always blank when opening saved records. **Saved · leave blank
 to keep** means the server holds a value. Leave the field unchanged to retain it,
@@ -22,8 +22,8 @@ the editor/API.
 **Discard form** reloads current records and removes local edits. Close/Escape
 preserves a dirty form until Save or Discard. A competing save retains your form
 and disables Save until you discard it. Connection changes do not affect an
-unsaved layout draft underneath the dialog. Ctrl/Cmd+S saves the active connection
-form; canvas shortcuts resume after closing it.
+unsaved layout draft retained on the Display page. Ctrl/Cmd+S saves the active connection
+form; canvas shortcuts resume after returning to Display.
 
 ## Custom definitions
 
@@ -67,3 +67,9 @@ rebuilding the frontend/executable for browser checks. Setting
 `CAPTURE_SCREENSHOTS=1` also updates `docs/design/images/connection-settings.png`.
 All current connection tests use demonstration values; real account/provider
 integration and Pi validation remain pending.
+
+Google account setup has a separate view under **Google accounts**. Selecting
+Google Calendar without a linked account opens the prerequisite setup before
+creating a connection draft. After successful linking in the same browser, that
+calendar-creation intent resumes; save or discard any layout draft before leaving
+for Google. Disconnecting an account requires a named confirmation.
