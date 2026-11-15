@@ -56,6 +56,12 @@ pub enum SettingInput {
         #[serde(default)]
         default: Option<String>,
     },
+    Table {
+        max_rows: u8,
+        columns: Vec<SettingColumn>,
+        #[serde(default)]
+        default: Vec<BTreeMap<String, String>>,
+    },
     Url {
         #[serde(default)]
         default: Option<String>,
@@ -88,6 +94,20 @@ pub enum SettingInput {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
+pub struct SettingColumn {
+    pub id: String,
+    pub label: String,
+    pub max_bytes: u16,
+    #[serde(default)]
+    pub multiline: bool,
+    #[serde(default)]
+    pub required: bool,
+    #[serde(default)]
+    pub choices: Vec<SettingChoice>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct SettingChoice {
     pub value: String,
     pub label: String,
@@ -106,6 +126,7 @@ impl SettingInput {
             Self::Number { default, .. } => default.map(Value::from),
             Self::Boolean { default } => default.map(Value::Bool),
             Self::Secret { .. } => None,
+            Self::Table { default, .. } => Some(serde_json::json!(default)),
         }
     }
     fn accepts(&self, value: &Value) -> bool {
@@ -113,6 +134,35 @@ impl SettingInput {
             Self::Text { max_bytes, .. } | Self::Secret { max_bytes } => value
                 .as_str()
                 .is_some_and(|s| s.len() <= usize::from(*max_bytes)),
+            Self::Table {
+                max_rows, columns, ..
+            } => value.as_array().is_some_and(|rows| {
+                rows.len() <= usize::from(*max_rows)
+                    && rows.iter().all(|row| {
+                        row.as_object().is_some_and(|values| {
+                            values.len() <= columns.len()
+                                && values
+                                    .keys()
+                                    .all(|key| columns.iter().any(|column| &column.id == key))
+                                && columns.iter().all(|column| {
+                                    let text = values.get(&column.id).and_then(Value::as_str);
+                                    text.is_none_or(|text| {
+                                        text.len() <= usize::from(column.max_bytes)
+                                    }) && (!column.required
+                                        || text.is_some_and(|text| !text.trim().is_empty()))
+                                        && values.get(&column.id).is_none_or(Value::is_string)
+                                        && (column.choices.is_empty()
+                                            || text.is_none_or(|text| {
+                                                text.is_empty() && !column.required
+                                                    || column
+                                                        .choices
+                                                        .iter()
+                                                        .any(|choice| choice.value == text)
+                                            }))
+                                })
+                        })
+                    })
+            }),
             Self::Url { .. } => value.as_str().is_some_and(|s| {
                 s.len() <= 2048
                     && url::Url::parse(s).is_ok_and(|url| {
@@ -199,6 +249,42 @@ impl ConnectorCatalog {
                             "text bound must be 1–4096 bytes",
                         )?
                     }
+                    SettingInput::Table {
+                        max_rows, columns, ..
+                    } => {
+                        require(
+                            (1..=32).contains(max_rows)
+                                && !columns.is_empty()
+                                && columns.len() <= 8,
+                            &path,
+                            "invalid table settings bounds",
+                        )?;
+                        let mut ids = BTreeSet::new();
+                        for column in columns {
+                            require(
+                                valid_id(&column.id)
+                                    && ids.insert(&column.id)
+                                    && !column.label.trim().is_empty()
+                                    && column.label.len() <= 96
+                                    && (1..=1024).contains(&column.max_bytes)
+                                    && column.choices.len() <= 32,
+                                &path,
+                                "invalid setting table column",
+                            )?;
+                            let mut choices = BTreeSet::new();
+                            require(
+                                column.choices.iter().all(|choice| {
+                                    valid_id(&choice.value)
+                                        && choices.insert(&choice.value)
+                                        && choice.value.len() <= usize::from(column.max_bytes)
+                                        && !choice.label.is_empty()
+                                        && choice.label.len() <= 96
+                                }),
+                                &path,
+                                "invalid setting table choices",
+                            )?;
+                        }
+                    }
                     SettingInput::Integer { min, max, .. } => require(
                         min <= max
                             && *min >= -9_007_199_254_740_991
@@ -238,7 +324,8 @@ impl ConnectorCatalog {
                     require(
                         field.input.accepts(&default)
                             && (!field.required
-                                || default.as_str().is_none_or(|s| !s.trim().is_empty())),
+                                || (default.as_str().is_none_or(|s| !s.trim().is_empty())
+                                    && default.as_array().is_none_or(|rows| !rows.is_empty()))),
                         &path,
                         "invalid default value",
                     )?;
@@ -346,7 +433,9 @@ impl ConnectorDefinition {
                 "value has the wrong type, size, or allowed range",
             )?;
             require(
-                !field.required || value.as_str().is_none_or(|s| !s.trim().is_empty()),
+                !field.required
+                    || (value.as_str().is_none_or(|s| !s.trim().is_empty())
+                        && value.as_array().is_none_or(|rows| !rows.is_empty())),
                 &path,
                 "required text is empty",
             )?;

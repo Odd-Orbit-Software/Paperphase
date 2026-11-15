@@ -5,6 +5,241 @@
 Current development version: `0.1.0`. The earliest stable stage has not been
 reached; minor-version increments per commit begin after that milestone.
 
+### Audit source before GitHub publication
+
+- Reviewed Git-includable files and all 12 reachable commits for credentials,
+  private runtime artifacts and known token/key patterns. Gitleaks findings were
+  minified autocomplete/maxLength code, confirmed false positives rather than
+  real secrets. One-way comparisons against three live Google credential values
+  found no source/history matches; values were not returned to the session.
+- Reviewed new and credential-related screenshots. Actual client/token files,
+  local evidence and deployment archives remain outside ordinary Git adds.
+  Recorded non-secret local address/path metadata and the audit's scope in
+  `docs/usage/source-publication.md`.
+- Added ignore rules for downloaded Google client JSON, private runtime files,
+  environment files and common key formats, keeping example environment files
+  and source fixtures available.
+
+Validation: 12 private-path and five public-source/example ignore checks passed.
+Redacted scanner reports and exact-match checks are retained under ignored local
+artifacts. Documentation/whitespace checks passed. No runtime source changed;
+version remains `0.1.0`. No commit or push was performed.
+
+### First live Google link and setup follow-ups
+
+- The owner enabled Calendar API for the OAuth project and completed a real
+  login. A status-only Pi check confirmed one linked account, no linking error
+  and no reauthorisation flag; no credential/token or calendar/event values were
+  returned to the session.
+- Recorded later work for linking UX and import of Google's Web application
+  client JSON. Use synthetic fixtures during development and let the owner
+  provide the real file directly to the Pi; keep private values out of logs,
+  bundles, browser persistence and the public relay.
+- Clarified credential-file guidance: Git ignore rules prevent ordinary source
+  tracking but do not restrict assistant reads; an outside-checkout location
+  reduces accidental inclusion, while access control requires enforced rules.
+
+Validation: owner-confirmed real consent plus redacted Pi status passed.
+Documentation links and `git diff --check` passed. No runtime code changed;
+current desktop validation remains 166 Rust tests and 20 browser tests.
+Multi-account fetches, refresh renewal and Calendar panel rendering remain
+pending. Version remains `0.1.0`.
+
+### Explain Google linking failures
+
+- Retain a safe, in-memory failure code/message for known callback attempts and
+  display guidance in the return banner and account setup form. Log only the
+  fixed code; never reflect provider payloads or OAuth credentials. Clear the
+  diagnostic on a new attempt/setup save and prevent replays from replacing it.
+- Distinguish Google Calendar API disabled/missing-scope responses from client
+  rejection, invalid grants, connectivity and other access failures. The former
+  opaque callback did not retain the reported attempt's cause, so a new login
+  is needed after this diagnostic update.
+- Add provider-error redaction, legacy/modern disabled-API reasons, client
+  rejection and diagnostic replay tests; extend browser callback assertions.
+
+Validation: `sh scripts/check.sh` passed 166 Rust tests and host/Wasm checks;
+editor build and all 20 Chromium tests passed. ARM64 release build and Pi update
+passed, with layout, connections and Google configuration preserved. The new
+service started in 50.10 seconds. The saved client was not rejected by a
+deliberately invalid code probe, which does not establish Calendar API access.
+A fresh owner attempt reported `calendar_api_disabled`, confirming Calendar API
+access is disabled for the OAuth project despite the granted read permissions.
+The owner must enable that API before consent completion and renewal can be
+validated. Version remains `0.1.0`.
+
+### Calendar setup on the Pi — 2026-11-15
+
+- Verified the owner's deployed public callback returns `ok` over HTTPS. Added
+  Caddy Docker Proxy label instructions to match the owner's Docker setup;
+  no SSH access to the sensitive VPS was used.
+- Built the current service for ARM64 and activated it with nine registered
+  modules, including Calendar. Kept a private rollback backup, preserved layout
+  revision 3 and connection configuration revision 2, and left the existing
+  source process and physical panel alone. One observed service startup took
+  50.67 seconds; this is not a new resource/performance baseline.
+- Checked the Pi-hosted account setup form and Calendar selectors in Chromium.
+  Client fields remained blank, the correct public callback was prefilled,
+  linking stayed disabled before configuration, and discarding the connection
+  form left saved state unchanged. Added a cropped setup screenshot containing
+  no credentials.
+
+Validation: ARM64 release build, staged archive checksum, service/API checks,
+state preservation checks and Pi browser assertions passed with no page errors.
+The previous full desktop check remains 164 Rust and 20 browser tests; this
+update changes documentation only in the source checkout. Actual Google client
+configuration, account consent, token renewal and Calendar panel rendering
+remain pending. Version remains `0.1.0`.
+
+### Google Calendar and hosted browser callback
+
+- Added a read-only Calendar Wasm connector with bounded event windows, recurring
+  instances, all-day/timezone handling, privacy filters and agenda templates.
+  Derive a combined agenda from enabled calendar connections, preserving source
+  labels, duplicate privacy and the oldest input's freshness.
+- Added host-owned multi-account linking, private client/token storage, PKCE,
+  one-use expiring state, renewal/rotation and reconnect handling. The account
+  UI exposes calendar choices and never returns credentials. Calendar settings
+  changes invalidate old cached text before another fetch.
+- Added a stateless Node/Docker callback for
+  `auth.paperphase.oddorbit.software`, with Compose/Caddy examples and owner-run
+  deployment instructions. The browser returns to the editor's actual address;
+  no fixed Pi hostname, VPS-to-Pi connection or port forwarding is required.
+- Documented the protocol, multiple-Pi isolation, Cloud client setup, seven-day
+  Testing expiry and bounded-pagination limitations. VPS deployment remains the
+  owner's responsibility; no server access was performed.
+
+Validation: `sh scripts/check.sh` passed all 164 Rust tests, formatting, host
+and Wasm Clippy/build checks, including the compiled Calendar boundary test.
+Editor build and all 20 Chromium tests passed, including cross-site callback
+return, blocked cross-site API access and draft retention. Four relay tests,
+Docker build, Compose validation and an isolated read-only container HTTP smoke
+test passed. Documentation links and `git diff --check` passed. Live Google
+consent/renewal, production callback deployment, new Pi resource checks and
+physical Calendar rendering remain pending. Version remains `0.1.0`.
+
+### Plan UI updates from GitHub releases
+
+- Require web-UI updates for both the core application and installed plugins
+  using GitHub releases, with version/release information and an explicit update
+  action. Include this in release/distribution work rather than deferring core
+  UI updates until after the initial release; retain SSH for recovery.
+- Require a completed physical Updating message before stopping the service,
+  retained through the accepted restart, followed by health checking and normal
+  content restoration. Record independent activation/recovery ownership,
+  compatibility/integrity checks, preserved state, interruption handling and
+  rollback acceptance criteria.
+
+Verification: documentation links and `git diff --check` passed. No updater is
+implemented by this planning change. Version remains `0.1.0`.
+
+### Plan component design before placement
+
+- Recorded the agreed order: Google Calendar plugin, then a component designer
+  that works before placement, then automatic physical-display integration.
+- Require a blank or editable-template draft for every loaded plugin, with
+  dimensions, bindings and presentation editable even when defaults overflow or
+  no display space is available. Keep layout changes isolated until explicit,
+  validated placement; retain the design after failed placement.
+- Added acceptance criteria for oversized/overflowing defaults, crowded layouts,
+  cancellation, plugins without templates and normal editing after insertion.
+
+Verification: documentation links and `git diff --check` passed. This records
+planned work only; no editor behaviour changed. Version remains `0.1.0`.
+
+### First physical V2 full refresh
+
+- Added a one-shot bring-up utility for the renderer's 800 × 480 binary PBM,
+  using a separately supplied, pinned Waveshare V2 reference. It locks ownership,
+  bounds BUSY waits and total operation time, records JSON evidence, requests
+  sleep on success and releases HAT power/GPIOs on exit.
+- Enabled SPI on the temporary Pi and displayed saved layout revision 3 on the
+  attached monochrome V2 panel / Rev2.3 HAT. The full refresh took 5.74 seconds,
+  with BUSY asserted then idle; sleep and cleanup completed. The owner visually
+  confirmed a correct, readable image. Documented switches, SPI/GPIO mapping,
+  reference revision, operating steps and the remaining integration work.
+- Corrected the initial test wrapper's missing image data-mode transition;
+  complemented bytes now pass through the vendor's D/C and chip-select handling.
+  The first attempt timed out and released power. Its diagnostic report is kept
+  alongside the successful retry and separate visual-confirmation evidence.
+
+Validation: valid PBM dry run passed; truncated/wrong-resolution inputs were
+rejected before GPIO import. A simulated SPI interface checked complete data-mode
+planes, valid bytes, chip select, sleep and cleanup. The physical retry passed
+and was visually confirmed. `git diff --check` passed; no Rust code changed.
+The Rust service still uses its simulator; automatic physical updates, partial
+refresh, maintenance and interrupted-update recovery remain pending. Version
+remains `0.1.0`.
+
+### Display revision identified
+
+- Recorded the owner's inspected labels: Waveshare HAT revision 2.3 and
+  monochrome 7.5-inch screen V2. The vendor documents 800 × 480, matching the
+  simulator and replacing the earlier recalled 800 × 400 resolution.
+- Selected `epd7in5_V2` as the initial vendor-driver reference while keeping
+  current/older V2 selection, GPIO/SPI mapping, physical full/partial refresh
+  and maintenance behaviour pending actual validation.
+
+Verification: checked Waveshare's V2 specification and current driver constants;
+documentation-only changes pass `git diff --check`. No display was driven.
+Version remains `0.1.0`.
+
+### First headless Zero 2 W validation
+
+- Cross-built the current working tree as an ARM64 release application with its
+  embedded frontend, then copied it and eight portable Wasm guests to a
+  temporary 64-bit Trixie image. No physical display was attached.
+- Ran all 31 runtime boundary tests natively, including compiled provider guests,
+  infinite-loop interruption, memory limits, HTTP restrictions/timeouts and
+  recovery. Passed 30 additional CLI/API assertions covering rendering, saves,
+  conflicts, compiled fetching, private settings, quiet hours and restart/cache
+  recovery. Six Chromium checks against the Pi's LAN editor covered browser
+  editing, saving, reload persistence, completed preview/display equality and
+  connector settings without JavaScript errors. Captured an actual screenshot;
+  raw reports and artifact hashes remain in ignored local storage.
+- Measured 1.94 s temperature-guest compilation and 4.99 ms median invocation
+  latency over 100 runs. The eight-module service took 43.39 s to start and
+  43.53 s to restart, with 51.2 MiB steady RSS, 52.5 MiB sampled peak RSS and no
+  sampled process swap. Recorded this startup limitation and the workload's
+  limits in the operator guide; these are initial measurements, not production
+  resource budgets.
+- Documented the temporary LAN test installation and the kernel-specific Wi-Fi
+  workaround used to make the headless image reachable. Updated progress to
+  distinguish native Pi evidence from pending Google-account and panel checks.
+
+Validation: `sh scripts/check.sh` passed all 153 desktop Rust tests, formatting,
+host/guest Clippy and eight Wasm builds. The frontend build passed. On the Pi,
+all 31 native boundary tests and 30 CLI/API smoke assertions passed. Version
+remains `0.1.0`; all six LAN browser checks also passed. Long-running workloads
+and physical-display validation remain pending.
+
+### Air quality, daily quotes and generic JSON
+
+- Added three compiled plugins: Open-Meteo/CAMS AQI and pollen with hourly
+  forecasts; online daily quotes with optional personal/alternating selection;
+  and typed JSON Pointer mappings for public or privately authenticated APIs.
+- Added editable template boards, units/model attribution, seasonal missing-data
+  handling, valid-empty JSON states, strict type checks and optional observation
+  timestamps. All reuse host networking, polling, caching and rendering.
+- Added bounded row-based settings with text, multiline and choice cells for
+  personal quotes and mappings, accessible row labels, isolated defaults and
+  authoritative server validation. Optional secret headers remain redacted.
+- Added fixed scheduler time and one bounded read of a connection's own previous
+  primary dataset. Online quotes reuse persisted content for 24 hours without
+  resetting source age; personal selection sends no quotes to the provider.
+- Recorded the agreed plugin stretch and the later Leave in X minutes component,
+  including calendar/transport dependencies, buffers and scheduled/stale states.
+  Added design/usage documentation, provider notices and actual screenshots.
+
+Validation: `sh scripts/check.sh` passed all 153 Rust tests, formatting,
+host/guest Clippy and eight Wasm builds. TypeScript/frontend builds and all 18
+Chromium flows passed, including row editing and exact preview/display equality.
+Mermaid diagrams rendered; new screenshots were reviewed. Isolated live probes
+verified Open-Meteo/CAMS and ZenQuotes, plus an unauthenticated local JSON source.
+The restarted local service exposes all three plugins and preserves layout
+revision 7 and existing connection settings, including private credentials.
+Version remains `0.1.0`; Pi and physical-display validation are pending.
+
 ### Marked scheduled bus departures
 
 - Show **Scheduled HH:MM** when a bus has no usable live estimate, including

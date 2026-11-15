@@ -5,9 +5,64 @@ The criteria below make each stage reviewable;
 they do not by themselves report completed work. Stage 1 is in progress: the
 [plugin harness](../design/plugin-foundation.md) is implemented, with current
 [validation results](../usage/foundation-harness.md#foundation-progress).
+Initial headless Zero 2 W execution, resource-boundary and editor/API checks
+passed on 2026-11-14; [measurements](../usage/foundation-harness.md#first-headless-pi-results--2026-11-14)
+record approximately 52.5 MiB peak service RSS and a 43-second startup with all
+eight modules registered. Production resource budgets, longer runs, Google
+account validation and physical-panel validation remain open. The owner has
+identified the labels as HAT revision 2.3 / monochrome 7.5-inch screen V2;
+the vendor's documented 800 × 480 resolution matches the simulator. A one-shot
+full refresh was visually confirmed on 2026-11-14; integrated physical updates
+and partial/maintenance/recovery behaviour remain open.
 
 Product scope is in [requirements.md](requirements.md). Architectural boundaries
 are in [architecture.md](architecture.md).
+
+## Next agreed work
+
+On 2026-11-14, after the first physical full-refresh test, the owner agreed the
+next order: **Google Calendar plugin → component design before placement →
+automatic physical-display integration**. Longer Pi runs and remaining provider
+checks remain foundation work alongside these tasks.
+
+Calendar preflight on 2026-11-15 verified the owner's hosted HTTPS callback
+health and the Pi's new account setup UI with nine registered modules. Saved
+layout/connections were preserved. Real Google client configuration, consent
+and renewal are still pending; the next-work order above is unchanged. See
+[Calendar validation](../design/google-calendar.md#pi-and-hosted-callback-preflight--2026-11-15).
+
+### Component design before placement
+
+Every loaded plugin should offer a way to design a custom component before
+adding it to the display. Existing component editing does not solve the current
+failure: a default template must first fit a free display rectangle, so an
+oversized or unsuitable default cannot be added and therefore cannot be edited
+into a usable design.
+
+- Open an independent component draft from a plugin/connection. Start with a
+  blank design or an editable copy of a supplied template; a supplied template
+  must not be the only route into the designer.
+- Choose dimensions, content, compatible data bindings and presentation before
+  placement. Reuse the existing element-editing tools and shared host preview.
+- Keep the designer accessible when a default exceeds the panel dimensions,
+  overflows internally or has no free placement on the current display.
+  Explain problems while allowing the user to resize, remove or rearrange
+  elements and adjust typography/padding to resolve them.
+- Keep this draft separate from the main layout. Editing or cancelling it must
+  not alter neighbouring components, the saved layout or the completed frame.
+- Add the finished component to the layout only through an explicit placement
+  action. Apply the normal content, display-boundary and non-overlap validation;
+  if no valid placement exists, retain the editable design and explain why.
+- Support the same flow for Google Calendar and the existing plugins, including
+  plugins without supplied component templates.
+
+Completion: demonstrate an oversized default becoming a smaller valid design
+before insertion, creation from a blank plugin-backed draft, and correction of
+an internally overflowing template. Verify that a crowded display still allows
+designing, failed placement retains the design, cancellation leaves the layout
+unchanged, and an inserted component retains its bindings and can be edited and
+saved normally. Document the implemented flow and actual screenshots at that
+time. This item is planned; the current editor does not implement it yet.
 
 ## 1. Validate foundations
 
@@ -20,7 +75,7 @@ in the full application.
 | Resource limits | Demonstrate recovery from an infinite loop, excessive allocation, failed request, and blocked host operation without stopping healthy work |
 | Google Calendar | A supported setup flow connects from another LAN machine; verify multiple accounts, least-privilege read access, refresh-token renewal, and reauthorisation behaviour |
 | Luas | Verify a stop forecast response, stop/direction identifiers, permitted polling, and attribution |
-| Panel identification | Confirm resolution, panel revision, driver variant, and GPIO/SPI mapping when the hardware is available |
+| Panel identification | HAT 2.3 / monochrome 7.5-inch screen V2, 800 × 480; current vendor V2 full refresh and SPI/GPIO mapping confirmed in a one-shot test. Profile/partial-refresh validation remains open |
 
 Record measurements and constraints, then choose the runtime and define the
 first plugin package/API contract. Evaluate Wasmtime first. Establish a resource
@@ -84,10 +139,13 @@ icon elements now support these templates. The user prioritised transport next:
 as the first live setup. [Dublin Bus](../design/dublin-bus.md) follows with
 multiple numbered stops per connection, private NTA authentication and a shared
 reference cache. The Luas HTTPS response and attribution were checked; a
-published numeric polling allowance remains unconfirmed. Air quality remains a
-separate planned plugin. Google
-Calendar setup feasibility remains a parallel foundation task when credentials
-are available.
+published numeric polling allowance remains unconfirmed. The agreed next stretch,
+**air quality/pollen, daily quote and generic JSON**, now has compiled desktop
+implementations, [design documentation](../design/air-quotes-json.md) and
+[setup instructions](../usage/air-quotes-json.md). The
+[next-plugin plan](next-plugins.md) also records the later Leave in X minutes
+component. Google Calendar setup feasibility remains a parallel foundation task
+when credentials are available.
 
 - Use the shared host HTTP client, scheduler, settings, and dataset publication.
 - Verify provider access, polling allowances, attribution, and error responses
@@ -108,6 +166,12 @@ integrations and distribution work in stage 5.
 
 Implement and validate the driver/profile for the identified panel using the
 same compositor and refresh-controller interfaces as the simulator.
+
+Initial bring-up: a separate bounded Python utility drove saved layout revision
+3 through the vendor V2 reference on 2026-11-14. Full refresh took 5.74 seconds,
+the owner confirmed a correct image, and the panel entered sleep. This proves
+one-shot full-frame output, not completion of this stage: the Rust service still
+uses the simulator, and automatic physical updates are not connected yet.
 
 - Validate full and partial refresh, alignment constraints, and unchanged frames.
 - Check moved/removed component regions and batched pending updates.
@@ -130,6 +194,8 @@ headlines, and quote-of-the-day plugins. Early feasibility code is not a finishe
 integration.
 
 - Complete setup, adjustable settings, data bindings, and useful templates.
+- Later, implement the [Leave in X minutes derived component](next-plugins.md#later-leave-in-x-minutes)
+  after calendar and cross-dataset dependencies are supported.
 - Complete calendar privacy settings for descriptions, locations, and event
   titles, with matching preview and physical presentation.
 - Validate failure, stale-data, empty-result, and partial-source failure states.
@@ -137,14 +203,18 @@ integration.
   graph retention separate from the first air-quality implementation.
 - Complete UI package upload and GitHub release installation, compatibility
   checks, activation, restart, and rollback behaviour.
+- Provide UI updates for both the core application and installed plugins from
+  GitHub releases, with a completed physical Updating frame before activation
+  stops the service. A restart is acceptable. See the
+  [update acceptance criteria](#ui-updates-from-github-releases).
 - Publish the plugin API/SDK instructions and an example community plugin.
 - Once the plugin contracts and examples are established, create a Codex-compatible
   plugin-authoring skill with portable instructions for other AI coding assistants.
   Cover scaffolding, shared host services, settings/secrets, datasets, templates,
   refresh hints, validation, and packaging. Identify compatible SDK/API versions.
 - Complete installation, account setup, operation, backup, and recovery guidance.
-- Document the initial SSH command for core application updates, including
-  configuration preservation, migration backup, and recovery steps.
+- Document the SSH command for development/recovery updates when the UI cannot
+  be used, including configuration preservation, migration backup and recovery.
 - Finalise the non-commercial-use and attribution licence terms and required
   notices before distributing the application and authoring resources.
 
@@ -155,16 +225,39 @@ Validate the authoring skill by following it to create a new example plugin,
 build and package it, and load it in the simulator through the UI. Keep its
 instructions and examples in step with subsequent plugin API changes.
 
-## Later: approved application self-updates
+## UI updates from GitHub releases
 
-After the initial release, check GitHub releases for newer core versions and
-offer installation after explicit user approval. This follows the initial SSH
-update workflow rather than replacing it in the first release.
+Agreed on 2026-11-14: both the application and installed plugins must be
+updatable through the web UI using their GitHub releases. This belongs to stage
+5 release work, rather than being deferred until after the initial release.
+The next-work order remains Google Calendar, component design before placement,
+then automatic physical-display integration; updates follow within the release
+and distribution work. SSH remains a development/recovery path.
 
-Specify release authenticity/integrity verification, target architecture,
-plugin compatibility, configuration backup/migration, restart, health checking,
-and rollback. Completion must demonstrate both a successful upgrade and recovery
-from a failed update without losing the prior usable configuration.
+- Let the user check releases from the configured application/plugin repository
+  or supply a GitHub release URL. Show installed/selected versions and release
+  information, and activate only after an explicit update action.
+- Stage the correct release assets and validate authenticity/integrity, target
+  architecture and host/plugin compatibility before replacing a working version.
+- Preserve layouts, connection settings/secrets, custom component designs,
+  cached datasets and provider cooldowns, with backups for migrations.
+- Render an Updating maintenance message on the physical screen and confirm
+  completion before stopping the service for activation. E-paper must retain
+  that message during the accepted restart; browser-only progress is insufficient.
+- Give activation/recovery an owner that survives replacement or failure of the
+  application process. Restart, health-check, reconnect the browser and restore
+  normal screen content according to saved display/quiet-hours state.
+- On failed activation or startup, restore the previous usable application/plugin
+  version and compatible state. Report failure and restore normal content after
+  successful rollback; define interruption and unsuccessful-rollback recovery.
+
+Completion: demonstrate one core-application update and one installed-plugin
+update through the UI from GitHub releases. Observe Updating on the real panel
+through a restart and normal content after recovery. Exercise failed download,
+incompatible/corrupt assets, interrupted activation and a failed new version;
+verify retained settings, component designs, cached data and rate-limit state,
+along with a usable rollback path. This is planned work, not an implemented
+update feature.
 
 ## Documentation for every implemented feature
 

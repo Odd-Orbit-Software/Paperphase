@@ -1,0 +1,10 @@
+{
+  "items": [
+    {"id":"evening","iCalUID":"evening@example.test","status":"confirmed","summary":"Evening appointment","start":{"dateTime":"2026-11-15T18:00:00Z"},"end":{"dateTime":"2026-11-15T19:00:00Z"}},
+    {"id":"morning","iCalUID":"morning@example.test","status":"confirmed","summary":"Morning meeting","location":"Private location","description":"<b>Private description</b>","start":{"dateTime":"2026-11-15T09:00:00Z"},"end":{"dateTime":"2026-11-15T10:00:00Z"}},
+    {"id":"allday","status":"confirmed","summary":"All-day event","start":{"date":"2026-11-15"},"end":{"date":"2026-11-16"}},
+    {"id":"cancelled","status":"cancelled"},
+    {"id":"expired","status":"confirmed","summary":"Past event","start":{"dateTime":"2026-11-13T09:00:00Z"},"end":{"dateTime":"2026-11-13T10:00:00Z"}},
+    {"id":"morning","status":"confirmed","summary":"Duplicate","start":{"dateTime":"2026-11-15T09:00:00Z"},"end":{"dateTime":"2026-11-15T10:00:00Z"}}
+  ]
+}

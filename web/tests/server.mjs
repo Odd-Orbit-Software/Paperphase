@@ -31,8 +31,15 @@ const archive = createServer((request,response) => {
   const first=Number(match[1]),last=Number(match[2]); const bytes=zip.subarray(first,last+1);
   response.writeHead(206, {'Content-Length':bytes.length,'Content-Range':`bytes ${first}-${last}/${zip.length}`,ETag:etag}); response.end(bytes);
 });
+const airModule=resolve('../target/wasm32-unknown-unknown/release/paperphase_air_quality_plugin.wasm');
+const quoteModule=resolve('../target/wasm32-unknown-unknown/release/paperphase_daily_quote_plugin.wasm');
+const jsonModule=resolve('../target/wasm32-unknown-unknown/release/paperphase_generic_json_plugin.wasm');
+for(const module of [airModule,quoteModule,jsonModule])if(!existsSync(module))throw new Error('Build all plugin guests with scripts/check.sh.');
+const air=createServer((_request,response)=>{response.writeHead(200,{'Content-Type':'application/json'});response.end(readFileSync('../plugins/air-quality/fixtures/forecast.json'));});
+const quote=createServer((_request,response)=>{response.writeHead(200,{'Content-Type':'application/json'});response.end(readFileSync('../plugins/daily-quote/fixtures/today.json'));});
+const custom=createServer((request,response)=>{if(request.headers.authorization||request.headers['x-api-key']){response.writeHead(400);response.end();return;}response.writeHead(200,{'Content-Type':'application/json'});response.end(readFileSync('../plugins/generic-json/fixtures/sensors.json'));});
 const feed = createServer((_request, response) => { response.writeHead(200, { 'Content-Type': 'application/rss+xml' }); response.end(readFileSync('../plugins/rss/fixtures/headlines.xml')); });
-await Promise.all([weather, feed, luas, bus, archive].map(server => new Promise(resolve => server.listen(0, '127.0.0.1', resolve))));
+await Promise.all([weather, feed, luas, bus, archive,air,quote,custom].map(server => new Promise(resolve => server.listen(0, '127.0.0.1', resolve))));
 const feedUrl = `http://127.0.0.1:${feed.address().port}/feed.xml`;
 const bindings = join(directory, 'bindings.json');
 writeFileSync(bindings, JSON.stringify({ schema_version: 1, bindings: [
@@ -50,6 +57,9 @@ writeFileSync(bindings, JSON.stringify({ schema_version: 1, bindings: [
       {id:'exceptions',file:'calendar_dates.txt',key:'service_id',key_suffix:['date'],fields:['exception_type']}
     ]}
   },
+  {connector_id:'environment.air-quality',wasm:airModule,source_url:`http://127.0.0.1:${air.address().port}/air`,origin_interval_secs:60,stale_after_secs:7200},
+  {connector_id:'daily.quote',wasm:quoteModule,source_url:`http://127.0.0.1:${quote.address().port}/today`,origin_interval_secs:60,stale_after_secs:172800},
+  {connector_id:'generic.json',wasm:jsonModule,source_setting:'url',request_headers:{authorization:'authorization','x-api-key':'api_key'},origin_interval_secs:30,stale_after_secs:900},
   { connector_id: 'rss.headlines', wasm: rssModule, source_setting: 'feed_url', origin_interval_secs: 2, stale_after_secs: 21600 },
 ] }));
 // Cold records with later automatic deadlines make Fetch now deterministic.
@@ -58,9 +68,12 @@ writeFileSync(join(directory, 'workspace.connections.json'), JSON.stringify({ sc
   { id: 'weather.browser', connector_id: 'weather.open-meteo', label: 'Dublin forecast', enabled: false, poll_interval_secs: 900, settings: { location: 'Dublin', latitude: 53.3498, longitude: -6.2603, units: 'metric', forecast_hours: 24, forecast_days: 3, rain_threshold: 50 } },
   { id: 'luas.browser', connector_id: 'transport.luas', label: 'Charlemont trams', enabled: false, poll_interval_secs: 60, settings: {stop:'CHA', direction:'both', max_arrivals:3, destination:''} },
   { id: 'bus.browser', connector_id:'transport.dublin-bus',label:'Dublin buses',enabled:false,poll_interval_secs:60,settings:{stop_numbers:'2813',routes:'',max_arrivals:3,api_key:'fixture-initial-key'} },
+  {id:'air.browser',connector_id:'environment.air-quality',label:'Dublin air',enabled:false,poll_interval_secs:3600,settings:{location:'Dublin',latitude:53.3498,longitude:-6.2603,forecast_hours:24,pollen_focus:'all'}},
+  {id:'quote.browser',connector_id:'daily.quote',label:'Daily thought',enabled:false,poll_interval_secs:86400,settings:{mode:'personal',timezone:'Europe/Dublin',personal_quotes:[]}},
+  {id:'json.browser',connector_id:'generic.json',label:'Room sensors',enabled:false,poll_interval_secs:300,settings:{label:'Room sensors',url:`http://127.0.0.1:${custom.address().port}/sensors`,root_pointer:'/sensors',timestamp_pointer:'/observed_at',max_rows:2,mappings:[{field:'temperature',pointer:'/temperature',kind:'number',unit:'C'}]}},
   { id: 'rss.browser', connector_id: 'rss.headlines', label: 'Local headlines', enabled: false, poll_interval_secs: 1800, settings: { label: 'Sample headlines', feed_url: feedUrl, max_items: 3 } },
 ], data: { 'temperature.browser': { generation: 1, next_fetch_at: 1700003600 } } }));
 const child = spawn(process.env.PAPERPHASE_TEST_BINARY || resolve('../target/debug/paperphase'), ['serve', '--listen', '127.0.0.1:8097', '--state-file', join(directory, 'workspace.json'), '--connector-bindings', bindings, '--now', '1700000000'], { stdio: 'inherit' });
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => child.kill('SIGINT'));
-child.on('exit', code => { source.close(); weather.close(); feed.close(); luas.close(); bus.close(); archive.close(); rmSync(directory, { recursive: true, force: true }); process.exit(code ?? 1); });
-child.on('error', error => { console.error(error); source.close(); weather.close(); feed.close(); luas.close(); bus.close(); archive.close(); rmSync(directory, { recursive: true, force: true }); process.exit(1); });
+child.on('exit', code => { source.close(); weather.close(); feed.close(); luas.close(); bus.close(); archive.close();air.close();quote.close();custom.close(); rmSync(directory, { recursive: true, force: true }); process.exit(code ?? 1); });
+child.on('error', error => { console.error(error); source.close(); weather.close(); feed.close(); luas.close(); bus.close(); archive.close();air.close();quote.close();custom.close(); rmSync(directory, { recursive: true, force: true }); process.exit(1); });

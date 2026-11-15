@@ -1,7 +1,7 @@
 //! Experimental guest bindings for the foundation harness, not a stable SDK.
 
-pub use paperphase_core::SettingsValues;
 pub use paperphase_core::{Dataset, Field, FieldKind, Publication};
+pub use paperphase_core::{SettingsValues, valid_id};
 
 #[derive(Debug)]
 pub enum Error {
@@ -20,8 +20,12 @@ pub fn publish_dataset(dataset: &Dataset) -> Result<(), Error> {
 #[cfg(target_arch = "wasm32")]
 #[link(wasm_import_module = "paperphase_v0")]
 unsafe extern "C" {
+    #[link_name = "unix_time"]
+    fn host_unix_time() -> i64;
     #[link_name = "source_url"]
     fn host_source_url(ptr: i32, capacity: i32) -> i32;
+    #[link_name = "previous_dataset"]
+    fn host_previous_dataset(ptr: i32, capacity: i32) -> i32;
     #[link_name = "settings_json"]
     fn host_settings_json(ptr: i32, capacity: i32) -> i32;
     #[link_name = "reference_lookup"]
@@ -39,6 +43,40 @@ unsafe extern "C" {
     fn host_publish(ptr: i32, len: i32) -> i32;
     #[link_name = "publish_with_metadata"]
     fn host_publish_with_metadata(ptr: i32, len: i32) -> i32;
+}
+
+/// Scheduler time, fixed for one invocation; no guest OS clock access is needed.
+pub fn unix_time() -> Result<u64, Error> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        // SAFETY: This import takes no pointers and returns the host-granted time.
+        u64::try_from(unsafe { host_unix_time() }).map_err(|_| Error::InvalidResponse)
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    Err(Error::UnsupportedTarget)
+}
+
+/// At most one bounded read of this connection's previous primary dataset.
+pub fn previous_dataset() -> Result<Option<Dataset>, Error> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let mut bytes = vec![0; 64 * 1024];
+        // SAFETY: The writable buffer remains allocated for the complete call.
+        let n = unsafe { host_previous_dataset(bytes.as_mut_ptr() as i32, bytes.len() as i32) };
+        let n = usize::try_from(n).map_err(|_| Error::InvalidResponse)?;
+        if n == 0 {
+            return Ok(None);
+        }
+        if n > bytes.len() {
+            return Err(Error::InvalidResponse);
+        }
+        let dataset: Dataset =
+            serde_json::from_slice(&bytes[..n]).map_err(|_| Error::InvalidResponse)?;
+        dataset.validate().map_err(Error::InvalidDataset)?;
+        Ok(Some(dataset))
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    Err(Error::UnsupportedTarget)
 }
 
 pub fn settings() -> Result<SettingsValues, Error> {

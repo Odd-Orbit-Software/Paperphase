@@ -33,15 +33,28 @@ the project attribution identity.
   dependencies. Plugins must not each supply a separate networking stack.
 - Plugin installation through the web UI from a package upload or GitHub release
   URL. Restarting after installation is acceptable.
+- Update both the core application and installed plugins from GitHub releases
+  through the web UI. A restart is acceptable; the physical screen must show an
+  Updating message before the running service stops.
 - TypeScript compiled to browser JavaScript for the frontend, served by the Rust
   service. No Node.js server is required on the Pi.
 
 ## Display support
 
 Initial hardware is a monochrome Waveshare 7.5-inch e-paper HAT purchased in
-March 2024. The owner recalls 800 × 400 pixels; Waveshare documents the likely
-V2 model as 800 × 480. Resolution and revision remain unverified until the
-hardware can be inspected. Purchase date alone does not establish revision.
+March 2024. On 2026-11-14 the owner inspected the labels and reported **HAT
+revision 2.3** and **screen V2**. These identify the board and panel revisions
+separately. Waveshare documents the monochrome V2 screen as **800 × 480**,
+matching the simulator; this supersedes the earlier recollection of 800 × 400.
+
+Use Waveshare's `epd7in5_V2` driver as the initial reference. The vendor
+distinguishes current V2 and pre-September-2023 `V2_old` programs. On 2026-11-14
+the current V2 reference produced a correct physical full refresh, visually
+confirmed by the owner, in 5.74 seconds. SPI0/CE0 and the vendor's Rev2.3 GPIO map
+worked; BUSY returned idle, deep sleep completed and GPIOs were released.
+Fast/partial refresh, ghosting/maintenance budgets, repeated sleep/resume and
+interrupted-update recovery remain unvalidated. A HAT revision by itself does
+not identify a panel controller or establish refresh capabilities.
 
 Begin with this exact panel and a simulated display. Eventually support the
 Waveshare e-paper models covered by its supplied driver software. Each model
@@ -72,9 +85,20 @@ displayed content from newer available data.
 These are the initial product integrations, not a commitment to implement all
 of them in the first engineering milestone.
 
-The owner is comfortable supplying a Google app token. The precise credential
-type and setup flow remain to be clarified: Calendar API access uses OAuth
-access and refresh tokens, rather than Google account app passwords.
+The agreed Google setup uses a privately supplied Web application OAuth client,
+with browser-only consent through a hosted HTTPS callback. The owner will deploy
+the callback container on their own Docker/Caddy VPS at
+`auth.paperphase.oddorbit.software`; the agent must not access that sensitive VPS.
+Each Pi keeps its client secret and tokens locally. The browser returns to the
+actual editor authority, with independent one-use states for separate Pis; no
+fixed hostname or inbound network connection to a Pi is required. Live consent
+and token renewal remain separate acceptance checks.
+
+A later Google setup UX pass must accept Google's downloaded Web application
+client JSON, validate it and save its credentials privately after explicit
+review. The owner supplies the real file directly to the application; synthetic
+fixtures are sufficient for agent development. The public relay, logs and
+release assets must not receive client JSON or token values.
 
 Calendar presentation must allow users to hide descriptions, locations, or event
 titles while retaining useful availability information. Apply the same privacy
@@ -113,6 +137,14 @@ quiet hours.
   icons, lists, charts, and data bindings inside each component. Keep component
   rectangles non-overlapping on the display. The exact initial building blocks
   and editing interactions remain to be designed.
+- Every loaded plugin must allow a custom component to be designed before it is
+  placed on the display, starting blank or from an editable template. Oversized
+  defaults, internal overflow and lack of free display space must not block
+  access to the designer. Allow dimensions, content, bindings and presentation
+  to be adjusted in an independent draft, then validate and place the result
+  explicitly. Failed placement retains the editable design; cancellation leaves
+  the main layout unchanged. Implement this after the Google Calendar plugin,
+  as recorded in the [delivery plan](delivery-plan.md#component-design-before-placement).
 - Keep plugin artwork and its licence in the plugin package. The host provides
   shared bounded asset loading and rendering. Initial weather icons use static
   monochrome Meteocons, replaceable by a custom sprite atlas.
@@ -139,14 +171,27 @@ quiet hours.
 
 ## Application updates
 
-Initially update the core application through a documented SSH command. Keep
-plugin installation in the web UI as already agreed.
+Provide a web-UI update flow for both the core application and installed plugins
+using their GitHub releases. Let the user check available releases, see the
+installed and selected versions, review release information and explicitly start
+an update. Support the plugin's configured release repository or a GitHub release
+URL. Keep package upload installation as well.
 
-After the initial release, add checks for newer GitHub releases and an update
-flow that installs only after explicit user approval. Specify release
-authenticity/integrity checks, architecture and plugin compatibility, backup
-before migrations, restart, health checking, and rollback before implementing
-self-updates. Installing an update must preserve user configuration.
+A service restart is acceptable. Before stopping it for activation, render an
+Updating message on the physical screen and wait for that display operation to
+complete. The message must remain visible while the service is unavailable.
+The browser should report progress and reconnect after restart; restore normal
+screen content according to the saved display and quiet-hours state after a
+successful health check. A failed update must report its outcome and restore the
+previous usable version/content when rollback succeeds.
+
+Specify release authenticity/integrity checks, target architecture and plugin
+compatibility, staging, backup before migrations, activation, restart, health
+checking, interruption recovery and rollback. Preserve layouts, connection
+settings/secrets, custom component designs, cached data and provider-rate state.
+UI core updates are required release work, rather than only a post-release
+enhancement. Keep a documented SSH update/recovery path for development and when
+the UI is unavailable.
 
 ## Licensing policy
 

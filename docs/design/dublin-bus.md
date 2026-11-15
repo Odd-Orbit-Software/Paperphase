@@ -54,12 +54,13 @@ sequenceDiagram
     Note over Host,Renderer: Existing refresh policy owns display updates
 ```
 
-Registration's `request_headers` maps a supported header name to a **required
-secret setting ID**, for example `{"x-api-key":"api_key"}`. Supported names are
+Registration's `request_headers` maps a supported header name to a
+**secret setting ID**, for example `{"x-api-key":"api_key"}`. Supported names are
 `x-api-key`, `authorization` and `ocp-apim-subscription-key`. Values are validated
 as HTTP headers, marked sensitive, omitted from runtime debug output and attached
 only after the normal exact-origin check. Redirects remain disabled. Browser
-connection reads expose presence rather than saved secret values. Private
+connection reads expose presence rather than saved secret values. NTA's key is
+required; [generic JSON](air-quotes-json.md) can use optional secret headers. Private
 settings are stored using the existing restricted connection file, not encrypted.
 
 The new `reference_lookup(table, key)` host function returns a bounded JSON array

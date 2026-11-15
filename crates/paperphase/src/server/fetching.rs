@@ -77,6 +77,9 @@ pub(super) struct Registry {
     floors: BTreeMap<String, u64>,
 }
 impl Registry {
+    pub(super) fn http_client(&self) -> reqwest::blocking::Client {
+        self.runtime.reference_client()
+    }
     pub(super) fn load(path: &Path, catalog: &ConnectorCatalog) -> Result<Self> {
         let file: RegistrationFile = super::read_json(path)?;
         ensure!(
@@ -126,9 +129,8 @@ impl Registry {
                         name.as_str(),
                         "x-api-key" | "authorization" | "ocp-apim-subscription-key"
                     ) && definition.settings.iter().any(|field| &field.id == setting
-                        && field.required
                         && matches!(field.input, paperphase_core::SettingInput::Secret { .. })),
-                    "authentication headers must bind supported names to required secret settings"
+                    "authentication headers must bind supported names to secret settings"
                 );
             }
             let origin_interval = entry
@@ -145,6 +147,16 @@ impl Registry {
                     .unwrap_or("https://example.invalid/"),
             )
             .map_err(|_| anyhow::anyhow!("invalid source URL in connector registration"))?;
+            if entry.connector_id == "calendar.google" {
+                ensure!(
+                    entry.source_setting.is_none()
+                        && source.origin() == "https://www.googleapis.com"
+                        && entry.source_url.as_deref()
+                            == Some("https://www.googleapis.com/calendar/v3")
+                        && entry.request_headers.is_empty(),
+                    "Google Calendar requires its fixed Google API source and host-owned account credentials"
+                );
+            }
             if let Some(budget) = &entry.work_budget {
                 source
                     .clone()
@@ -279,10 +291,13 @@ impl Binding {
             config = config.with_references(data);
         }
         for (name, setting) in &self.request_headers {
-            let value = settings
+            let Some(value) = settings
                 .get(setting)
                 .and_then(serde_json::Value::as_str)
-                .context("required authentication setting is missing")?;
+                .filter(|value| !value.is_empty())
+            else {
+                continue;
+            };
             config = config
                 .with_secret_header(name, value)
                 .map_err(|_| anyhow::anyhow!("invalid connector authentication setting"))?;
@@ -498,12 +513,22 @@ async fn claim(app: &Shared, id: &str) -> ApiResult<Claimed> {
                 "This connector has no registered module.".into(),
             )
         })?;
-    let run_config = binding
+    let mut run_config = binding
         .run_config(&connection.settings)
+        .and_then(|config| {
+            config
+                .with_time((app.clock)())
+                .map_err(|error| anyhow::anyhow!("{error}"))
+        })
         .map_err(invalid_source)?;
     let origin = run_config.origin().to_owned();
     let now = (app.clock)();
     let data = store.data.get(id).cloned().unwrap_or_default();
+    if let Some(snapshot) = &data.snapshot {
+        run_config = run_config
+            .with_previous(&snapshot.dataset)
+            .map_err(|_| internal("invalid previous dataset"))?;
+    }
     let after = eligible_at(app, &store, &connection, &data);
     if now < after {
         return Ok(Claimed::Wait(after.saturating_sub(now)));
@@ -547,9 +572,39 @@ async fn claim(app: &Shared, id: &str) -> ApiResult<Claimed> {
 async fn execute(app: Shared, claim: Claim) {
     let registry = Arc::clone(app.executors.as_ref().expect("claim requires registry"));
     let config = claim.connection.clone();
-    let run = claim.run_config.clone();
+    let mut run = claim.run_config.clone();
+    let google = app.google.clone();
     let result = tokio::task::spawn_blocking(move || {
         let binding = &registry.bindings[&config.connector_id];
+        if config.connector_id == "calendar.google" {
+            let auth = (|| -> anyhow::Result<()> {
+                anyhow::ensure!(
+                    run.origin() == "https://www.googleapis.com",
+                    "Invalid Google API origin"
+                );
+                let id = config
+                    .settings
+                    .get("account_id")
+                    .and_then(serde_json::Value::as_str)
+                    .context("Select a linked Google account")?;
+                let token = google
+                    .as_ref()
+                    .context("Google account support is unavailable")?
+                    .access_token(id)?;
+                run = run
+                    .clone()
+                    .with_secret_header("authorization", &format!("Bearer {token}"))
+                    .map_err(|_| anyhow::anyhow!("Invalid Google access token"))?;
+                Ok(())
+            })();
+            if let Err(error) = auth {
+                return paperphase_runtime::RunAttempt {
+                    result: Err(paperphase_runtime::RuntimeError::msg(error.to_string())),
+                    retry_after_secs: None,
+                    provider_backoff: false,
+                };
+            }
+        }
         registry.runtime.run_observed(&binding.plugin, &run)
     })
     .await;

@@ -1,0 +1,17 @@
+services:
+  paperphase-auth:
+    build: .
+    restart: unless-stopped
+    read_only: true
+    init: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    expose: ["8080"]
+    networks: [caddy]
+    mem_limit: 128m
+    pids_limit: 64
+
+networks:
+  caddy:
+    external: true
+    name: ${CADDY_NETWORK:-caddy}

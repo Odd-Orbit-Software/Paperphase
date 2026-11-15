@@ -318,7 +318,7 @@
                 "id": "attribution",
                 "source": {
                   "kind": "literal",
-                  "text": "open-meteo.com · CC BY 4.0 · rounded/converted\ncreativecommons.org/licenses/by/4.0"
+                  "text": "open-meteo.com \u00b7 CC BY 4.0 \u00b7 rounded/converted\ncreativecommons.org/licenses/by/4.0"
                 },
                 "font_size": 9,
                 "overflow": "wrap",
@@ -443,7 +443,7 @@
                 "id": "attribution",
                 "source": {
                   "kind": "literal",
-                  "text": "open-meteo.com · CC BY 4.0 · rounded/converted\ncreativecommons.org/licenses/by/4.0"
+                  "text": "open-meteo.com \u00b7 CC BY 4.0 \u00b7 rounded/converted\ncreativecommons.org/licenses/by/4.0"
                 },
                 "font_size": 9,
                 "overflow": "wrap",
@@ -699,7 +699,7 @@
                 "id": "attribution",
                 "source": {
                   "kind": "literal",
-                  "text": "open-meteo.com · CC BY 4.0 · rounded/converted\ncreativecommons.org/licenses/by/4.0"
+                  "text": "open-meteo.com \u00b7 CC BY 4.0 \u00b7 rounded/converted\ncreativecommons.org/licenses/by/4.0"
                 },
                 "font_size": 9,
                 "overflow": "wrap",
@@ -880,7 +880,7 @@
     {
       "id": "transport.luas",
       "name": "Luas departures",
-      "description": "Live stop forecasts and service messages for Dublin’s Red and Green lines. Times are as reported at the last update.",
+      "description": "Live stop forecasts and service messages for Dublin\u2019s Red and Green lines. Times are as reported at the last update.",
       "min_poll_secs": 60,
       "default_poll_secs": 60,
       "settings": [
@@ -894,271 +894,271 @@
             "options": [
               {
                 "value": "BAL",
-                "label": "Green · Balally"
+                "label": "Green \u00b7 Balally"
               },
               {
                 "value": "BAW",
-                "label": "Green · Ballyogan Wood"
+                "label": "Green \u00b7 Ballyogan Wood"
               },
               {
                 "value": "BEE",
-                "label": "Green · Beechwood"
+                "label": "Green \u00b7 Beechwood"
               },
               {
                 "value": "BRI",
-                "label": "Green · Brides Glen"
+                "label": "Green \u00b7 Brides Glen"
               },
               {
                 "value": "BRD",
-                "label": "Green · Broadstone - University"
+                "label": "Green \u00b7 Broadstone - University"
               },
               {
                 "value": "BRO",
-                "label": "Green · Broombridge"
+                "label": "Green \u00b7 Broombridge"
               },
               {
                 "value": "CAB",
-                "label": "Green · Cabra"
+                "label": "Green \u00b7 Cabra"
               },
               {
                 "value": "CCK",
-                "label": "Green · Carrickmines"
+                "label": "Green \u00b7 Carrickmines"
               },
               {
                 "value": "CPK",
-                "label": "Green · Central Park"
+                "label": "Green \u00b7 Central Park"
               },
               {
                 "value": "CHA",
-                "label": "Green · Charlemont"
+                "label": "Green \u00b7 Charlemont"
               },
               {
                 "value": "CHE",
-                "label": "Green · Cherrywood"
+                "label": "Green \u00b7 Cherrywood"
               },
               {
                 "value": "COW",
-                "label": "Green · Cowper"
+                "label": "Green \u00b7 Cowper"
               },
               {
                 "value": "DAW",
-                "label": "Green · Dawson"
+                "label": "Green \u00b7 Dawson"
               },
               {
                 "value": "DOM",
-                "label": "Green · Dominick"
+                "label": "Green \u00b7 Dominick"
               },
               {
                 "value": "DUN",
-                "label": "Green · Dundrum"
+                "label": "Green \u00b7 Dundrum"
               },
               {
                 "value": "GLE",
-                "label": "Green · Glencairn"
+                "label": "Green \u00b7 Glencairn"
               },
               {
                 "value": "GRA",
-                "label": "Green · Grangegorman"
+                "label": "Green \u00b7 Grangegorman"
               },
               {
                 "value": "HAR",
-                "label": "Green · Harcourt"
+                "label": "Green \u00b7 Harcourt"
               },
               {
                 "value": "KIL",
-                "label": "Green · Kilmacud"
+                "label": "Green \u00b7 Kilmacud"
               },
               {
                 "value": "LAU",
-                "label": "Green · Laughanstown"
+                "label": "Green \u00b7 Laughanstown"
               },
               {
                 "value": "LEO",
-                "label": "Green · Leopardstown Valley"
+                "label": "Green \u00b7 Leopardstown Valley"
               },
               {
                 "value": "MAR",
-                "label": "Green · Marlborough"
+                "label": "Green \u00b7 Marlborough"
               },
               {
                 "value": "MIL",
-                "label": "Green · Milltown"
+                "label": "Green \u00b7 Milltown"
               },
               {
                 "value": "OGP",
-                "label": "Green · O'Connell - GPO"
+                "label": "Green \u00b7 O'Connell - GPO"
               },
               {
                 "value": "OUP",
-                "label": "Green · O'Connell - Upper"
+                "label": "Green \u00b7 O'Connell - Upper"
               },
               {
                 "value": "PAR",
-                "label": "Green · Parnell"
+                "label": "Green \u00b7 Parnell"
               },
               {
                 "value": "PHI",
-                "label": "Green · Phibsborough"
+                "label": "Green \u00b7 Phibsborough"
               },
               {
                 "value": "RAN",
-                "label": "Green · Ranelagh"
+                "label": "Green \u00b7 Ranelagh"
               },
               {
                 "value": "SAN",
-                "label": "Green · Sandyford"
+                "label": "Green \u00b7 Sandyford"
               },
               {
                 "value": "STS",
-                "label": "Green · St. Stephen's Green"
+                "label": "Green \u00b7 St. Stephen's Green"
               },
               {
                 "value": "STI",
-                "label": "Green · Stillorgan"
+                "label": "Green \u00b7 Stillorgan"
               },
               {
                 "value": "GAL",
-                "label": "Green · The Gallops"
+                "label": "Green \u00b7 The Gallops"
               },
               {
                 "value": "TRY",
-                "label": "Green · Trinity"
+                "label": "Green \u00b7 Trinity"
               },
               {
                 "value": "WES",
-                "label": "Green · Westmoreland"
+                "label": "Green \u00b7 Westmoreland"
               },
               {
                 "value": "WIN",
-                "label": "Green · Windy Arbour"
+                "label": "Green \u00b7 Windy Arbour"
               },
               {
                 "value": "ABB",
-                "label": "Red · Abbey Street"
+                "label": "Red \u00b7 Abbey Street"
               },
               {
                 "value": "BEL",
-                "label": "Red · Belgard"
+                "label": "Red \u00b7 Belgard"
               },
               {
                 "value": "BLA",
-                "label": "Red · Blackhorse"
+                "label": "Red \u00b7 Blackhorse"
               },
               {
                 "value": "BLU",
-                "label": "Red · Bluebell"
+                "label": "Red \u00b7 Bluebell"
               },
               {
                 "value": "BUS",
-                "label": "Red · Busáras"
+                "label": "Red \u00b7 Bus\u00e1ras"
               },
               {
                 "value": "CVN",
-                "label": "Red · Cheeverstown"
+                "label": "Red \u00b7 Cheeverstown"
               },
               {
                 "value": "CIT",
-                "label": "Red · Citywest Campus"
+                "label": "Red \u00b7 Citywest Campus"
               },
               {
                 "value": "CON",
-                "label": "Red · Connolly"
+                "label": "Red \u00b7 Connolly"
               },
               {
                 "value": "COO",
-                "label": "Red · Cookstown"
+                "label": "Red \u00b7 Cookstown"
               },
               {
                 "value": "DRI",
-                "label": "Red · Drimnagh"
+                "label": "Red \u00b7 Drimnagh"
               },
               {
                 "value": "FAT",
-                "label": "Red · Fatima"
+                "label": "Red \u00b7 Fatima"
               },
               {
                 "value": "FET",
-                "label": "Red · Fettercairn"
+                "label": "Red \u00b7 Fettercairn"
               },
               {
                 "value": "FOR",
-                "label": "Red · Fortunestown"
+                "label": "Red \u00b7 Fortunestown"
               },
               {
                 "value": "FOU",
-                "label": "Red · Four Courts"
+                "label": "Red \u00b7 Four Courts"
               },
               {
                 "value": "GDK",
-                "label": "Red · George's Dock"
+                "label": "Red \u00b7 George's Dock"
               },
               {
                 "value": "GOL",
-                "label": "Red · Goldenbridge"
+                "label": "Red \u00b7 Goldenbridge"
               },
               {
                 "value": "HEU",
-                "label": "Red · Heuston"
+                "label": "Red \u00b7 Heuston"
               },
               {
                 "value": "HOS",
-                "label": "Red · Hospital"
+                "label": "Red \u00b7 Hospital"
               },
               {
                 "value": "JAM",
-                "label": "Red · James's"
+                "label": "Red \u00b7 James's"
               },
               {
                 "value": "JER",
-                "label": "Red · Jervis"
+                "label": "Red \u00b7 Jervis"
               },
               {
                 "value": "KIN",
-                "label": "Red · Kingswood"
+                "label": "Red \u00b7 Kingswood"
               },
               {
                 "value": "KYL",
-                "label": "Red · Kylemore"
+                "label": "Red \u00b7 Kylemore"
               },
               {
                 "value": "MYS",
-                "label": "Red · Mayor Square - NCI"
+                "label": "Red \u00b7 Mayor Square - NCI"
               },
               {
                 "value": "MUS",
-                "label": "Red · Museum"
+                "label": "Red \u00b7 Museum"
               },
               {
                 "value": "RED",
-                "label": "Red · Red Cow"
+                "label": "Red \u00b7 Red Cow"
               },
               {
                 "value": "RIA",
-                "label": "Red · Rialto"
+                "label": "Red \u00b7 Rialto"
               },
               {
                 "value": "SAG",
-                "label": "Red · Saggart"
+                "label": "Red \u00b7 Saggart"
               },
               {
                 "value": "SMI",
-                "label": "Red · Smithfield"
+                "label": "Red \u00b7 Smithfield"
               },
               {
                 "value": "SDK",
-                "label": "Red · Spencer Dock"
+                "label": "Red \u00b7 Spencer Dock"
               },
               {
                 "value": "SUI",
-                "label": "Red · Suir Road"
+                "label": "Red \u00b7 Suir Road"
               },
               {
                 "value": "TAL",
-                "label": "Red · Tallaght"
+                "label": "Red \u00b7 Tallaght"
               },
               {
                 "value": "TPT",
-                "label": "Red · The Point"
+                "label": "Red \u00b7 The Point"
               }
             ],
             "default": "CHA"
@@ -1167,7 +1167,7 @@
         {
           "id": "direction",
           "label": "Direction",
-          "help": "Inbound and outbound are the feed’s direction labels; check the destinations for your journey.",
+          "help": "Inbound and outbound are the feed\u2019s direction labels; check the destinations for your journey.",
           "required": true,
           "input": {
             "type": "choice",
@@ -1848,6 +1848,1060 @@
                   "y": 316,
                   "width": 576,
                   "height": 24
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "environment.air-quality",
+      "name": "Air quality and pollen",
+      "description": "Modelled European AQI, pollutants and seasonal pollen from Open-Meteo/CAMS. Missing pollen data is distinct from a zero count.",
+      "min_poll_secs": 900,
+      "default_poll_secs": 3600,
+      "settings": [
+        {
+          "id": "location",
+          "label": "Location label",
+          "help": "",
+          "required": true,
+          "input": {
+            "type": "text",
+            "max_bytes": 128,
+            "default": "Dublin"
+          }
+        },
+        {
+          "id": "latitude",
+          "label": "Latitude",
+          "help": "",
+          "required": true,
+          "input": {
+            "type": "number",
+            "min": -90,
+            "max": 90,
+            "default": 53.3498
+          }
+        },
+        {
+          "id": "longitude",
+          "label": "Longitude",
+          "help": "",
+          "required": true,
+          "input": {
+            "type": "number",
+            "min": -180,
+            "max": 180,
+            "default": -6.2603
+          }
+        },
+        {
+          "id": "forecast_hours",
+          "label": "Forecast hours",
+          "help": "",
+          "required": true,
+          "input": {
+            "type": "integer",
+            "min": 6,
+            "max": 48,
+            "default": 24
+          }
+        },
+        {
+          "id": "pollen_focus",
+          "label": "Pollen focus",
+          "help": "Pollen is modelled and seasonal; some locations/types may be unavailable.",
+          "required": true,
+          "input": {
+            "type": "choice",
+            "options": [
+              {
+                "value": "all",
+                "label": "All pollen types"
+              },
+              {
+                "value": "grass_pollen",
+                "label": "Grass"
+              },
+              {
+                "value": "birch_pollen",
+                "label": "Birch"
+              },
+              {
+                "value": "alder_pollen",
+                "label": "Alder"
+              },
+              {
+                "value": "mugwort_pollen",
+                "label": "Mugwort"
+              },
+              {
+                "value": "olive_pollen",
+                "label": "Olive"
+              },
+              {
+                "value": "ragweed_pollen",
+                "label": "Ragweed"
+              }
+            ],
+            "default": "all"
+          }
+        }
+      ],
+      "templates": [
+        {
+          "id": "air-now",
+          "name": "Air quality now",
+          "component": {
+            "id": "air-now",
+            "rect": {
+              "x": 0,
+              "y": 0,
+              "width": 368,
+              "height": 200
+            },
+            "padding": 12,
+            "gap": 6,
+            "border": true,
+            "content_layout": "positioned",
+            "refresh_hint": "automatic",
+            "blocks": [
+              {
+                "id": "location",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "current",
+                    "field_id": "location",
+                    "row": 0
+                  }
+                },
+                "font_size": 20,
+                "align": "left",
+                "overflow": "wrap",
+                "rect": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 344,
+                  "height": 28
+                }
+              },
+              {
+                "id": "aqi",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "current",
+                    "field_id": "aqi-label",
+                    "row": 0
+                  }
+                },
+                "font_size": 25,
+                "align": "left",
+                "overflow": "wrap",
+                "rect": {
+                  "x": 0,
+                  "y": 32,
+                  "width": 344,
+                  "height": 32
+                }
+              },
+              {
+                "id": "particles",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "current",
+                    "field_id": "particles-label",
+                    "row": 0
+                  }
+                },
+                "font_size": 13,
+                "align": "left",
+                "overflow": "wrap",
+                "rect": {
+                  "x": 0,
+                  "y": 70,
+                  "width": 344,
+                  "height": 24
+                }
+              },
+              {
+                "id": "updated",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "current",
+                    "field_id": "updated-label",
+                    "row": 0
+                  }
+                },
+                "font_size": 10,
+                "align": "left",
+                "overflow": "wrap",
+                "rect": {
+                  "x": 0,
+                  "y": 100,
+                  "width": 344,
+                  "height": 18
+                }
+              },
+              {
+                "id": "attribution",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "current",
+                    "field_id": "attribution",
+                    "row": 0
+                  }
+                },
+                "font_size": 9,
+                "align": "left",
+                "overflow": "wrap",
+                "rect": {
+                  "x": 0,
+                  "y": 124,
+                  "width": 344,
+                  "height": 20
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "pollen",
+          "name": "Pollen board",
+          "component": {
+            "id": "pollen",
+            "rect": {
+              "x": 0,
+              "y": 0,
+              "width": 448,
+              "height": 384
+            },
+            "padding": 12,
+            "gap": 6,
+            "border": true,
+            "content_layout": "positioned",
+            "refresh_hint": "automatic",
+            "blocks": [
+              {
+                "id": "title",
+                "source": {
+                  "kind": "literal",
+                  "text": "POLLEN \u00b7 MODEL ESTIMATE"
+                },
+                "font_size": 18,
+                "align": "left",
+                "overflow": "wrap",
+                "rect": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 424,
+                  "height": 24
+                }
+              },
+              {
+                "id": "current",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "current",
+                    "field_id": "pollen-summary",
+                    "row": 0
+                  }
+                },
+                "font_size": 13,
+                "align": "left",
+                "overflow": "wrap",
+                "rect": {
+                  "x": 0,
+                  "y": 30,
+                  "width": 424,
+                  "height": 132
+                }
+              },
+              {
+                "id": "peaks",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "current",
+                    "field_id": "pollen-outlook",
+                    "row": 0
+                  }
+                },
+                "font_size": 11,
+                "align": "left",
+                "overflow": "wrap",
+                "rect": {
+                  "x": 0,
+                  "y": 170,
+                  "width": 424,
+                  "height": 116
+                }
+              },
+              {
+                "id": "updated",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "current",
+                    "field_id": "updated-label",
+                    "row": 0
+                  }
+                },
+                "font_size": 10,
+                "align": "left",
+                "overflow": "wrap",
+                "rect": {
+                  "x": 0,
+                  "y": 296,
+                  "width": 424,
+                  "height": 18
+                }
+              },
+              {
+                "id": "attribution",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "current",
+                    "field_id": "attribution",
+                    "row": 0
+                  }
+                },
+                "font_size": 9,
+                "align": "left",
+                "overflow": "wrap",
+                "rect": {
+                  "x": 0,
+                  "y": 320,
+                  "width": 424,
+                  "height": 16
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "air-forecast",
+          "name": "Air quality outlook",
+          "component": {
+            "id": "air-forecast",
+            "rect": {
+              "x": 0,
+              "y": 0,
+              "width": 416,
+              "height": 304
+            },
+            "padding": 12,
+            "gap": 6,
+            "border": true,
+            "content_layout": "positioned",
+            "refresh_hint": "automatic",
+            "blocks": [
+              {
+                "id": "title",
+                "source": {
+                  "kind": "literal",
+                  "text": "AIR QUALITY OUTLOOK"
+                },
+                "font_size": 18,
+                "align": "left",
+                "overflow": "wrap",
+                "rect": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 392,
+                  "height": 24
+                }
+              },
+              {
+                "id": "hours",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "current",
+                    "field_id": "forecast-summary",
+                    "row": 0
+                  }
+                },
+                "font_size": 14,
+                "align": "left",
+                "overflow": "wrap",
+                "rect": {
+                  "x": 0,
+                  "y": 32,
+                  "width": 392,
+                  "height": 156
+                }
+              },
+              {
+                "id": "updated",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "current",
+                    "field_id": "updated-label",
+                    "row": 0
+                  }
+                },
+                "font_size": 10,
+                "align": "left",
+                "overflow": "wrap",
+                "rect": {
+                  "x": 0,
+                  "y": 202,
+                  "width": 392,
+                  "height": 18
+                }
+              },
+              {
+                "id": "attribution",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "current",
+                    "field_id": "attribution",
+                    "row": 0
+                  }
+                },
+                "font_size": 9,
+                "align": "left",
+                "overflow": "wrap",
+                "rect": {
+                  "x": 0,
+                  "y": 230,
+                  "width": 392,
+                  "height": 20
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "daily.quote",
+      "name": "Daily quote",
+      "description": "A cached ZenQuotes daily quote, optional personal quotes, or alternating days. Online fetching defaults to once per day; personal quotes never leave this host.",
+      "min_poll_secs": 60,
+      "default_poll_secs": 86400,
+      "settings": [
+        {
+          "id": "mode",
+          "label": "Quote selection",
+          "help": "",
+          "required": true,
+          "input": {
+            "type": "choice",
+            "options": [
+              {
+                "value": "online",
+                "label": "Online daily quote"
+              },
+              {
+                "value": "personal",
+                "label": "My quotes"
+              },
+              {
+                "value": "mixed",
+                "label": "Alternate online and my quotes"
+              }
+            ],
+            "default": "online"
+          }
+        },
+        {
+          "id": "timezone",
+          "label": "Selection timezone",
+          "help": "IANA timezone for personal/mixed daily selection, for example Europe/Dublin.",
+          "required": true,
+          "input": {
+            "type": "text",
+            "max_bytes": 64,
+            "default": "Europe/Dublin"
+          }
+        },
+        {
+          "id": "personal_quotes",
+          "label": "Personal quotes",
+          "help": "Optional. Add your quotes here, then choose My quotes or Alternate. My quotes needs at least one entry. They stay on this host and are never uploaded to ZenQuotes.",
+          "required": false,
+          "input": {
+            "type": "table",
+            "max_rows": 16,
+            "columns": [
+              {
+                "id": "quote",
+                "label": "Quote",
+                "max_bytes": 512,
+                "required": true,
+                "choices": [],
+                "multiline": true
+              },
+              {
+                "id": "author",
+                "label": "Author",
+                "max_bytes": 96,
+                "required": false,
+                "choices": [],
+                "multiline": false
+              }
+            ],
+            "default": []
+          }
+        }
+      ],
+      "templates": [
+        {
+          "id": "quote",
+          "name": "Daily quote",
+          "component": {
+            "id": "quote",
+            "rect": {
+              "x": 0,
+              "y": 0,
+              "width": 448,
+              "height": 288
+            },
+            "padding": 12,
+            "gap": 6,
+            "border": true,
+            "content_layout": "positioned",
+            "refresh_hint": "automatic",
+            "blocks": [
+              {
+                "id": "title",
+                "source": {
+                  "kind": "literal",
+                  "text": "A THOUGHT FOR TODAY"
+                },
+                "font_size": 15,
+                "align": "left",
+                "overflow": "wrap",
+                "rect": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 424,
+                  "height": 22
+                }
+              },
+              {
+                "id": "quote",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "quote",
+                    "field_id": "quote",
+                    "row": 0
+                  }
+                },
+                "font_size": 20,
+                "align": "left",
+                "overflow": "wrap",
+                "rect": {
+                  "x": 0,
+                  "y": 30,
+                  "width": 424,
+                  "height": 132
+                }
+              },
+              {
+                "id": "author",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "quote",
+                    "field_id": "author",
+                    "row": 0
+                  }
+                },
+                "font_size": 14,
+                "align": "left",
+                "overflow": "wrap",
+                "rect": {
+                  "x": 0,
+                  "y": 170,
+                  "width": 424,
+                  "height": 26
+                }
+              },
+              {
+                "id": "credit",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "quote",
+                    "field_id": "attribution",
+                    "row": 0
+                  }
+                },
+                "font_size": 10,
+                "align": "left",
+                "overflow": "wrap",
+                "rect": {
+                  "x": 0,
+                  "y": 208,
+                  "width": 424,
+                  "height": 22
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "generic.json",
+      "name": "Generic JSON",
+      "description": "Map one JSON endpoint into typed display fields using JSON Pointers. Public APIs and optional private Authorization/X-API-Key headers are supported.",
+      "min_poll_secs": 30,
+      "default_poll_secs": 300,
+      "settings": [
+        {
+          "id": "label",
+          "label": "Data label",
+          "help": "",
+          "required": true,
+          "input": {
+            "type": "text",
+            "max_bytes": 128,
+            "default": "Custom data"
+          }
+        },
+        {
+          "id": "url",
+          "label": "JSON endpoint URL",
+          "help": "The host grants this exact HTTP(S) origin. Configure credentials in the private header fields.",
+          "required": true,
+          "input": {
+            "type": "url"
+          }
+        },
+        {
+          "id": "authorization",
+          "label": "Authorization header",
+          "help": "Optional full header value, such as Bearer followed by your token. Saved privately.",
+          "required": false,
+          "input": {
+            "type": "secret",
+            "max_bytes": 512
+          }
+        },
+        {
+          "id": "api_key",
+          "label": "X-API-Key header",
+          "help": "Optional API key for endpoints using X-API-Key. Saved privately.",
+          "required": false,
+          "input": {
+            "type": "secret",
+            "max_bytes": 512
+          }
+        },
+        {
+          "id": "root_pointer",
+          "label": "Records pointer",
+          "help": "Blank selects the whole document. Use /items for an array inside an object.",
+          "required": false,
+          "input": {
+            "type": "text",
+            "max_bytes": 256,
+            "default": ""
+          }
+        },
+        {
+          "id": "timestamp_pointer",
+          "label": "Observation timestamp pointer",
+          "help": "Optional pointer in the original document to Unix seconds, e.g. /observed_at. A configured but missing/invalid timestamp fails the fetch.",
+          "required": false,
+          "input": {
+            "type": "text",
+            "max_bytes": 256,
+            "default": ""
+          }
+        },
+        {
+          "id": "max_rows",
+          "label": "Maximum records",
+          "help": "",
+          "required": true,
+          "input": {
+            "type": "integer",
+            "min": 1,
+            "max": 20,
+            "default": 3
+          }
+        },
+        {
+          "id": "mappings",
+          "label": "Field mappings",
+          "help": "Pointers are relative to each selected record. Blank selects that entire record; ~1 escapes / and ~0 escapes ~. Missing values stay unavailable, never zero.",
+          "required": true,
+          "input": {
+            "type": "table",
+            "max_rows": 16,
+            "columns": [
+              {
+                "id": "field",
+                "label": "Field ID",
+                "max_bytes": 64,
+                "required": true,
+                "choices": [],
+                "multiline": false
+              },
+              {
+                "id": "pointer",
+                "label": "JSON Pointer",
+                "max_bytes": 256,
+                "required": false,
+                "choices": [],
+                "multiline": false
+              },
+              {
+                "id": "kind",
+                "label": "Type",
+                "max_bytes": 16,
+                "required": true,
+                "choices": [
+                  {
+                    "value": "text",
+                    "label": "Text"
+                  },
+                  {
+                    "value": "number",
+                    "label": "Number"
+                  },
+                  {
+                    "value": "boolean",
+                    "label": "Boolean"
+                  }
+                ],
+                "multiline": false
+              },
+              {
+                "id": "unit",
+                "label": "Unit",
+                "max_bytes": 32,
+                "required": false,
+                "choices": [],
+                "multiline": false
+              }
+            ],
+            "default": [
+              {
+                "field": "value",
+                "pointer": "/value",
+                "kind": "number",
+                "unit": ""
+              }
+            ]
+          }
+        }
+      ],
+      "templates": [
+        {
+          "id": "json-summary",
+          "name": "JSON summary",
+          "component": {
+            "id": "json-summary",
+            "rect": {
+              "x": 0,
+              "y": 0,
+              "width": 416,
+              "height": 336
+            },
+            "padding": 12,
+            "gap": 6,
+            "border": true,
+            "content_layout": "positioned",
+            "refresh_hint": "automatic",
+            "blocks": [
+              {
+                "id": "title",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "overview",
+                    "field_id": "title",
+                    "row": 0
+                  }
+                },
+                "font_size": 20,
+                "align": "left",
+                "overflow": "wrap",
+                "rect": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 392,
+                  "height": 28
+                }
+              },
+              {
+                "id": "values",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "overview",
+                    "field_id": "summary",
+                    "row": 0
+                  }
+                },
+                "font_size": 14,
+                "align": "left",
+                "overflow": "wrap",
+                "rect": {
+                  "x": 0,
+                  "y": 36,
+                  "width": 392,
+                  "height": 246
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "calendar.google",
+      "name": "Google Calendar",
+      "description": "Read selected calendars from linked Google accounts. Add one connection per calendar; the combined agenda includes every enabled Google calendar connection.",
+      "min_poll_secs": 60,
+      "default_poll_secs": 300,
+      "settings": [
+        {
+          "id": "account_id",
+          "label": "Google account",
+          "required": true,
+          "input": {
+            "type": "text",
+            "max_bytes": 64
+          }
+        },
+        {
+          "id": "calendar_id",
+          "label": "Calendar",
+          "required": true,
+          "input": {
+            "type": "text",
+            "default": "primary",
+            "max_bytes": 1024
+          }
+        },
+        {
+          "id": "source_label",
+          "label": "Calendar label",
+          "required": true,
+          "input": {
+            "type": "text",
+            "default": "Personal",
+            "max_bytes": 128
+          }
+        },
+        {
+          "id": "timezone",
+          "label": "Calendar timezone",
+          "required": true,
+          "input": {
+            "type": "text",
+            "default": "Europe/Dublin",
+            "max_bytes": 64
+          }
+        },
+        {
+          "id": "days_ahead",
+          "label": "Days ahead",
+          "required": true,
+          "input": {
+            "type": "integer",
+            "default": 7,
+            "min": 1,
+            "max": 14
+          }
+        },
+        {
+          "id": "max_events",
+          "label": "Maximum events",
+          "required": true,
+          "input": {
+            "type": "integer",
+            "default": 8,
+            "min": 1,
+            "max": 12
+          }
+        },
+        {
+          "id": "include_all_day",
+          "label": "Include all-day events",
+          "required": true,
+          "input": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        {
+          "id": "show_titles",
+          "label": "Show event titles",
+          "required": true,
+          "input": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        {
+          "id": "show_locations",
+          "label": "Show locations",
+          "required": true,
+          "input": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        {
+          "id": "show_descriptions",
+          "label": "Show descriptions",
+          "required": true,
+          "input": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      ],
+      "templates": [
+        {
+          "id": "google-agenda",
+          "name": "Calendar agenda",
+          "component": {
+            "id": "google-agenda",
+            "rect": {
+              "x": 0,
+              "y": 0,
+              "width": 384,
+              "height": 300
+            },
+            "padding": 8,
+            "gap": 6,
+            "border": true,
+            "content_layout": "positioned",
+            "blocks": [
+              {
+                "id": "title",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "agenda",
+                    "field_id": "title",
+                    "row": 0
+                  }
+                },
+                "font_size": 18,
+                "overflow": "ellipsis",
+                "rect": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 368,
+                  "height": 24
+                }
+              },
+              {
+                "id": "summary",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "agenda",
+                    "field_id": "summary",
+                    "row": 0
+                  }
+                },
+                "font_size": 12,
+                "overflow": "wrap",
+                "rect": {
+                  "x": 0,
+                  "y": 30,
+                  "width": 368,
+                  "height": 232
+                }
+              }
+            ]
+          }
+        },
+        {
+          "id": "google-combined-agenda",
+          "name": "Combined calendar agenda",
+          "component": {
+            "id": "google-combined-agenda",
+            "rect": {
+              "x": 0,
+              "y": 0,
+              "width": 384,
+              "height": 300
+            },
+            "padding": 8,
+            "gap": 6,
+            "border": true,
+            "content_layout": "positioned",
+            "blocks": [
+              {
+                "id": "title",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "combined-agenda",
+                    "field_id": "title",
+                    "row": 0
+                  }
+                },
+                "font_size": 18,
+                "overflow": "ellipsis",
+                "rect": {
+                  "x": 0,
+                  "y": 0,
+                  "width": 368,
+                  "height": 24
+                }
+              },
+              {
+                "id": "summary",
+                "source": {
+                  "kind": "field",
+                  "binding": {
+                    "connection_id": "template",
+                    "dataset_id": "combined-agenda",
+                    "field_id": "summary",
+                    "row": 0
+                  }
+                },
+                "font_size": 12,
+                "overflow": "wrap",
+                "rect": {
+                  "x": 0,
+                  "y": 30,
+                  "width": 368,
+                  "height": 232
                 }
               }
             ]

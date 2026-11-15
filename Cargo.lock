@@ -1248,6 +1248,8 @@ dependencies = [
  "anyhow",
  "axum",
  "base64 0.22.1",
+ "chrono",
+ "chrono-tz",
  "clap",
  "crc32fast",
  "csv",
@@ -1257,12 +1259,24 @@ dependencies = [
  "paperphase-render",
  "paperphase-runtime",
  "reqwest",
+ "ring",
  "rustls",
  "serde",
  "serde_json",
  "tempfile",
  "tokio",
+ "url",
  "wat",
+]
+
+[[package]]
+name = "paperphase-air-quality-plugin"
+version = "0.1.0"
+dependencies = [
+ "paperphase-plugin-sdk",
+ "serde",
+ "serde_json",
+ "url",
 ]
 
 [[package]]
@@ -1277,11 +1291,46 @@ dependencies = [
 ]
 
 [[package]]
+name = "paperphase-daily-quote-plugin"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "chrono-tz",
+ "html-escape",
+ "paperphase-plugin-sdk",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "paperphase-dublin-bus-plugin"
 version = "0.1.0"
 dependencies = [
  "chrono",
  "chrono-tz",
+ "paperphase-plugin-sdk",
+ "serde",
+ "serde_json",
+ "url",
+]
+
+[[package]]
+name = "paperphase-generic-json-plugin"
+version = "0.1.0"
+dependencies = [
+ "paperphase-plugin-sdk",
+ "serde",
+ "serde_json",
+ "url",
+]
+
+[[package]]
+name = "paperphase-google-calendar-plugin"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "chrono-tz",
+ "html-escape",
  "paperphase-plugin-sdk",
  "serde",
  "serde_json",

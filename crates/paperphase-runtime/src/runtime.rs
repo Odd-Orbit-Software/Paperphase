@@ -61,6 +61,8 @@ pub struct RunConfig {
     headers: HeaderMap,
     references: Option<Arc<crate::ReferenceData>>,
     work_budget: Option<(usize, u64)>,
+    now: Option<u64>,
+    previous: Vec<u8>,
 }
 impl std::fmt::Debug for RunConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -85,7 +87,25 @@ impl RunConfig {
             headers: HeaderMap::new(),
             references: None,
             work_budget: None,
+            now: None,
+            previous: Vec::new(),
         })
+    }
+    /// Fixed per-invocation time, shared with the scheduler and deterministic tests.
+    pub fn with_time(mut self, now: u64) -> Result<Self> {
+        ensure!(now <= i64::MAX as u64, "invalid host time");
+        self.now = Some(now);
+        Ok(self)
+    }
+    /// Read-only previous primary dataset for this same connection.
+    pub fn with_previous(mut self, dataset: &Dataset) -> Result<Self> {
+        dataset.validate()?;
+        self.previous = serde_json::to_vec(dataset)?;
+        ensure!(
+            self.previous.len() <= 64 * 1024,
+            "previous dataset exceeds budget"
+        );
+        Ok(self)
     }
     pub fn with_settings(mut self, settings: &paperphase_core::SettingsValues) -> Result<Self> {
         self.settings = serde_json::to_vec(settings).map_err(|_| anyhow!("invalid settings"))?;
@@ -198,9 +218,37 @@ struct HostState {
     config: RunConfig,
     client: Client,
     requests: u32,
+    now: u64,
+    previous_reads: u32,
     lookups: u32,
     lookup_bytes: usize,
     output: Option<Publication>,
+}
+
+/// Shared host HTTP policy for plugins, reference imports and OAuth.
+pub fn shared_http_client(timeout: Duration) -> Result<Client> {
+    let mut roots = rustls::RootCertStore::empty();
+    let native = rustls_native_certs::load_native_certs();
+    roots.add_parsable_certificates(native.certs);
+    // An explicit provider avoids process-global TLS configuration and
+    // reqwest's default AWS-LC dependency. Keep normal certificate checks.
+    let tls = rustls::ClientConfig::builder_with_provider(Arc::new(
+        rustls::crypto::ring::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()?
+    .with_root_certificates(roots)
+    .with_no_client_auth();
+    Client::builder()
+        .tls_backend_preconfigured(tls)
+        .user_agent(concat!("Paperphase/", env!("CARGO_PKG_VERSION")))
+        .redirect(Policy::none())
+        .no_proxy()
+        .timeout(timeout)
+        .connect_timeout(timeout)
+        .pool_max_idle_per_host(2)
+        .retry(reqwest::retry::never())
+        .build()
+        .context("creating shared HTTP client")
 }
 
 impl PluginRuntime {
@@ -230,28 +278,7 @@ impl PluginRuntime {
         config.wasm_memory64(false);
         config.max_wasm_stack(512 * 1024);
         let engine = Engine::new(&config).context("creating native Wasm compiler")?;
-        let mut roots = rustls::RootCertStore::empty();
-        let native = rustls_native_certs::load_native_certs();
-        roots.add_parsable_certificates(native.certs);
-        // An explicit provider avoids process-global TLS configuration and
-        // reqwest's default AWS-LC dependency. Keep normal certificate checks.
-        let tls = rustls::ClientConfig::builder_with_provider(Arc::new(
-            rustls::crypto::ring::default_provider(),
-        ))
-        .with_safe_default_protocol_versions()?
-        .with_root_certificates(roots)
-        .with_no_client_auth();
-        let client = Client::builder()
-            .tls_backend_preconfigured(tls)
-            .user_agent(concat!("Paperphase/", env!("CARGO_PKG_VERSION")))
-            .redirect(Policy::none())
-            .no_proxy()
-            .timeout(limits.request_timeout)
-            .connect_timeout(limits.request_timeout)
-            .pool_max_idle_per_host(2)
-            .retry(reqwest::retry::never())
-            .build()
-            .context("creating shared HTTP client")?;
+        let client = shared_http_client(limits.request_timeout)?;
         Ok(Self {
             engine,
             client,
@@ -325,6 +352,12 @@ impl PluginRuntime {
                 config: config.clone(),
                 client: self.client.clone(),
                 requests: 0,
+                now: config.now.unwrap_or_else(|| {
+                    SystemTime::now()
+                        .duration_since(SystemTime::UNIX_EPOCH)
+                        .map_or(0, |d| d.as_secs())
+                }),
+                previous_reads: 0,
                 lookups: 0,
                 lookup_bytes: 0,
                 output: None,
@@ -334,6 +367,10 @@ impl PluginRuntime {
         // Set before instantiation: a module's start function is untrusted too.
         store.set_fuel(budgets.fuel)?;
         let mut linker = Linker::new(&self.engine);
+        linker.func_wrap(ABI, "unix_time", |caller: Caller<'_, HostState>| -> i64 {
+            caller.data().now as i64
+        })?;
+        linker.func_wrap(ABI, "previous_dataset", previous_dataset)?;
         linker.func_wrap(ABI, "reference_lookup", reference_lookup)?;
         linker.func_wrap(ABI, "source_url", source_url)?;
         linker.func_wrap(ABI, "settings_json", settings_json)?;
@@ -414,6 +451,22 @@ fn source_url(mut caller: Caller<'_, HostState>, ptr: i32, capacity: i32) -> Res
     ensure!(url.len() <= capacity, "source URL buffer is too small");
     memory.write(&mut caller, ptr, &url)?;
     Ok(url.len() as i32)
+}
+
+fn previous_dataset(mut caller: Caller<'_, HostState>, ptr: i32, capacity: i32) -> Result<i32> {
+    let (memory, ptr, capacity) = buffer(&mut caller, ptr, capacity, 64 * 1024)?;
+    ensure!(
+        caller.data().previous_reads == 0,
+        "previous dataset read quota exceeded"
+    );
+    caller.data_mut().previous_reads += 1;
+    let bytes = caller.data().config.previous.clone();
+    ensure!(
+        bytes.len() <= capacity,
+        "previous dataset buffer is too small"
+    );
+    memory.write(&mut caller, ptr, &bytes)?;
+    Ok(bytes.len() as i32)
 }
 
 fn settings_json(mut caller: Caller<'_, HostState>, ptr: i32, capacity: i32) -> Result<i32> {

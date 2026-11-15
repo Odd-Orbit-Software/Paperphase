@@ -833,3 +833,25 @@ body.dragging * {
 .fetch-setup { margin: 12px 28px; padding: 10px 12px; border: 1px solid #dfc999; border-radius: 5px; background: #fff7e6; font-size: 11px; line-height: 1.7; color: #87662c; }
 .fetch-setup summary { cursor: pointer; font-weight: 600; }
 .fetch-setup > code { display: block; overflow-wrap: anywhere; }
+
+.setting-table { margin: 16px 0; }
+.setting-table h4 { margin: 0 0 8px; }
+.setting-table-row { border: 1px solid #ccd6c0; border-radius: 6px; padding: 12px; margin: 12px 0; }
+.setting-table-row legend { font-size: 11px; color: #65725e; padding: 0 5px; }
+.setting-table-cells { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
+.setting-table-row button { margin-top: 8px; }
+
+.setting-table-cells .wide-cell { grid-column: 1 / -1; }
+.connections-workspace > aside { max-height: 65vh; overflow: auto; }
+
+.google-accounts { padding: 16px 28px; border-bottom: 1px solid var(--line); font-size: 12px; }
+.google-accounts summary { cursor: pointer; font-weight: 600; }
+.google-accounts p { color: var(--muted); }
+.google-config { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; }
+.google-config label:nth-child(3) { grid-column: 1 / -1; }
+.google-accounts label span { display: block; margin-bottom: 5px; }
+.google-accounts input { width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 4px; }
+.google-account { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+.google-account span { flex: 1; overflow-wrap: anywhere; }
+.google-link { display: flex; align-items: end; gap: 12px; margin-top: 16px; }
+.google-link label { flex: 1; }

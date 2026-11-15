@@ -11,11 +11,15 @@ type Dataset = { connection_id: string; connection_label?: string; dataset_id: s
 type Report = { id: string; state: string; warnings: string[]; blocks: BlockPlacement[] };
 type Preview = { png_base64: string; components: Report[] };
 type ComponentTemplate = { id: string; name: string; component: Component };
-type SettingInput = { type: 'url'; default?: string | null } | { type: 'number'; min: number; max: number; default?: number | null } | { type: 'text'; multiline?: boolean; max_bytes: number; default?: string | null } | { type: 'secret'; max_bytes: number } | { type: 'integer'; min: number; max: number; default?: number | null } | { type: 'boolean'; default?: boolean | null } | { type: 'choice'; options: { value: string; label: string }[]; default?: string | null };
+type SettingColumn = { id:string; label:string; max_bytes:number; multiline?:boolean; required:boolean; choices:{value:string;label:string}[] };
+type SettingValue = string | number | boolean | null | Record<string,string>[];
+type SettingInput = {type:'table';max_rows:number;columns:SettingColumn[];default:Record<string,string>[]} | { type: 'url'; default?: string | null } | { type: 'number'; min: number; max: number; default?: number | null } | { type: 'text'; multiline?: boolean; max_bytes: number; default?: string | null } | { type: 'secret'; max_bytes: number } | { type: 'integer'; min: number; max: number; default?: number | null } | { type: 'boolean'; default?: boolean | null } | { type: 'choice'; options: { value: string; label: string }[]; default?: string | null };
 type SettingDefinition = { id: string; label: string; help: string; required: boolean; input: SettingInput };
 type ConnectorDefinition = { id: string; name: string; description: string; min_poll_secs: number; default_poll_secs: number; templates?: ComponentTemplate[]; settings: SettingDefinition[] };
 type FetchStatus = { status: string; can_fetch: boolean; fetch_after: number; next_fetch_at: number; last_attempt_at: number | null; last_success_at: number | null; last_error: string | null };
-type Connection = { id: string; connector_id: string; label: string; enabled: boolean; poll_interval_secs: number; settings: Record<string, string | number | boolean | null>; secret_present: string[]; fetch?: FetchStatus };
+type Connection = { id: string; connector_id: string; label: string; enabled: boolean; poll_interval_secs: number; settings: Record<string, SettingValue>; secret_present: string[]; fetch?: FetchStatus };
+type GoogleAccount = { id: string; label: string; requires_reauth: boolean; calendars: {id: string; label: string; primary: boolean}[] };
+type GoogleStatus = {configured: boolean; client_id: string | null; client_secret_present: boolean; redirect_uri: string; accounts: GoogleAccount[]; last_link_error?: {code:string;message:string} | null};
 type Connections = { revision: number; connections: Connection[]; execution: string };
 class ApiFailure extends Error { constructor(message: string, readonly status: number) { super(message); } }
 
@@ -833,6 +837,18 @@ async function start() {
     iconPacks = packs;
     saved = workspace; catalog = datasets; zones = timezones; connectorDefinitions = definitions.connectors; connectionStore = connections;
     draft = clone(saved.layout); draftSettings = clone(saved.refresh_settings); updateStatus(); render();
+    const linked = new URL(location.href).searchParams.get('google');
+    if (linked) {
+      const url = new URL(location.href); url.searchParams.delete('google'); window.history.replaceState(null, '', url);
+      let message = 'Google account linking failed or expired. Check the OAuth client and try again from Connections.';
+      if (linked !== 'connected') {
+        try {
+          const google = await api<GoogleStatus>('/api/google');
+          if (google.last_link_error) message = `Google account linking failed. ${google.last_link_error.message}`;
+        } catch { /* Retain the generic failure when diagnostics are unavailable. */ }
+      }
+      notice(linked === 'connected' ? 'Google account connected. Choose its calendars in Connections.' : message, linked !== 'connected');
+    }
     window.setInterval(() => { void poll(); }, 1000);
   } catch (error) { notice(`Cannot load the workspace. ${String(error)} Reload after the service is available.`, true); button('edit').disabled = true; }
 }
@@ -845,6 +861,7 @@ let connectionBaseline = '';
 let connectionBusy = false;
 let connectionConflict = false;
 let connectionIsNew = false;
+let googleStatus: GoogleStatus | undefined;
 const connectionDialog = () => $<HTMLDialogElement>('connections-dialog');
 function connectionDirty() { return !!connectionDraft && JSON.stringify(connectionDraft) !== connectionBaseline; }
 function connectionNotice(message = '', error = false) {
@@ -857,14 +874,62 @@ function connectionButtons() {
   button('connections-close').disabled = connectionBusy;
   $('connection-properties').inert = connectionBusy;
   $('connections-list').inert = connectionBusy;
+  const google = document.getElementById('google-accounts'); if (google) google.inert = connectionBusy || !!connectionDraft;
 }
 async function loadConnections() {
-  const [catalog, store] = await Promise.all([api<{ connectors: ConnectorDefinition[] }>('/api/connectors'), api<Connections>('/api/connections')]);
+  const [catalog, store, google] = await Promise.all([api<{ connectors: ConnectorDefinition[] }>('/api/connectors'), api<Connections>('/api/connections'), api<GoogleStatus>('/api/google')]);
+  googleStatus = google;
   connectorDefinitions = catalog.connectors; connectionStore = store;
   document.querySelector('.connections-scope')!.textContent = store.execution === 'compiled' ? 'Fetch now updates connection data. Refresh display applies the latest saved layout and data, subject to quiet hours.' : 'No fetch modules are loaded. Settings and templates are available, but connections cannot fetch data.';
   $('fetch-setup').hidden = !store.connections.some(connection => connection.fetch?.status === 'settings_only' && (connectorDefinitions.find(definition => definition.id === connection.connector_id)?.templates?.length ?? 0) > 0);
   connectionDraft = undefined; connectionBaseline = ''; connectionConflict = false; connectionIsNew = false;
-  renderConnections(); renderTemplates(); renderRuntimeWarning();
+  renderGoogleAccounts(); renderConnections(); renderTemplates(); renderRuntimeWarning();
+}
+function renderGoogleAccounts() {
+  let parent = document.getElementById('google-accounts');
+  if (!parent) { parent = node('details', 'google-accounts'); parent.id = 'google-accounts'; document.querySelector('.connections-scope')!.after(parent); }
+  parent.replaceChildren(node('summary', '', 'Google accounts'));
+  const status = googleStatus; if (!status) return;
+  parent.append(node('p', '', 'Link Google accounts here, then add one connection for each calendar. Stay on the Pi’s network while linking.'));
+  if (status.last_link_error) parent.append(node('p', 'error', status.last_link_error.message));
+  const config = node('form', 'google-config'); parent.append(config);
+  const client = node('input'); client.required = true; client.value = status.client_id ?? ''; client.maxLength = 1024;
+  label('Google OAuth client ID', client, config);
+  const secret = node('input'); secret.type = 'password'; secret.autocomplete = 'new-password'; secret.required = !status.client_secret_present; secret.maxLength = 1024;
+  secret.placeholder = status.client_secret_present ? 'Saved; leave blank to keep' : 'OAuth client secret'; label('Google OAuth client secret', secret, config);
+  const redirect = node('input'); redirect.type = 'url'; redirect.required = true; redirect.value = status.redirect_uri; label('Hosted callback URL', redirect, config);
+  const save = node('button', 'secondary', 'Save Google setup'); save.type = 'submit'; config.append(save);
+  config.onsubmit = async event => {
+    event.preventDefault(); connectionBusy = true; connectionButtons();
+    try {
+      googleStatus = await api<GoogleStatus>('/api/google/config', {method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({client_id:client.value.trim(), client_secret:secret.value, redirect_uri:redirect.value.trim()})});
+      secret.value = ''; renderGoogleAccounts(); connectionNotice('Google setup saved. You can link an account now.');
+    } catch (error) { connectionNotice(String(error), true); }
+    finally { connectionBusy = false; connectionButtons(); }
+  };
+  for (const account of status.accounts) {
+    const row = node('div', 'google-account'); row.append(node('span', '', account.label + (account.requires_reauth ? ' · Reconnect required' : ` · ${account.calendars.length} calendars`)));
+    const reconnect = node('button', 'small', 'Reconnect'); reconnect.type = 'button'; reconnect.setAttribute('aria-label', `Reconnect ${account.label}`); reconnect.onclick = () => { void linkGoogle(account.label); };
+    const remove = node('button', 'small', 'Disconnect'); remove.type = 'button'; remove.setAttribute('aria-label', `Disconnect ${account.label}`);
+    remove.onclick = async () => {
+      connectionBusy = true; connectionButtons();
+      try { googleStatus = await api<GoogleStatus>(`/api/google/accounts/${encodeURIComponent(account.id)}`, {method:'DELETE'}); renderGoogleAccounts(); connectionNotice('Account disconnected from this Pi.'); }
+      catch (error) { connectionNotice(String(error), true); }
+      finally { connectionBusy = false; connectionButtons(); }
+    };
+    row.append(reconnect, remove); parent.append(row);
+  }
+  const form = node('form', 'google-link'); const accountLabel = node('input'); accountLabel.required = true; accountLabel.maxLength = 128; accountLabel.placeholder = 'Personal or work'; label('New Google account label', accountLabel, form);
+  const link = node('button', 'primary', 'Link Google account'); link.type = 'submit'; link.disabled = !status.configured || status.accounts.length >= 8; form.append(link); parent.append(form);
+  form.onsubmit = event => { event.preventDefault(); void linkGoogle(accountLabel.value); };
+}
+async function linkGoogle(label: string) {
+  if (dirty() || connectionDraft) { connectionNotice('Save or discard your layout and connection drafts before linking Google.', true); return; }
+  connectionBusy = true; connectionButtons();
+  try {
+    const result = await api<{url:string}>('/api/google/begin', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({label})});
+    window.location.assign(result.url);
+  } catch (error) { connectionNotice(String(error), true); connectionBusy = false; connectionButtons(); }
 }
 function beginConnection(connection?: Connection) {
   if (connectionDraft || connectionBusy) return;
@@ -879,7 +944,7 @@ function beginConnection(connection?: Connection) {
 }
 function newConnection(definition: ConnectorDefinition): Connection {
   const settings: Connection['settings'] = Object.create(null);
-  for (const field of definition.settings) if ('default' in field.input && field.input.default != null) settings[field.id] = field.input.default;
+  for (const field of definition.settings) if ('default' in field.input && field.input.default != null) settings[field.id] = clone(field.input.default);
   return { id: identifier('connection'), connector_id: definition.id, label: definition.name, enabled: true, poll_interval_secs: definition.default_poll_secs, settings, secret_present: [] };
 }
 function renderConnections() {
@@ -926,6 +991,52 @@ function renderConnections() {
     const inputDefinition = field.input;
     const value = current.settings[field.id];
     let input: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
+    if (definition.id === 'calendar.google' && (field.id === 'account_id' || field.id === 'calendar_id')) {
+      const accounts = googleStatus?.accounts ?? [];
+      const account = accounts.find(a => a.id === current.settings.account_id);
+      const options: [string,string][] = field.id === 'account_id' ? accounts.map(a => [a.id, a.label + (a.requires_reauth ? ' (reconnect)' : '')]) : (account?.calendars ?? []).map(c => [c.id, c.label + (c.primary ? ' (primary)' : '')]);
+      if (field.id === 'calendar_id' && account) options.unshift(['primary', 'Primary calendar']);
+      const chosen = typeof value === 'string' ? value : '';
+      const control = select(field.label, chosen, [['', 'Choose…'], ...options], fields, selected => {
+        current.settings[field.id] = selected;
+        if (field.id === 'account_id') { current.settings.calendar_id = 'primary'; renderConnections(); }
+        connectionButtons();
+      }); (control as HTMLSelectElement).required = true;
+      if (field.id === 'account_id' && !accounts.length) fields.append(node('small', 'field-help', 'Save or discard this form, then open Google accounts above to link an account.'));
+      continue;
+    }
+    if (inputDefinition.type === 'table') {
+      const section=node('section','setting-table');section.setAttribute('aria-label',field.label);fields.append(section);
+      section.append(node('h4','',field.label));
+      if(field.help)section.append(node('p','setting-help',field.help));
+      const rows=(Array.isArray(value)?value:clone(inputDefinition.default)) as Record<string,string>[];
+      current.settings[field.id]=rows;
+      const entries=node('div','setting-table-entries');section.append(entries);
+      const draw=()=>{
+        entries.replaceChildren();
+        rows.forEach((row,index)=>{
+          const entry=node('fieldset','setting-table-row');entry.append(node('legend','',`Row ${index+1}`));entries.append(entry);
+          const cells=node('div','setting-table-cells');entry.append(cells);
+          inputDefinition.columns.forEach(column=>{
+            const cell=column.choices.length?node('select'):column.multiline?node('textarea'):node('input');
+            if(cell instanceof HTMLSelectElement){
+              if(!column.required){const option=node('option','','Not set');option.value='';cell.append(option);}
+              column.choices.forEach(choice=>{const option=node('option','',choice.label);option.value=choice.value;cell.append(option);});
+            }else{cell.maxLength=column.max_bytes;if(cell instanceof HTMLTextAreaElement)cell.rows=3;}
+            cell.required=column.required;cell.value=row[column.id]??'';
+            cell.setAttribute('aria-label',`${column.label} ${index+1}`);
+            cell.oninput=()=>{row[column.id]=cell.value;connectionButtons();};
+            label(column.label,cell,cells);cell.setAttribute('aria-label',`${column.label} ${index+1}`);if(column.multiline)cells.lastElementChild?.classList.add('wide-cell');
+          });
+          const remove=node('button','subtle',`Remove row ${index+1}`);remove.type='button';remove.setAttribute('aria-label',`Remove row ${index+1} from ${field.label}`);
+          remove.onclick=()=>{rows.splice(index,1);draw();connectionButtons();};entry.append(remove);
+        });
+        add.disabled=rows.length>=inputDefinition.max_rows;
+      };
+      const add=node('button','secondary',`Add row to ${field.label}`);add.type='button';
+      add.onclick=()=>{rows.push(Object.fromEntries(inputDefinition.columns.map(column=>[column.id,column.required&&column.choices.length?column.choices[0]?.value??'':''])));draw();connectionButtons();entries.lastElementChild?.querySelector<HTMLInputElement>('input,select')?.focus();};
+      section.append(add);draw();continue;
+    }
     if (inputDefinition.type === 'choice') {
       input = node('select');
       if (!field.required) { const option = node('option', '', 'Not set'); option.value = ''; input.append(option); }

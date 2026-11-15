@@ -10,6 +10,29 @@ follows its own schedule and continues during quiet hours.
 The screenshot is from the running desktop simulator. All profile values below
 are synthetic test limits. They describe no Waveshare panel or physical timing.
 
+## Physical bring-up utility
+
+The separate [`waveshare-v2-smoke.py`](../../scripts/waveshare-v2-smoke.py)
+developer tool writes one renderer-exported PBM through a pinned Waveshare V2
+reference driver. It accepts exactly 48,000 bytes of 800 × 480 packed pixels;
+PBM and `Frame` both use row-major, MSB-first bits with one meaning black ink.
+The vendor's full-refresh method receives that ink buffer and constructs its
+other image plane. Complemented byte values are normalised while retaining the
+vendor's D/C and chip-select transitions.
+
+The tool holds one process lock, bounds each active-low BUSY wait to 20 seconds,
+and bounds the complete operation to 75 seconds. Its `finally` path releases HAT
+power and GPIOs; success requests deep sleep first. A JSON report records frame
+hash, BUSY observations and timings, cleanup and errors. Visual confirmation is
+separate evidence because SPI completion is not optical readback.
+
+A full refresh on the owner's Rev2.3 HAT / V2 screen was visually confirmed on
+2026-11-14, taking 5.74 seconds. This utility does not implement a `Controller`
+backend or modify the software profile, saved workspace, scheduler or quiet-hours
+behaviour. Automatic physical updates, partial-refresh capabilities and recovery
+still require integration and validation. See the
+[bring-up instructions and measured results](../usage/foundation-harness.md#one-shot-waveshare-v2-full-refresh).
+
 ## Records and ownership
 
 | Record | Contents |
@@ -138,7 +161,9 @@ worker after an interval change. Browser coverage exercises saved requests and
 policy settings, host promotion from partial to full, unchanged manual refresh,
 and persistence alongside the existing editing flows. An additional browser
 metadata fixture checks failure backoff, active full recovery, and newer queued
-layout status; Rust tests exercise the actual injected driver failure. Pi and
-physical-panel validation remain pending.
+layout status; Rust tests exercise the actual injected driver failure. Initial
+native Pi application checks and the separate one-shot full refresh are now
+recorded in the operator guide. Integrated physical-panel refresh-policy
+validation remains pending.
 
 See [operator instructions](../usage/refresh-controller.md).

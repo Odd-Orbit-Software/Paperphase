@@ -680,3 +680,112 @@ test('Dublin Bus accepts multiple stop numbers with a private key and shared fee
  if(process.env.CAPTURE_SCREENSHOTS==='1')await page.screenshot({path:'../docs/design/images/dublin-bus-display.png'});
  await page.reload();await page.getByRole('button',{name:'Edit layout'}).click();await expect(page.getByRole('button',{name:'Add Bus stop board from Dublin buses',exact:true})).toBeVisible();await page.getByRole('button',{name:'Discard',exact:true}).click();expect(errors).toEqual([]);
 });
+
+async function placePluginBoard(page: import('@playwright/test').Page, request: import('@playwright/test').APIRequestContext, template: string, label: string, screenshot: string) {
+ await page.getByRole('button',{name:'Edit layout',exact:true}).click();
+ for(const id of ['weather','agenda']) {await page.getByRole('button',{name:`Select ${id}`,exact:true}).click();await page.getByRole('button',{name:'Remove component',exact:true}).click();}
+ await page.getByRole('button',{name:template,exact:true}).click();await page.getByRole('button',{name:'Save to display',exact:true}).click();
+ await expect(page.getByRole('button',{name:'Edit layout',exact:true})).toBeVisible();
+ await expect.poll(async()=>{const s=await(await request.get('/api/state')).json();return !s.pending&&s.displayed_revision===s.revision;}).toBe(true);
+ const state=await(await request.get('/api/state')).json();const board=state.layout.components.find((c:{label:string})=>c.label===label);expect(board).toBeTruthy();
+ const preview=await(await request.post('/api/preview',{data:state.layout})).json();const report=preview.components.find((c:{id:string})=>c.id===board.id);expect(report.state).toBe('fresh');expect(report.warnings).toEqual([]);
+ expect(await(await request.get('/api/display.png')).body()).toEqual(Buffer.from(preview.png_base64,'base64'));
+ await expect(page.locator('#frame')).toHaveAttribute('src',`/api/display.png?frame=${encodeURIComponent(state.frame_id)}`);await expect(page.locator('#frame')).toHaveJSProperty('complete',true);
+ if(process.env.CAPTURE_SCREENSHOTS==='1')await page.screenshot({path:`../docs/design/images/${screenshot}.png`});
+}
+
+test('air quality and pollen preserve unavailable values and render a forecast board',async({page,request})=>{
+ await page.goto('/');await page.getByRole('button',{name:'Connections',exact:true}).click();await page.getByRole('button',{name:'Configure Dublin air',exact:true}).click();
+ await expect(page.getByLabel('Pollen focus',{exact:true})).toHaveValue('all');await page.getByRole('checkbox',{name:'Enabled',exact:true}).check();await page.getByRole('button',{name:'Save connection',exact:true}).click();
+ await expect(page.locator('[data-fetch-id="air.browser"]')).toContainText('Last fetched');
+ const catalog=await(await request.get('/api/catalog')).json();expect(catalog.filter((d:{connection_id:string})=>d.connection_id==='air.browser').map((d:{dataset_id:string})=>d.dataset_id).sort()).toEqual(['current','hourly','pollen']);
+ await page.getByRole('button',{name:'Configure Dublin air',exact:true}).click();if(process.env.CAPTURE_SCREENSHOTS==='1')await page.screenshot({path:'../docs/design/images/air-quality-settings.png'});await page.getByRole('button',{name:'Discard form',exact:true}).click();await page.getByRole('button',{name:'Close connections',exact:true}).click();
+ await placePluginBoard(page,request,'Add Pollen board from Dublin air','Dublin air · Pollen board','air-quality-display');
+});
+
+test('personal quote rows can be added, removed and saved without an online fetch',async({page,request})=>{
+ await page.goto('/');await page.getByRole('button',{name:'Connections',exact:true}).click();await page.getByRole('button',{name:'Configure Daily thought',exact:true}).click();
+ await expect(page.getByLabel('Quote selection',{exact:true})).toHaveValue('personal');
+ await page.getByRole('button',{name:'Add row to Personal quotes',exact:true}).click();await page.getByLabel('Quote 1',{exact:true}).fill('Make space for curiosity and useful ideas.');await page.getByLabel('Author 1',{exact:true}).fill('Paperphase fixture');
+ await page.getByRole('button',{name:'Add row to Personal quotes',exact:true}).click();await page.getByLabel('Quote 2',{exact:true}).fill('A second thought to remove.');await page.getByRole('button',{name:'Remove row 2 from Personal quotes',exact:true}).click();
+ await page.getByRole('checkbox',{name:'Enabled',exact:true}).check();await page.getByRole('button',{name:'Save connection',exact:true}).click();await expect(page.locator('[data-fetch-id="quote.browser"]')).toContainText('Last fetched');
+ await page.getByRole('button',{name:'Configure Daily thought',exact:true}).click();await expect(page.getByLabel('Quote 1',{exact:true})).toHaveValue('Make space for curiosity and useful ideas.');await expect(page.getByLabel('Quote 2',{exact:true})).toHaveCount(0);
+ if(process.env.CAPTURE_SCREENSHOTS==='1')await page.screenshot({path:'../docs/design/images/daily-quote-settings.png'});await page.getByRole('button',{name:'Discard form',exact:true}).click();await page.getByRole('button',{name:'Close connections',exact:true}).click();
+ await placePluginBoard(page,request,'Add Daily quote from Daily thought','Daily thought · Daily quote','daily-quote-display');
+});
+
+test('generic JSON mappings use editable rows and optional empty authentication',async({page,request})=>{
+ await page.goto('/');await page.getByRole('button',{name:'Connections',exact:true}).click();await page.getByRole('button',{name:'Configure Room sensors',exact:true}).click();
+ await expect(page.getByLabel('Authorization header',{exact:true})).toHaveValue('');await expect(page.getByLabel('X-API-Key header',{exact:true})).toHaveValue('');
+ await page.getByRole('button',{name:'Add row to Field mappings',exact:true}).click();await page.getByLabel('Field ID 2',{exact:true}).fill('room');await page.getByLabel('JSON Pointer 2',{exact:true}).fill('/name');await page.getByLabel('Type 2',{exact:true}).selectOption('text');
+ await page.getByRole('button',{name:'Add row to Field mappings',exact:true}).click();await page.getByLabel('Field ID 3',{exact:true}).fill('open');await page.getByLabel('JSON Pointer 3',{exact:true}).fill('/open');await page.getByLabel('Type 3',{exact:true}).selectOption('boolean');
+ await page.getByRole('checkbox',{name:'Enabled',exact:true}).check();await page.getByRole('button',{name:'Save connection',exact:true}).click();await expect(page.locator('[data-fetch-id="json.browser"]')).toContainText('Last fetched');
+ const store=await(await request.get('/api/connections')).json();const connection=store.connections.find((c:{id:string})=>c.id==='json.browser');expect(connection.secret_present).toEqual([]);expect(connection.settings.mappings).toHaveLength(3);
+ await page.getByRole('button',{name:'Configure Room sensors',exact:true}).click();await expect(page.getByLabel('Type 3',{exact:true})).toHaveValue('boolean');await page.getByLabel('Field ID 1',{exact:true}).scrollIntoViewIfNeeded();
+ if(process.env.CAPTURE_SCREENSHOTS==='1')await page.screenshot({path:'../docs/design/images/generic-json-settings.png'});await page.getByRole('button',{name:'Discard form',exact:true}).click();await page.getByRole('button',{name:'Close connections',exact:true}).click();
+ await placePluginBoard(page,request,'Add JSON summary from Room sensors','Room sensors · JSON summary','generic-json-display');
+});
+
+test('Google setup keeps credentials private and returns cross-site callbacks to the originating editor', async ({page, request}) => {
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/');
+  await page.getByRole('button', {name:'Connections',exact:true}).click();
+  await page.locator('#google-accounts summary').click();
+  await page.getByLabel('Google OAuth client ID',{exact:true}).fill('browser-fixture.apps.googleusercontent.com');
+  await page.getByLabel('Google OAuth client secret',{exact:true}).fill('fixture-browser-secret');
+  await page.getByRole('button',{name:'Save Google setup',exact:true}).click();
+  await expect(page.locator('#connections-notice')).toContainText('Google setup saved');
+  await expect(page.getByLabel('Google OAuth client secret',{exact:true})).toHaveValue('');
+  const status = await (await request.get('/api/google')).json();
+  expect(status.client_secret_present).toBeTruthy();
+  expect(JSON.stringify(status)).not.toContain('fixture-browser-secret');
+  let pendingState = '';
+  await page.route('https://accounts.google.com/o/oauth2/v2/auth?**', async route => {
+    const auth = new URL(route.request().url()); pendingState = auth.searchParams.get('state')!;
+    expect(auth.searchParams.get('code_challenge_method')).toBe('S256');
+    expect(auth.searchParams.get('redirect_uri')).toBe('https://auth.paperphase.oddorbit.software/oauth/google/callback');
+    const payload = JSON.parse(Buffer.from(pendingState,'base64url').toString());
+    expect(payload.return_to).toBe('http://127.0.0.1:8097/api/google/callback');
+    const callback = new URL(payload.return_to); callback.searchParams.set('state',pendingState); callback.searchParams.set('error','access_denied');
+    await route.fulfill({contentType:'text/html',body:`<a href="${callback.href.replaceAll('&','&amp;')}">Return to editor</a>`});
+  });
+  await page.getByLabel('New Google account label',{exact:true}).fill('Personal');
+  await page.getByRole('button',{name:'Link Google account',exact:true}).click();
+  await expect(page).toHaveURL(/^https:\/\/accounts\.google\.com\//);
+  await page.getByRole('link',{name:'Return to editor'}).click();
+  await expect(page.locator('#notice')).toContainText('Google account linking was declined');
+  await expect(page).toHaveURL('http://127.0.0.1:8097/');
+  const failure = await (await request.get('/api/google')).json();
+  expect(failure.last_link_error.code).toBe('access_denied');
+  expect(JSON.stringify(failure)).not.toContain(pendingState);
+  const crossSite = await request.post('/api/google/begin',{headers:{'sec-fetch-site':'cross-site'},data:{label:'Rejected'}});
+  expect(crossSite.status()).toBe(403);
+  const crossSiteRead = await request.get('/api/google',{headers:{'sec-fetch-site':'cross-site','sec-fetch-mode':'navigate','sec-fetch-dest':'document'}});
+  expect(crossSiteRead.status()).toBe(403);
+  const wrongPi = await request.get('/api/google/callback',{params:{state:pendingState,error:'access_denied'},headers:{host:'other-pi.local:8097','sec-fetch-site':'cross-site'},maxRedirects:0});
+  expect(wrongPi.status()).toBe(403);
+  const replay = await request.get('/api/google/callback',{params:{state:pendingState,error:'access_denied'},headers:{'sec-fetch-site':'cross-site'},maxRedirects:0});
+  expect(replay.status()).toBe(303);
+  expect(replay.headers().location).toBe('/?google=failed');
+  expect((await (await request.get('/api/google')).json()).last_link_error).toEqual(failure.last_link_error);
+  expect(errors).toEqual([]);
+});
+
+test('Google linking retains an unsaved layout instead of navigating away', async ({page,request}) => {
+  const before = await (await request.get('/api/state')).json();
+  const config = await request.put('/api/google/config',{data:{client_id:'browser-fixture.apps.googleusercontent.com',client_secret:'fixture-browser-secret',redirect_uri:'https://auth.paperphase.oddorbit.software/oauth/google/callback'}});
+  expect(config.ok()).toBeTruthy();
+  await page.goto('/');
+  await page.getByRole('button',{name:'Edit layout',exact:true}).click();
+  await page.getByRole('button',{name:'Select header',exact:true}).click();
+  await page.getByLabel('Text',{exact:true}).first().fill('Retain this layout draft');
+  await page.getByRole('button',{name:'Connections',exact:true}).click();
+  await page.locator('#google-accounts summary').click();
+  await page.getByLabel('New Google account label',{exact:true}).fill('Work');
+  await page.getByRole('button',{name:'Link Google account',exact:true}).click();
+  await expect(page.locator('#connections-notice')).toContainText('Save or discard your layout');
+  await expect(page).toHaveURL('http://127.0.0.1:8097/');
+  await page.getByRole('button',{name:'Close connections',exact:true}).click();
+  await expect(page.getByLabel('Text',{exact:true}).first()).toHaveValue('Retain this layout draft');
+  expect((await (await request.get('/api/state')).json()).revision).toBe(before.revision);
+});

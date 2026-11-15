@@ -8,4 +8,5 @@ pub use wasmtime::Error as RuntimeError;
 pub use paperphase_core::{Dataset, Field, FieldKind};
 pub use runtime::{
     Limits, PluginRuntime, PreparedPlugin, RunAttempt, RunConfig, RunMetrics, RunResult,
+    shared_http_client,
 };

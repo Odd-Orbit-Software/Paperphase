@@ -37,11 +37,22 @@ work runs before physical hardware. The first weather/RSS plugins now include
 hourly/daily forecasts, plugin-owned monochrome icons, feed headlines, and reusable
 connection templates. Luas stop boards now support both directions and shared
 polling. Dublin Bus adds numbered multi-stop boards through a shared NTA feed
-and reference cache; air quality remains planned as a separate plugin.
-Remaining integrations, Pi measurements, and hardware validation are pending.
+and reference cache. Air quality/pollen, online/personal daily quotes and typed
+JSON endpoints now have compiled connectors and editable templates.
+[Google Calendar](docs/usage/google-calendar.md) adds host-owned account linking,
+privacy settings and combined agendas, using a self-deployed HTTPS browser
+callback. Desktop mocks are separate from pending real Google account checks.
+Initial headless Zero 2 W tests now cover compiled plugins, resource-limit
+recovery, simulator rendering, editor APIs and restart persistence, with
+[measured memory and startup costs](docs/usage/foundation-harness.md#first-headless-pi-results--2026-11-14).
+Remaining integrations, long-running Pi validation and physical-display tests
+are pending.
 The initial target is a Raspberry Pi Zero 2 W running 64-bit Raspberry
 Pi OS Lite with a Waveshare 7.5-inch monochrome e-paper HAT. The exact panel
-revision and resolution remain to be confirmed.
+labels are now identified as HAT revision 2.3 / screen V2, with a documented
+800 × 480 resolution. A [one-shot full refresh](docs/usage/foundation-harness.md#one-shot-waveshare-v2-full-refresh)
+has been visually confirmed; automatic physical updates and partial-refresh
+validation remain pending.
 
 - [Requirements](docs/planning/requirements.md)
 - [Architecture](docs/planning/architecture.md)
@@ -64,6 +75,8 @@ revision and resolution remain to be confirmed.
 - [Weather/RSS design](docs/design/weather-and-rss.md)
 - [Set up Luas departures](docs/usage/luas.md)
 - [Luas design](docs/design/luas.md)
+- [Set up air quality, daily quotes and JSON data](docs/usage/air-quotes-json.md)
+- [Air/quote/JSON design](docs/design/air-quotes-json.md)
 - [Set up Dublin Bus](docs/usage/dublin-bus.md)
 - [Dublin Bus and reference-cache design](docs/design/dublin-bus.md)
 - [Plugin-owned icon design](docs/design/plugin-icons.md)

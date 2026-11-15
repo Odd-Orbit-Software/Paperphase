@@ -130,6 +130,42 @@
         ],
         "selection_setting": "stop_numbers"
       }
+    },
+    {
+      "connector_id": "environment.air-quality",
+      "wasm": "../target/wasm32-unknown-unknown/release/paperphase_air_quality_plugin.wasm",
+      "source_url": "https://air-quality-api.open-meteo.com/v1/air-quality",
+      "origin_interval_secs": 60,
+      "stale_after_secs": 7200
+    },
+    {
+      "connector_id": "daily.quote",
+      "wasm": "../target/wasm32-unknown-unknown/release/paperphase_daily_quote_plugin.wasm",
+      "source_url": "https://zenquotes.io/api/today",
+      "origin_interval_secs": 60,
+      "stale_after_secs": 172800
+    },
+    {
+      "connector_id": "generic.json",
+      "wasm": "../target/wasm32-unknown-unknown/release/paperphase_generic_json_plugin.wasm",
+      "source_setting": "url",
+      "request_headers": {
+        "authorization": "authorization",
+        "x-api-key": "api_key"
+      },
+      "origin_interval_secs": 30,
+      "stale_after_secs": 900
+    },
+    {
+      "connector_id": "calendar.google",
+      "wasm": "../target/wasm32-unknown-unknown/release/paperphase_google_calendar_plugin.wasm",
+      "source_url": "https://www.googleapis.com/calendar/v3",
+      "work_budget": {
+        "response_bytes": 262144,
+        "fuel": 50000000
+      },
+      "origin_interval_secs": 60,
+      "stale_after_secs": 900
     }
   ]
 }

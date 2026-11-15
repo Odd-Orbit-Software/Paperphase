@@ -1002,3 +1002,221 @@ fn reference_lookup_quota_bounds_native_work_per_invocation() {
             .is_ok()
     );
 }
+
+#[test]
+fn scheduler_time_is_explicit_and_fixed_for_an_invocation() {
+    let body = escaped(DATASET.as_bytes());
+    let wasm = wat::parse_str(format!(
+        r#"(module
+      (import "paperphase_v0" "unix_time" (func $time (result i64)))
+      (import "paperphase_v0" "publish" (func $publish (param i32 i32)(result i32)))
+      (memory(export "memory")1)(data(i32.const 0) "{body}")
+      (func(export "run")(result i32)
+        call $time i64.const 1700000000 i64.ne if unreachable end
+        call $time i64.const 1700000000 i64.ne if unreachable end
+        i32.const 0 i32.const {} call $publish drop i32.const 0))"#,
+        DATASET.len()
+    ))
+    .unwrap();
+    let runtime = PluginRuntime::new(Limits::default()).unwrap();
+    runtime
+        .run(
+            &runtime.prepare(&wasm).unwrap(),
+            &config().with_time(1700000000).unwrap(),
+        )
+        .unwrap();
+    assert!(config().with_time(u64::MAX).is_err());
+}
+
+#[test]
+#[ignore = "scripts/check.sh builds the three new compiled guests"]
+fn compiled_air_quote_and_json_guests_share_host_services() {
+    let runtime = PluginRuntime::new(Limits {
+        max_requests: 1,
+        ..Limits::default()
+    })
+    .unwrap();
+    let catalog: paperphase_core::ConnectorCatalog =
+        serde_json::from_str(include_str!("../../../examples/simulator/connectors.json")).unwrap();
+    let load = |name: &str| {
+        runtime
+            .prepare(&std::fs::read(std::env::var(name).unwrap()).unwrap())
+            .unwrap()
+    };
+    let air = Server::ok(include_bytes!(
+        "../../../plugins/air-quality/fixtures/forecast.json"
+    ));
+    let settings = catalog
+        .get("environment.air-quality")
+        .unwrap()
+        .resolve(&Default::default(), None)
+        .unwrap();
+    let result = runtime
+        .run(
+            &load("PAPERPHASE_TEST_AIR_QUALITY_PLUGIN"),
+            &RunConfig::new(&air.url)
+                .unwrap()
+                .with_settings(&settings)
+                .unwrap(),
+        )
+        .unwrap();
+    assert_eq!(result.dataset.rows[0]["category"], "Fair");
+    assert_eq!(result.additional_datasets[0].rows.len(), 24);
+    assert_eq!(result.additional_observed_at["pollen"], 1700000000);
+    assert_eq!(air.hits(), 1);
+    let source = Server::ok(include_bytes!(
+        "../../../plugins/daily-quote/fixtures/today.json"
+    ));
+    let definition = catalog.get("daily.quote").unwrap();
+    let online = definition.resolve(&Default::default(), None).unwrap();
+    let module = load("PAPERPHASE_TEST_DAILY_QUOTE_PLUGIN");
+    let result = runtime
+        .run(
+            &module,
+            &RunConfig::new(&source.url)
+                .unwrap()
+                .with_settings(&online)
+                .unwrap()
+                .with_time(1700000000)
+                .unwrap(),
+        )
+        .unwrap();
+    assert_eq!(result.dataset.rows[0]["source"], "online");
+    assert_eq!(source.hits(), 1);
+    let cached = runtime
+        .run(
+            &module,
+            &RunConfig::new(&source.url)
+                .unwrap()
+                .with_settings(&online)
+                .unwrap()
+                .with_time(1700000300)
+                .unwrap()
+                .with_previous(&result.dataset)
+                .unwrap(),
+        )
+        .unwrap();
+    assert_eq!(cached.metrics.http_requests, 0);
+    assert_eq!(source.hits(), 1);
+    assert_eq!(cached.observed_at, Some(1700000000));
+    let personal=definition.resolve(&serde_json::from_value(json!({"mode":"personal","personal_quotes":[{"quote":"An original private thought.","author":"Fixture"}]})).unwrap(),None).unwrap();
+    let result = runtime
+        .run(
+            &module,
+            &RunConfig::new(&source.url)
+                .unwrap()
+                .with_settings(&personal)
+                .unwrap()
+                .with_time(1700000000)
+                .unwrap(),
+        )
+        .unwrap();
+    assert_eq!(result.dataset.rows[0]["source"], "personal");
+    assert_eq!(result.metrics.http_requests, 0);
+    assert_eq!(
+        source.hits(),
+        1,
+        "Personal quotes must not contact the online provider"
+    );
+    let source = Server::ok(include_bytes!(
+        "../../../plugins/generic-json/fixtures/sensors.json"
+    ));
+    let settings=catalog.get("generic.json").unwrap().resolve(&serde_json::from_value(json!({"url":source.url,"root_pointer":"/sensors","timestamp_pointer":"/observed_at","mappings":[{"field":"temperature","pointer":"/temperature","kind":"number","unit":"C"},{"field":"open","pointer":"/open","kind":"boolean","unit":""}]})).unwrap(),None).unwrap();
+    let result = runtime
+        .run(
+            &load("PAPERPHASE_TEST_GENERIC_JSON_PLUGIN"),
+            &RunConfig::new(&source.url)
+                .unwrap()
+                .with_settings(&settings)
+                .unwrap()
+                .with_secret_header("authorization", "Bearer fixture-only-token")
+                .unwrap(),
+        )
+        .unwrap();
+    assert_eq!(result.dataset.rows[0]["temperature"], 0);
+    assert_eq!(result.dataset.rows[0]["open"], false);
+    assert_eq!(result.additional_observed_at["overview"], 1700000000);
+    assert!(
+        String::from_utf8_lossy(&source.request.lock().unwrap())
+            .to_lowercase()
+            .contains("authorization: bearer fixture-only-token")
+    );
+}
+
+#[test]
+fn previous_dataset_capability_is_bounded_and_read_once_per_invocation() {
+    let runtime = PluginRuntime::new(Limits::default()).unwrap();
+    let cfg = config()
+        .with_previous(&serde_json::from_str::<Dataset>(DATASET).unwrap())
+        .unwrap();
+    let wasm = wat::parse_str(
+        r#"(module
+      (import "paperphase_v0" "previous_dataset"(func $previous(param i32 i32)(result i32)))
+      (memory(export "memory")1)
+      (func(export "run")(result i32)
+        i32.const 0 i32.const 65536 call $previous drop
+        i32.const 0 i32.const 65536 call $previous drop i32.const 0))"#,
+    )
+    .unwrap();
+    assert!(error(&runtime, &wasm, &cfg).contains("previous dataset read quota exceeded"));
+    let wasm = wat::parse_str(format!(
+        r#"(module
+      (import "paperphase_v0" "previous_dataset"(func $previous(param i32 i32)(result i32)))
+      (import "paperphase_v0" "publish"(func $publish(param i32 i32)(result i32)))
+      (memory(export "memory")2)(data(i32.const 65536) "{}")
+      (func(export "run")(result i32)
+        i32.const 0 i32.const 65536 call $previous if unreachable end
+        i32.const 65536 i32.const {} call $publish drop i32.const 0))"#,
+        escaped(DATASET.as_bytes()),
+        DATASET.len()
+    ))
+    .unwrap();
+    runtime
+        .run(&runtime.prepare(&wasm).unwrap(), &config())
+        .unwrap();
+}
+
+#[test]
+#[ignore = "requires compiled Google Calendar guest; run scripts/check.sh"]
+fn compiled_google_calendar_guest_uses_host_auth_and_publishes_private_agenda() {
+    let path =
+        std::env::var("PAPERPHASE_TEST_GOOGLE_CALENDAR_PLUGIN").expect("Google Calendar Wasm path");
+    let runtime = PluginRuntime::new(Limits {
+        max_requests: 1,
+        ..Limits::default()
+    })
+    .unwrap();
+    let plugin = runtime.prepare(&std::fs::read(path).unwrap()).unwrap();
+    let source = Server::ok(include_bytes!(
+        "../../../plugins/google-calendar/fixtures/events.json"
+    ));
+    let catalog: paperphase_core::ConnectorCatalog =
+        serde_json::from_str(include_str!("../../../examples/simulator/connectors.json")).unwrap();
+    let settings = catalog.get("calendar.google").unwrap().resolve(&serde_json::from_value(json!({"account_id":"google.fixture","calendar_id":"shared/a@example.org","show_titles":false})).unwrap(),None).unwrap();
+    let cfg = RunConfig::new(&format!("{}/calendar/v3", source.url))
+        .unwrap()
+        .with_settings(&settings)
+        .unwrap()
+        .with_time(1794700800)
+        .unwrap()
+        .with_secret_header("authorization", "Bearer fixture-calendar-access")
+        .unwrap()
+        .with_work_budget(262144, 50000000)
+        .unwrap();
+    let result = runtime.run(&plugin, &cfg).unwrap();
+    assert_eq!(result.metrics.http_requests, 1);
+    assert_eq!(result.dataset.id, "events");
+    assert_eq!(result.dataset.rows.len(), 3);
+    assert_eq!(result.additional_datasets[0].id, "agenda");
+    let public = serde_json::to_string(&result.dataset).unwrap();
+    assert!(!public.contains("Morning meeting") && !public.contains("fixture-calendar-access"));
+    assert!(public.contains("Busy"));
+    let request = String::from_utf8_lossy(&source.request.lock().unwrap()).to_string();
+    assert!(request.contains("shared%2Fa@example.org/events?"));
+    assert!(
+        request
+            .to_lowercase()
+            .contains("authorization: bearer fixture-calendar-access")
+    );
+    assert!(!request.contains("show_titles") && !request.contains("account_id"));
+}

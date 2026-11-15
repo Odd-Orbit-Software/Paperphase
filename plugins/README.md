@@ -4,7 +4,11 @@
 - `rss`: bounded UTF-8 RSS 2.0 and Atom headline extraction.
 - `luas`: Luas stop forecasts, both directions and service messages.
 - `dublin-bus`: numbered multi-stop NTA bus forecasts with shared reference data.
-- `bindings.example.json`: local module registration for all four plugins.
+- `air-quality`: modelled AQI, pollutant forecasts and seasonal pollen.
+- `daily-quote`: an online daily quote with optional personal/mixed selection.
+- `generic-json`: typed JSON Pointer mappings with optional private headers.
+- `google-calendar`: host-owned OAuth and privacy-filtered calendar agendas.
+- `bindings.example.json`: local module registration for all eight plugins.
 
 All compile to portable Wasm and use host HTTP, settings, dataset publication,
 polling, caching, and rendering. Definitions/templates currently live in
@@ -22,3 +26,11 @@ See [Luas setup](../docs/usage/luas.md), [design](../docs/design/luas.md) and it
 Dublin Bus needs an NTA key in its private settings form. Its public reference
 cache is host-managed. See [setup](../docs/usage/dublin-bus.md) and
 [design](../docs/design/dublin-bus.md).
+
+See [air/quote/JSON setup](../docs/usage/air-quotes-json.md) and
+[design](../docs/design/air-quotes-json.md) for the next plugin stretch.
+
+Google Calendar has [browser-only setup](../docs/usage/google-calendar.md), a
+[self-deployed HTTPS callback](../services/google-oauth-callback/README.md) and
+[account/aggregation design](../docs/design/google-calendar.md). Real Google
+consent and renewal still need account validation.

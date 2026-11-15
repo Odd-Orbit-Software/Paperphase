@@ -29,8 +29,10 @@ use serde_json::json;
 use tokio::sync::{Mutex as AsyncMutex, Semaphore};
 
 use crate::simulator::read_json;
+mod agenda;
 mod connections;
 mod fetching;
+mod google;
 mod reference;
 mod scheduling;
 
@@ -65,6 +67,7 @@ struct Workspace {
 
 struct App {
     executors: Option<Arc<fetching::Registry>>,
+    google: Option<Arc<google::Service>>,
     fetch_slots: Arc<Semaphore>,
     data_epoch: AtomicU64,
     connector_catalog: ConnectorCatalog,
@@ -142,10 +145,17 @@ pub fn run(
     std::fs::create_dir_all(parent)?;
     let lock_path = state_file.with_extension("json.lock");
     let connections_file = state_file.with_extension("connections.json");
+    let google_file = state_file.with_extension("google.json");
     ensure!(
         !crate::simulator::same_file(&state_file, &connections_file)?,
         "workspace and connections paths must differ"
     );
+    for other in [&state_file, &connections_file, &lock_path] {
+        ensure!(
+            !crate::simulator::same_file(&google_file, other)?,
+            "Google account storage must be separate from workspace, connections and lock files"
+        );
+    }
     for source in seed_layout
         .iter()
         .chain(data.iter())
@@ -163,6 +173,10 @@ pub fn run(
         ensure!(
             !crate::simulator::same_file(&connections_file, source)?,
             "connection storage must not replace an input"
+        );
+        ensure!(
+            !crate::simulator::same_file(&google_file, source)?,
+            "Google account storage must not replace an input"
         );
     }
     let file_lock = OpenOptions::new()
@@ -215,6 +229,13 @@ pub fn run(
         .as_deref()
         .map(|path| fetching::Registry::load(path, &connector_catalog).map(Arc::new))
         .transpose()?;
+    let client = if let Some(registry) = &executors {
+        registry.http_client()
+    } else {
+        paperphase_runtime::shared_http_client(std::time::Duration::from_secs(3))
+            .map_err(|error| anyhow::anyhow!("{error:#}"))?
+    };
+    let google = Some(Arc::new(google::Service::open(google_file, client)?));
     if let Some(registry) = &executors {
         registry.prune_origins(&mut connection_store.origin_deadlines);
         for connection in &connection_store.connections {
@@ -316,6 +337,7 @@ pub fn run(
             .collect();
         let app = Arc::new(App {
             executors,
+            google,
             fetch_slots: fetching::slots(),
             data_epoch: AtomicU64::new(0),
             connector_catalog,
@@ -387,6 +409,14 @@ pub fn run(
             )
             .route("/api/connectors", get(connections::catalog))
             .route("/api/connections", get(connections::list))
+            .route("/api/google", get(google::status))
+            .route("/api/google/config", put(google::configure))
+            .route("/api/google/begin", post(google::begin))
+            .route(
+                "/api/google/accounts/{id}",
+                axum::routing::delete(google::remove),
+            )
+            .route(google::CALLBACK, get(google::callback))
             .route("/api/connections/{id}/fetch", post(fetching::fetch))
             .route(
                 "/api/connections/{id}",
@@ -464,7 +494,25 @@ async fn same_origin(State(app): State<Shared>, request: Request, next: Next) ->
         .headers()
         .get("sec-fetch-site")
         .is_none_or(|h| h == "same-origin" || h == "none");
-    if !authority_ok || !origin_ok || !site_ok {
+    // The hosted relay returns a cross-site GET; the callback verifies its own
+    // one-use pending state before changing account links.
+    let oauth_return =
+        request.method() == axum::http::Method::GET && request.uri().path() == google::CALLBACK;
+    // Fetch metadata retains "cross-site" through the callback's redirect to
+    // the editor. The public HTML shell is safe to navigate to; its API calls
+    // still require the ordinary same-origin checks.
+    let editor_navigation = request.method() == axum::http::Method::GET
+        && request.uri().path() == "/"
+        && request
+            .headers()
+            .get("sec-fetch-mode")
+            .is_some_and(|h| h == "navigate")
+        && request
+            .headers()
+            .get("sec-fetch-dest")
+            .is_some_and(|h| h == "document");
+    let request_allowed = oauth_return || editor_navigation || (origin_ok && site_ok);
+    if !authority_ok || !request_allowed {
         return ApiError(
             StatusCode::FORBIDDEN,
             "Open the editor directly using a host IP, localhost, or the machine hostname.".into(),
@@ -474,6 +522,7 @@ async fn same_origin(State(app): State<Shared>, request: Request, next: Next) ->
     let mut response = next.run(request).await;
     let headers = response.headers_mut();
     headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    headers.insert("referrer-policy", HeaderValue::from_static("no-referrer"));
     headers.insert(
         "x-content-type-options",
         HeaderValue::from_static("nosniff"),

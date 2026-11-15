@@ -201,3 +201,47 @@ fn plugin_decimal_urls_and_templates_validate_before_any_network_work() {
     broken.connectors.iter_mut().find(|c| c.id == "weather.open-meteo").unwrap().templates[0].component.blocks[0].source = serde_json::from_value(json!({"kind":"field","binding":{"connection_id":"wrong","dataset_id":"current-weather","field_id":"location"}})).unwrap();
     assert!(broken.validate().is_err());
 }
+
+#[test]
+fn table_settings_validate_rows_columns_choices_and_required_lists() {
+    let catalog = catalog();
+    catalog.validate().unwrap();
+    let generic = catalog.get("generic.json").unwrap();
+    let valid = values(
+        json!({"url":"http://127.0.0.1:8123/state","mappings":[{"field":"open","pointer":"/open","kind":"boolean","unit":""}]}),
+    );
+    let resolved = generic.resolve(&valid, None).unwrap();
+    assert_eq!(resolved["mappings"][0]["kind"], "boolean");
+    assert!(!resolved.contains_key("authorization"));
+    for bad in [
+        json!([]),
+        json!([{"field":"x","kind":"script","pointer":""}]),
+        json!([{"field":"x","kind":"text","pointer":"","unknown":"x"}]),
+        json!([{"field":"","kind":"text","pointer":""}]),
+        json!([{"field":"x","kind":"text","pointer":false}]),
+        json!(vec![json!({"field":"x","kind":"text","pointer":""}); 17]),
+    ] {
+        let mut submitted = valid.clone();
+        submitted.insert("mappings".into(), bad);
+        assert!(generic.resolve(&submitted, None).is_err());
+    }
+    let quote = catalog.get("daily.quote").unwrap();
+    assert!(
+        quote
+            .resolve(
+                &values(
+                    json!({"personal_quotes":[{"quote":"My original thought.","author":"Me"}]})
+                ),
+                None
+            )
+            .is_ok()
+    );
+    assert!(
+        quote
+            .resolve(
+                &values(json!({"personal_quotes":[{"quote":" ","author":"Me"}]})),
+                None
+            )
+            .is_err()
+    );
+}

@@ -1,7 +1,8 @@
 # Run the foundation harness
 
-This is a developer CLI for validating compiled plugins. It does not yet run a
-display or serve the planned editor. See the
+This is a developer CLI for validating compiled plugins. The same executable
+also serves the [browser editor](desktop-editor.md) and a simulated display;
+physical display support remains separate work. See the
 [implementation design](../design/plugin-foundation.md).
 
 ## Build and check
@@ -75,8 +76,190 @@ Run a release demo on the Pi and save the report outside the repository's
 tracked files. Record OS, architecture, available memory, host/guest binary
 sizes, setup/compilation times, RSS, and repeated invocation measurements. Use
 external process monitoring as well to examine transient compilation peaks.
-The harness does not yet measure a production install path or long-running idle
-service because those are not implemented.
+The CLI report does not measure a production install path or a long-running
+service. Measure the editor process separately from the one-shot harness.
+
+### First headless Pi results — 2026-11-14
+
+The current working tree was tested on a Raspberry Pi Zero 2 W Rev 1.0 with no
+display attached: 64-bit Raspberry Pi OS Lite / Debian 13.7 (Trixie), kernel
+`6.18.50+rpt-rpi-v8`, glibc 2.41, and 415 MiB reported RAM. Rust 1.96.0 and
+Zig 0.15.2 built the ARM64 release executable on the desktop, targeting
+`aarch64-unknown-linux-gnu` and glibc 2.41. No Rust toolchain was installed on the
+Pi. The executable was 14,815,808 bytes, with the frontend embedded.
+
+All 31 runtime boundary tests passed natively on the Pi with `--include-ignored
+--test-threads=1` and all eight compiled guest artifacts. These include infinite
+loop interruption and recovery, allocation limits, denied origins, redirects,
+stalled responses, request quotas, private headers, and the weather, RSS, Luas,
+Dublin Bus, air-quality, quote and generic-JSON guests. The suite took 45.2 s;
+externally sampled peak process high-water RSS was 41.4 MiB, with no process
+swap observed.
+
+The temperature demo ran 100 invocations against its local deterministic API:
+
+| Measurement | Observed value |
+| --- | --- |
+| Runtime setup | 26.2 ms |
+| Native guest compilation | 1.94 s |
+| Invocation latency, median / range | 4.99 ms / 4.05–5.06 ms |
+| Whole-process peak RSS | 17,732 KiB (17.3 MiB) |
+| Guest linear memory | 1,310,720 bytes (1.25 MiB) |
+| Sample temperature | 18.5 °C on every invocation |
+| 800 × 480 PNG/PBM simulator export | 291 ms for both outputs |
+
+A separate CLI/API smoke run passed 30 assertions. The service registered all
+eight Wasm modules, with temperature and generic JSON connections enabled against
+two loopback fixture sources. Checks covered exact preview/display equality,
+durable saves, stale revisions, invalid geometry, saved-unit conversion, numeric
+zero and boolean false, private file permissions, secret redaction, origin
+cooldowns, quiet-hours pause/resume, and restart recovery of layout, cached data
+and cooldowns without duplicate source requests.
+
+| Editor service measurement | Observed value |
+| --- | --- |
+| Startup with all eight modules | 43.39 s |
+| Restart with all eight modules | 43.53 s |
+| Steady process RSS after restart | 52,420 KiB (51.2 MiB) |
+| Externally sampled peak RSS across both launches | 53,764 KiB (52.5 MiB) |
+| Sampled process swap | 0 KiB |
+| CPU during ten seconds with two state requests per second | 0.40% of one core |
+| Loopback state API latency, median / maximum over 20 requests | 3.99 / 5.79 ms |
+
+The 43-second startup is a material limitation: registered portable modules are
+compiled on each launch. These short, deterministic runs do not establish
+long-term memory stability, concurrent live-provider performance, the cost of a
+real NTA reference import, or a production resource budget. Desktop checks
+separately passed all 153 Rust tests, formatting, Clippy and eight Wasm builds.
+These headless checks do not establish Google account or physical-panel support.
+The later one-shot physical test is recorded separately below.
+
+Six additional Chromium checks used the editor served over the Pi's LAN
+address: loading the simulated frame, editing/saving, exact preview/display
+equality after the saved revision completed, reload persistence, connector
+settings and absence of JavaScript errors. The browser ran on the desktop;
+application rendering, fetching and persistence ran on the Pi.
+
+![Browser editor served by the headless Pi, showing labelled demo data](../design/images/pi-headless-editor.png)
+
+Raw reports, frames, memory samples, test runners and a source/artifact hash
+manifest are retained locally under the ignored
+`.paperphase/pi-validation-2026-11-14/` directory, with the Pi's copies under
+`~/paperphase-test/results/`. The tested source included the existing uncommitted
+plugin work; it was not a clean release checkout.
+
+### Temporary headless editor
+
+The test installation is under `~/paperphase-test` on the Pi. Its LAN editor
+uses `live/workspace.json`, with compiled-plugin registrations in
+`live/bindings.json`. It uses the real host clock and a clearly labelled demo
+temperature source, not physical sensor data. Other provider registrations are
+available for configuration; no Google account or private provider credentials
+were copied. This is a manual test launch, without boot-time installation.
+
+Open `http://<pi-IP>:8080` from another LAN computer. The editor's simulated
+display works without a panel. Logs and PID files are under `live/`. To stop
+this test installation:
+
+```sh
+cd ~/paperphase-test
+kill -INT "$(cat live/service.pid)" "$(cat live/source.pid)"
+```
+
+To start it again, run the following commands in separate SSH terminals:
+
+```sh
+cd ~/paperphase-test
+bin/paperphase demo-source
+```
+
+```sh
+cd ~/paperphase-test
+bin/paperphase serve --listen 0.0.0.0:8080 \
+  --state-file live/workspace.json --connector-bindings live/bindings.json
+```
+
+This image initially failed Wi-Fi authentication on its home access point. A
+local `/etc/modprobe.d/rpi-brcmfmac.conf` override with
+`options brcmfmac roamoff=1 feature_disable=0x2282000` restored connectivity.
+It targets the reported [Zero 2 W SAE compatibility issue](https://github.com/raspberrypi/linux/issues/7634)
+on kernel 6.18; the numeric feature mask is kernel-specific. Persistent system
+logs were enabled through
+`/etc/systemd/journald.conf.d/90-paperphase-network-diagnostics.conf`, capped at
+32 MiB, to diagnose the original failure. Both changes are confined to the
+temporary Pi image.
+
+## One-shot Waveshare V2 full refresh
+
+On 2026-11-14 the attached monochrome 7.5-inch V2 panel / Rev2.3 HAT displayed
+saved layout revision 3 correctly; the owner visually confirmed the result.
+The full refresh took **5.74 s**, including transfer and BUSY waiting. BUSY was
+observed asserted and then idle during initialisation, refresh and power-off.
+The complete operation, including sleep, took **8.58 s**. The panel retained its
+image after sleep, and GPIO resources were released.
+
+This was a single developer test using
+[`scripts/waveshare-v2-smoke.py`](../../scripts/waveshare-v2-smoke.py) and the
+vendor Python reference. It does not connect the Rust refresh worker to the
+physical panel: the editor still reports simulated completion, and saving or
+fetching does not yet update the attached screen automatically. Partial/fast
+refresh, ghosting/maintenance limits, quiet-hours hardware behaviour and recovery
+from interrupted updates remain unvalidated.
+
+Working setup:
+
+| Setting | Value |
+| --- | --- |
+| Display Config switch | B (0.47 Ω) |
+| Interface Config switch | 0 (four-wire SPI) |
+| SPI | Bus 0, CE0, mode 0, 4 MHz |
+| BCM GPIOs | RST 17, D/C 25, BUSY 24, PWR 18; SPI CS 8, MOSI 10, clock 11 |
+| Frame | 800 × 480, row-major/MSB-first, one bit per pixel, 48,000 bytes |
+
+SPI was enabled with `sudo raspi-config nonint do_spi 0`; the supported command
+also applied the setting at runtime. Wait for `/dev/spidev0.0` to appear before
+running the test. The existing `pmck` account's `spi` and `gpio` group membership
+allows the test to run without root. It uses the preinstalled `spidev`,
+`gpiozero` and `lgpio` modules and needs no Pillow installation.
+
+The separately downloaded `waveshare_epd` package contains `__init__.py`,
+`epdconfig.py` and `epd7in5_V2.py`, pinned to Waveshare commit
+`d28b3c4cfc78eef1c6cd6e6e3013654e449d2864`. Its original license notices are
+retained. On the temporary image, this package, the exported PBM and reports are
+under `~/paperphase-test/panel/`. To validate a newly exported frame without
+touching hardware:
+
+```sh
+python3 scripts/waveshare-v2-smoke.py --pbm frame.pbm --validate-only
+```
+
+To send one frame on the Pi, using the copied script and reference package:
+
+```sh
+cd ~/paperphase-test/panel
+GPIOZERO_PIN_FACTORY=lgpio python3 waveshare-v2-smoke.py \
+  --vendor-dir . --pbm frame.pbm --report full-refresh.json
+```
+
+The script accepts the exact binary PBM format produced by `paperphase simulate
+--pbm`: `P4`, a newline, `800 480`, a newline, then packed pixels. The existing
+test frame is a snapshot; export the latest saved layout and cached datasets
+again before another test. Keep these low-level tests separate from routine
+editor operation and the unvalidated simulator refresh limits.
+
+Every BUSY wait is limited to 20 seconds and the complete operation to 75
+seconds. A failure releases panel power and GPIOs; successful operation also
+requests deep sleep. An exclusive lock prevents concurrent copies of this test.
+The wrapper normalises complemented image bytes but delegates D/C and chip-select
+transitions to the vendor method. Dry validation rejects truncated and
+wrong-resolution frames before importing GPIO support; a simulated SPI run checks
+both complete data-mode image transfers, chip select, sleep and cleanup.
+
+The initial test exposed a wrapper error that omitted D/C's data-mode transition;
+it timed out after 20 seconds and released power. After correction and the SPI
+simulation, the second test completed and the owner confirmed a correct image.
+Both reports, source hashes, the frame and separate visual-confirmation evidence
+are retained under `.paperphase/pi-validation-2026-11-14/panel/` locally.
 
 ## Initial desktop measurement
 
@@ -106,14 +289,14 @@ with representative plugins before choosing production budgets.
 | Check | Result |
 | --- | --- |
 | Rust guest builds to binary Wasm | Passed locally |
-| Host compiles guest with Cranelift and fetches through shared HTTP | Passed on x86-64 Linux |
-| Boundary suite | 18 passed, including compiled guest |
+| Host compiles guest with Cranelift and fetches through shared HTTP | Passed on x86-64 Linux and natively on the Zero 2 W |
+| Boundary suite | 31 passed natively on the Zero 2 W, including compiled guests |
 | Format / Clippy | Passed locally |
-| Zero 2 W resource measurements | Pending hardware access |
+| Zero 2 W resource measurements | Initial native boundary, CLI/API and short service measurements passed on 2026-11-14; production budgets and long-running validation remain open |
 | Google multi-account OAuth and refresh-token renewal | Pending credentials and setup-flow validation |
 | Luas forecast endpoint availability | One HTTPS response parsed successfully for Ranelagh on 2026-11-10; two directions and seven tram entries |
 | Luas polling allowance and attribution requirements | Still need verification before integration |
-| Panel revision / physical refresh | Pending hardware inspection |
+| Panel revision / physical refresh | HAT 2.3 / monochrome 7.5-inch screen V2; one-shot 800 × 480 full refresh visually confirmed on 2026-11-14. Automatic physical updates and partial-refresh validation remain pending |
 
 The Luas check used the endpoint published in the
 [TII forecasting dataset](https://data.gov.ie/dataset/luas-forecasting-api), with

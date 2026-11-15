@@ -61,6 +61,19 @@ Both sources use the same validation and activation path. Restarting the service
 after installation is acceptable. Package compatibility, requested access,
 activation failure, and rollback behaviour need a detailed installation contract.
 
+The UI must also update both installed plugins and the core application from
+GitHub releases. Downloads and verification are staged before activation.
+Before stopping the service, complete a physical Updating frame that remains on
+the e-paper during restart. Update activation and recovery need an owner outside
+the process/binary being replaced so a failed launch can restore the previous
+working version. Preserve the workspace, connection secrets, custom designs,
+cached datasets and provider-rate metadata across updates and migrations.
+The browser reports progress/reconnects; healthy startup or successful rollback
+restores normal content consistently with the saved display/quiet-hours state.
+This update-maintenance state is separate from a connector's data-fetch state or
+an ordinary queued display refresh. See the
+[release-update plan](delivery-plan.md#ui-updates-from-github-releases).
+
 For Wasmtime, never load native compiled caches received from an arbitrary
 publisher. Generate caches from validated Wasm through the host's own compiler.
 Runtime/compiler upgrades must invalidate incompatible caches. This is a

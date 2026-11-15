@@ -1,0 +1,7 @@
+auth.paperphase.oddorbit.software {
+    # Callback URLs contain short-lived codes. Do not retain request URLs.
+    log {
+        output discard
+    }
+    reverse_proxy paperphase-auth:8080
+}

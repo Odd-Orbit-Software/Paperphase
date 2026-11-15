@@ -390,6 +390,7 @@ pub(super) mod tests {
         persist(&path, &workspace.saved).unwrap();
         let app = Arc::new(App {
             executors: None,
+            google: None,
             fetch_slots: super::super::fetching::slots(),
             data_epoch: AtomicU64::new(0),
             connector_catalog: serde_json::from_str(include_str!(
