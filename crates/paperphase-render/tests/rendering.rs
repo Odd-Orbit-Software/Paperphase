@@ -418,7 +418,10 @@ fn positioned_text_is_clipped_to_its_box_and_moving_it_clears_old_pixels() {
     let mut overlapping = first;
     overlapping.id = "overlapping".into();
     scene.components[0].blocks.push(overlapping);
-    assert!(renderer.render(&scene, &data(), 101).is_err());
+    assert_eq!(
+        renderer.render(&scene, &data(), 101).unwrap().frame.bits(),
+        after.frame.bits()
+    );
 }
 
 #[test]
@@ -446,4 +449,108 @@ fn local_weather_symbols_use_the_bundled_monochrome_font() {
             .warnings
             .contains(&RenderWarning::GlyphFallback)
     );
+}
+
+#[test]
+fn tight_positioned_text_only_warns_when_visible_ink_is_cut_off() {
+    use paperphase_core::ContentLayout;
+    let mut renderer = Renderer::new().unwrap();
+    for text in ["Dublin", "Partly cloudy", "Feels Like", "gj"] {
+        let mut scene = literal(text, 16, "wrap");
+        scene.components[0].content_layout = ContentLayout::Positioned;
+        scene.components[0].blocks[0].rect = Some(Rect {
+            x: 0,
+            y: 0,
+            width: 96,
+            height: 90,
+        });
+        let roomy = renderer.render(&scene, &data(), 100).unwrap();
+        let ink_height = (0..90)
+            .filter(|y| (0..96).any(|x| roomy.frame.is_black(x, *y).unwrap()))
+            .max()
+            .unwrap()
+            + 1;
+        assert!(
+            roomy.components[0].blocks[0]
+                .content_size
+                .as_ref()
+                .unwrap()
+                .height
+                > ink_height
+        );
+        scene.components[0].blocks[0].rect.as_mut().unwrap().height = ink_height;
+        let tight = renderer.render(&scene, &data(), 100).unwrap();
+        assert_eq!(tight.frame.bits(), roomy.frame.bits(), "{text}");
+        assert!(!tight.components[0].blocks[0].overflow, "{text}");
+        assert!(
+            !tight.components[0]
+                .warnings
+                .contains(&RenderWarning::Overflow),
+            "{text}"
+        );
+        scene.components[0].blocks[0].rect.as_mut().unwrap().height = ink_height - 1;
+        let clipped = renderer.render(&scene, &data(), 100).unwrap();
+        assert_ne!(clipped.frame.bits(), roomy.frame.bits(), "{text}");
+        assert!(clipped.components[0].blocks[0].overflow, "{text}");
+        assert!(
+            clipped.components[0]
+                .warnings
+                .contains(&RenderWarning::Overflow),
+            "{text}"
+        );
+    }
+}
+
+#[test]
+fn overlapping_items_render_within_their_shared_component() {
+    use paperphase_core::ContentLayout;
+    let mut scene = literal("FIRST", 20, "wrap");
+    scene.components[0].content_layout = ContentLayout::Positioned;
+    scene.components[0].blocks[0].rect = Some(Rect {
+        x: 0,
+        y: 0,
+        width: 90,
+        height: 32,
+    });
+    let first = Renderer::new()
+        .unwrap()
+        .render(&scene, &data(), 100)
+        .unwrap();
+    let mut second = scene.components[0].blocks[0].clone();
+    second.id = "second".into();
+    second.source = paperphase_core::TextSource::Literal {
+        text: "SECOND".into(),
+    };
+    second.rect.as_mut().unwrap().y = 12;
+    scene.components[0].blocks = vec![second.clone()];
+    let other = Renderer::new()
+        .unwrap()
+        .render(&scene, &data(), 100)
+        .unwrap();
+    scene.components[0].blocks.insert(
+        0,
+        literal("FIRST", 20, "wrap")
+            .components
+            .remove(0)
+            .blocks
+            .remove(0),
+    );
+    scene.components[0].blocks[0].rect = Some(Rect {
+        x: 0,
+        y: 0,
+        width: 90,
+        height: 32,
+    });
+    let both = Renderer::new()
+        .unwrap()
+        .render(&scene, &data(), 100)
+        .unwrap();
+    for y in 0..scene.display.height {
+        for x in 0..scene.display.width {
+            assert_eq!(
+                both.frame.is_black(x, y).unwrap(),
+                first.frame.is_black(x, y).unwrap() || other.frame.is_black(x, y).unwrap()
+            );
+        }
+    }
 }

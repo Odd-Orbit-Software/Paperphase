@@ -5,11 +5,10 @@ export function contentBounds(component: Component): Rect {
   return { x: 0, y: 0, width: component.rect.width - 2 * component.padding, height: component.rect.height - 2 * component.padding - (component.blocks.some(block => sourceBinding(block.source)) ? 18 : 0) };
 }
 function intersects(a: Rect, b: Rect) { return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y; }
-export function validElement(rect: Rect, id: string, component: Component): boolean {
+export function validElement(rect: Rect, _id: string, component: Component): boolean {
   const bounds = contentBounds(component);
   return Object.values(rect).every(Number.isInteger) && rect.x >= 0 && rect.y >= 0 && rect.width >= 8 && rect.height >= 8
-    && rect.x + rect.width <= bounds.width && rect.y + rect.height <= bounds.height
-    && !component.blocks.some(block => block.id !== id && block.rect != null && intersects(rect, block.rect));
+    && rect.x + rect.width <= bounds.width && rect.y + rect.height <= bounds.height;
 }
 export function validElements(component: Component): boolean {
   return component.content_layout === 'positioned'
@@ -34,8 +33,10 @@ export function freeElementRect(component: Component, id: string, height = 30): 
   for (let y = 0; y + height <= bounds.height; y += 8) {
     for (let x = 0; x + width <= bounds.width; x += 8) {
       const rect = { x, y, width, height };
-      if (validElement(rect, id, component)) return rect;
+      if (validElement(rect, id, component) && !component.blocks.some(block=>block.id!==id&&block.rect!=null&&intersects(rect,block.rect))) return rect;
     }
   }
-  return null;
+  // Prefer clear space when adding, but shared component pixels may overlap.
+  const fallback={x:0,y:0,width,height};
+  return validElement(fallback,id,component)?fallback:null;
 }

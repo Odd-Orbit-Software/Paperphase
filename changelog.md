@@ -5,6 +5,77 @@
 Current development version: `0.1.0`. The earliest stable stage has not been
 reached; minor-version increments per commit begin after that milestone.
 
+Owner accepted the component designer and authorized its commit, merge to
+`main`, and GitHub push. This publication also includes the previously local
+UIUX redesign commit. Foundation version remains `0.1.0`.
+
+### Allow internal overlap and fix design save warnings
+
+- Allowed positioned items to overlap inside their parent component, following
+  owner feedback. Kept whole-component separation, content boundaries, minimum
+  item dimensions and the reserved data-status area. New items prefer clear
+  space but can share the component when no clear rectangle remains.
+- Corrected clipping detection: font line spacing alone no longer reports
+  clipped text. Reports identify individual clipped items using rendered ink.
+  A structurally valid reusable design can be saved or placed with a clear
+  warning; genuine clipping remains visible and is not silently discarded.
+- Made positioned Fit to contents enlarge clipped boxes without moving items
+  or changing fonts, then fit the outer box. Refreshed precision fields after
+  fitting so the inspector matches the preview.
+- Made icon field selection prefer icon-key/icon-id instead of unrelated text,
+  added an explanation for unavailable fields and the icon-name requirement,
+  and used friendly field names and one-based item numbering in the designer.
+- Isolated automated browser fixtures on a configurable test port so validation
+  does not mutate an owner's active workspace. Updated overlap expectations and
+  removed fixed-port assumptions from Google callback browser checks.
+
+Validation: `sh scripts/check.sh` passed all 176 Rust tests and host/Wasm checks.
+The isolated Chromium fixture passed all 36 tests, including new overlap/clipped
+save/fit/icon-field regressions and the existing Google/source/device flows.
+Frontend and embedded builds passed. Actual desktop/laptop reproductions were
+captured without saved-state writes; the owner's preview workspace was retained.
+A fresh source/screenshot reviewer inspected the owner's original image and five
+new reproductions, returning SHIP for this desktop follow-up. No new detector
+suppression was added. Version remains `0.1.0`; physical Pi/display and real
+Google checks remain separate.
+
+### Design reusable compact components before placement
+
+- Added an independent component sandbox for every loaded plugin, existing
+  connection and existing component. Start blank or customise a supplied
+  template before needing display space. Compact starts use 14 px text, 4 px
+  padding and 2 px gaps; Content/Position/Style reuse the approved owner UI.
+- Added host-renderer content measurements and bounded compact fitting, with a
+  wrapping penalty for awkward strips. Text sizes and all items are preserved;
+  precise sizing and explicit free positioning remain available. Current-value
+  feedback explains that future longer information may require room.
+- Added named plugin-specific design storage alongside the workspace, atomic
+  revision-checked save/delete APIs, plugin-relative bindings and source rebinding.
+  Library save does not update the layout or completed screen. Failed placement,
+  conflicts and failed storage retain the editable design; closing restores the
+  previous layout draft and history. Personal design files are ignored by Git.
+- Restored Delete for mouse-selected components/internal items with Undo and
+  native text-field protection. Added a visible Design this component entry.
+  Kept ordinary component resize handles and existing source/Google/device flows.
+- Iterated independent UX reviews: repaired route/picker focus, laptop dock
+  clipping, saved-design discovery, incomplete-name guidance and excessive
+  wrapping. Retained the approved palette, typography, footer and incumbent
+  DESIGN.md/token sidecar. Added design/operator documentation and actual local
+  desktop/laptop captures.
+
+Validation: `sh scripts/check.sh` passed all 173 Rust tests plus host and Wasm
+checks. A clean sequential Chromium run passed all 34 tests (eight designer
+workflows plus the existing 26); after the final saved-library refresh and field
+label correction, the expanded save/close/rename test and affected weather/RSS
+flow both passed again. Frontend type/build and embedded Rust build passed. Two
+independent UX assessments rechecked their named fixes; a fresh finish reviewer
+returned SHIP for the validated desktop scope after its stale-library and field
+label fixes were scored resolved. Five final local captures show actual compiled
+UI, with matching-values fit measurements and no browser page errors. Reviewed
+functional grid/status-band detector advisories remain documented; no new global
+suppressions were added. Pi, real Google account and physical display validation
+remain pending. Version remains `0.1.0`; work is on `component-designer`.
+
 ### Redesign the owner workspace on UIUX
 
 - Implemented the owner's chosen canvas/task-dock layout: compact navigation,

@@ -94,7 +94,7 @@ Select a component in **Edit layout**, then choose **Position → Position eleme
 freely**. For an existing positioned component, choose **Edit individual elements**.
 This explicit action converts vertical content to positioned boxes using the
 Rust renderer's measurements. If some blocks are hidden or their measured boxes
-cannot fit without overlap, enlarge the component or adjust the font sizes/gap
+cannot fit inside its content area, enlarge the component or adjust the font sizes/gap
 and try again.
 
 The canvas now focuses on that component. Select an element on the canvas or in
@@ -103,7 +103,8 @@ relative to the content area, after padding. Numeric width/height and font size
 are independent. Snap, arrows, Shift-arrows, undo/redo, and Save/Discard work here
 too. **Add element** opens the picker for text, data or a clock inside the component.
 
-Elements cannot overlap or occupy the hatched data-status strip. Increasing
+Elements may overlap inside a component, but cannot occupy the hatched
+data-status strip. Whole components cannot overlap. Increasing
 padding, adding a data binding, or shrinking the component must leave every box
 inside the available area. Resize or move its elements first when necessary.
 Delete removes the selected element; a component must keep at least one.
@@ -170,3 +171,6 @@ failure traces and local workspaces are ignored by Git. Rust checks need the
 compiled guest target and loopback access as described in
 [foundation-harness.md](foundation-harness.md). These are desktop checks; they do
 not establish Pi memory/performance, Google OAuth, or physical panel support.
+
+For compact designs before placement and reusable plugin designs, see
+[the component designer guide](component-designer.md).

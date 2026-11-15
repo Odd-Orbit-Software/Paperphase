@@ -302,3 +302,6 @@ The Luas check used the endpoint published in the
 [TII forecasting dataset](https://data.gov.ie/dataset/luas-forecasting-api), with
 `action=forecast`, `stop=ran`, and `encrypt=false`. A successful response is an
 availability check, not a guarantee about future uptime or permitted polling.
+
+Browser fixtures accept `PAPERPHASE_TEST_PORT` (default 8097) so automated tests
+can use a separate service and workspace while an owner edits the local preview.

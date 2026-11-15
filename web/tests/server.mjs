@@ -73,7 +73,9 @@ writeFileSync(join(directory, 'workspace.connections.json'), JSON.stringify({ sc
   {id:'json.browser',connector_id:'generic.json',label:'Room sensors',enabled:false,poll_interval_secs:300,settings:{label:'Room sensors',url:`http://127.0.0.1:${custom.address().port}/sensors`,root_pointer:'/sensors',timestamp_pointer:'/observed_at',max_rows:2,mappings:[{field:'temperature',pointer:'/temperature',kind:'number',unit:'C'}]}},
   { id: 'rss.browser', connector_id: 'rss.headlines', label: 'Local headlines', enabled: false, poll_interval_secs: 1800, settings: { label: 'Sample headlines', feed_url: feedUrl, max_items: 3 } },
 ], data: { 'temperature.browser': { generation: 1, next_fetch_at: 1700003600 } } }));
-const child = spawn(process.env.PAPERPHASE_TEST_BINARY || resolve('../target/debug/paperphase'), ['serve', '--listen', '127.0.0.1:8097', '--state-file', join(directory, 'workspace.json'), '--connector-bindings', bindings, '--now', '1700000000'], { stdio: 'inherit' });
+const editorPort=Number(process.env.PAPERPHASE_TEST_PORT??8097);
+if(!Number.isInteger(editorPort)||editorPort<1024||editorPort>65535)throw new Error('Invalid test editor port');
+const child = spawn(process.env.PAPERPHASE_TEST_BINARY || resolve('../target/debug/paperphase'), ['serve', '--listen', `127.0.0.1:${editorPort}`, '--state-file', join(directory, 'workspace.json'), '--connector-bindings', bindings, '--now', '1700000000'], { stdio: 'inherit' });
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => child.kill('SIGINT'));
 child.on('exit', code => { source.close(); weather.close(); feed.close(); luas.close(); bus.close(); archive.close();air.close();quote.close();custom.close(); rmSync(directory, { recursive: true, force: true }); process.exit(code ?? 1); });
 child.on('error', error => { console.error(error); source.close(); weather.close(); feed.close(); luas.close(); bus.close(); archive.close();air.close();quote.close();custom.close(); rmSync(directory, { recursive: true, force: true }); process.exit(1); });

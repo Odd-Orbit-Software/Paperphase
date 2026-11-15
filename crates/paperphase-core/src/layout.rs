@@ -359,13 +359,6 @@ impl Layout {
                             format!("{path}.rect"),
                             "element extends outside the content area",
                         )?;
-                        for other in &component.blocks[..j] {
-                            require(
-                                !other.rect.is_some_and(|other| rect.intersects(other)),
-                                format!("{path}.rect"),
-                                "element overlaps another element",
-                            )?;
-                        }
                     }
                 }
                 require(

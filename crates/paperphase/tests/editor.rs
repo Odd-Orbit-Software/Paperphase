@@ -918,3 +918,112 @@ fn clock_and_quiet_settings_preserve_older_workspaces_and_validate_before_persis
         serde_json::to_value(paperphase_core::RefreshPolicy::default()).unwrap()
     );
 }
+
+#[test]
+fn reusable_designs_survive_restart_normalize_bindings_and_do_not_change_display() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("workspace.json");
+    let server = Server::start(&path);
+    let before = server.state();
+    let png = server.png();
+    let initial: Value = server
+        .client
+        .get(format!("{}/api/designs", server.url))
+        .send()
+        .unwrap()
+        .json()
+        .unwrap();
+    assert_eq!(initial["revision"], 0);
+    let component = json!({"id":"local","rect":{"x":16,"y":16,"width":160,"height":80},"padding":4,"gap":2,"blocks":[{"id":"value","font_size":14,"source":{"kind":"field","binding":{"connection_id":"weather.dublin","dataset_id":"current-weather","field_id":"temperature"}}}]});
+    let payload = json!({"base_revision":0,"connector_id":"weather.open-meteo","name":"Compact weather","component":component});
+    let save = server
+        .client
+        .put(format!("{}/api/designs/compact", server.url))
+        .json(&payload)
+        .send()
+        .unwrap();
+    assert!(save.status().is_success());
+    let store: Value = save.json().unwrap();
+    assert_eq!(store["revision"], 1);
+    assert_eq!(store["designs"][0]["component"]["rect"]["x"], 0);
+    assert_eq!(
+        store["designs"][0]["component"]["blocks"][0]["source"]["binding"]["connection_id"],
+        "design.source"
+    );
+    assert_eq!(server.state()["revision"], before["revision"]);
+    assert_eq!(server.png(), png);
+    assert_eq!(
+        server
+            .client
+            .put(format!("{}/api/designs/compact", server.url))
+            .json(&payload)
+            .send()
+            .unwrap()
+            .status(),
+        409
+    );
+    assert_eq!(
+        server
+            .client
+            .get(format!("{}/api/designs", server.url))
+            .header("sec-fetch-site", "cross-site")
+            .header("sec-fetch-mode", "navigate")
+            .header("sec-fetch-dest", "document")
+            .send()
+            .unwrap()
+            .status(),
+        403
+    );
+    drop(server);
+    let server = Server::start(&path);
+    let loaded: Value = server
+        .client
+        .get(format!("{}/api/designs", server.url))
+        .send()
+        .unwrap()
+        .json()
+        .unwrap();
+    assert_eq!(loaded, store);
+    assert!(
+        server
+            .client
+            .delete(format!("{}/api/designs/compact", server.url))
+            .json(&json!({"base_revision":1}))
+            .send()
+            .unwrap()
+            .status()
+            .is_success()
+    );
+    assert_eq!(server.state()["layout"], before["layout"]);
+}
+
+#[test]
+fn failed_design_storage_keeps_revision_and_fit_is_preview_only() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("workspace.json");
+    let server = Server::start(&path);
+    std::fs::create_dir(path.with_extension("designs.json")).unwrap();
+    let before = server.state();
+    let component = json!({"id":"text","rect":{"x":0,"y":0,"width":1000,"height":1000},"padding":4,"gap":2,"blocks":[{"id":"value","font_size":14,"source":{"kind":"literal","text":"Useful information"}}]});
+    let fit = server
+        .client
+        .post(format!("{}/api/component-fit", server.url))
+        .json(&json!({"component":component}))
+        .send()
+        .unwrap();
+    assert!(fit.status().is_success());
+    let fitted: Value = fit.json().unwrap();
+    assert!(fitted["component"]["rect"]["width"].as_u64().unwrap() < 300);
+    let save=server.client.put(format!("{}/api/designs/new",server.url)).json(&json!({"base_revision":0,"connector_id":"paperphase.builtin","name":"Note","component":fitted["component"]})).send().unwrap();
+    assert_eq!(save.status(), 500);
+    let store: Value = server
+        .client
+        .get(format!("{}/api/designs", server.url))
+        .send()
+        .unwrap()
+        .json()
+        .unwrap();
+    assert_eq!(store["revision"], 0);
+    assert_eq!(store["designs"], json!([]));
+    assert_eq!(server.state()["layout"], before["layout"]);
+}

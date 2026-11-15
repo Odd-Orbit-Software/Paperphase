@@ -56,7 +56,8 @@ presses Delete, verifies undo restores it, and preserves the existing last-eleme
 constraint. Verify text-field deletion edits text rather than removing its
 component. Exercise entering, editing and leaving the internal designer through
 the visible UI. The earlier 26 passing browser tests did not establish these
-owner-reported paths; both issues remain open until fixed and checked.
+owner-reported paths; both issues were open at merge; implementation and validation are recorded in
+[the component-designer design](../design/component-designer.md).
 
 Every loaded plugin should offer a way to design a custom component before
 adding it to the display. Existing component editing does not solve the current
@@ -76,7 +77,7 @@ into a usable design.
 - Keep this draft separate from the main layout. Editing or cancelling it must
   not alter neighbouring components, the saved layout or the completed frame.
 - Add the finished component to the layout only through an explicit placement
-  action. Apply the normal content, display-boundary and non-overlap validation;
+  action. Apply the normal content, display-boundary and whole-component non-overlap validation;
   if no valid placement exists, retain the editable design and explain why.
 - Support the same flow for Google Calendar and the existing plugins, including
   plugins without supplied component templates.
@@ -87,7 +88,9 @@ an internally overflowing template. Verify that a crowded display still allows
 designing, failed placement retains the design, cancellation leaves the layout
 unchanged, and an inserted component retains its bindings and can be edited and
 saved normally. Document the implemented flow and actual screenshots at that
-time. This item is planned; the current editor does not implement it yet.
+time. Implemented on `component-designer`: see [the implemented design](../design/component-designer.md)
+and [owner instructions](../usage/component-designer.md). Desktop validation is
+recorded with that change; Pi and physical-display validation remain separate.
 
 ## 1. Validate foundations
 

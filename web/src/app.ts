@@ -1,12 +1,13 @@
 import type { Rect, Binding, ClockSpec, Block, Component, Layout, BlockPlacement, IconPack } from './model';
 import { sourceBinding } from './model';
+import { bindDesign, compactDesign, designFits, designGeometryValid, friendlyField, builtinDesigns, type SavedDesign, type DesignLibrary } from './designs';
 import { contentBounds, validElement, validElements, positioned, freeElementRect } from './elements';
 type Policy = { min_interval_ms: number; full_after_partials: number; full_after_secs: number; max_partial_area_percent: number };
 type Operation = { mode: 'partial' | 'full'; reason: string; region: Rect; revision: number };
 type RefreshStatus = { profile: { id: string; max_partials: number; max_full_age_secs: number; max_partial_area_percent: number; min_interval_ms: number }; active: Operation | null; last_completed: Operation | null; partial_count: number; baseline_known: boolean; failures: number; wait_ms: number };
 type RefreshSettings = { policy: Policy; quiet_hours: { timezone: string; start: string; end: string } | null };
 type Workspace = { clock_fixed: boolean; refresh: RefreshStatus; last_error: string | null; revision: number; displayed_revision: number; data_revision: number; frame_id: string; clock_now: number; pending: boolean; phase: string; layout: Layout; refresh_settings: RefreshSettings; addresses: string[]; connector_execution: boolean; fixture_data: boolean };
-type EditState = { layout: Layout; settings: RefreshSettings };
+type EditState = { layout: Layout; settings: RefreshSettings; design?: {source?:string;automatic:boolean;fixedWidth?:number;startingPoint?:string} };
 type Dataset = { connection_id: string; connection_label?: string; dataset_id: string; fields: { id: string; kind: string; unit?: string }[]; rows: number; stale: boolean };
 type Report = { id: string; state: string; warnings: string[]; blocks: BlockPlacement[] };
 type Preview = { png_base64: string; components: Report[] };
@@ -59,12 +60,17 @@ let lastEdit = 0;
 let connected = true;
 let lastInspectedId: string | null = null;
 let drag: { id: string; blockId?: string; startX: number; startY: number; original: Rect; last: Rect; baseline: EditState; resize: boolean; pointerId: number; invalid: boolean } | undefined;
-type Page = 'display' | 'sources' | 'device' | 'about';
+type Page = 'display' | 'sources' | 'device' | 'about' | 'designer' | 'designs';
 let currentPage: Page = 'display';
 let inspectorTab = 'content';
 let googleView = false;
 let choosingSource = false;
 let pendingCalendar = false;
+type RetainedEditor = { state: EditState; editing: boolean; viewingDraft: boolean; selected: string | null; contentMode: boolean; selectedElement: string | null; undo: EditState[]; redo: EditState[]; image: string; reports: Report[]; conflict: boolean; page: Page; focusId?: string; focusLabel?: string };
+type DesignSession = { previous: RetainedEditor; connector: string; source?: string; id?: string; baseline: Component; original?: string; busy: boolean; automatic: boolean; fixedWidth?: number; ready: boolean; error: string; needsFit: boolean; libraryConflict?: boolean; startingPoint?: string; recordFit?: EditState };
+let designSession: DesignSession | undefined;
+let designLibrary: DesignLibrary = {schema_version:1,revision:0,designs:[]};
+let designLibraryLoaded = false;
 const iconPaths: Record<string, string> = {
   undo: '<path d="M8 7H3V2M3 7a8 8 0 1 1-1 8"/>',
   redo: '<path d="M16 7h5V2m0 5a8 8 0 1 0 1 8"/>',
@@ -137,26 +143,29 @@ async function confirmAction(title: string, description: string, accept: string)
 }
 function closePicker() { $('add-picker').hidden = true; button('add-open').setAttribute('aria-expanded', 'false'); }
 function showPage(page: Page) {
+  if (designSession && page !== 'designer') { notice('Finish this design or choose Close designer before leaving.'); return false; }
   if (currentPage === 'sources' && page !== 'sources' && (connectionBusy || connectionDirty())) {
     connectionNotice('Save or discard your form before leaving data sources.'); return false;
   }
   currentPage = page; closePicker();
-  $('display-workspace').hidden = page === 'sources' || page === 'about';
-  $('display-page').hidden = page !== 'display'; $('device-page').hidden = page !== 'device';
+  $('display-workspace').hidden = page === 'sources' || page === 'about' || page === 'designs';
+  $('display-page').hidden = page !== 'display' && page !== 'designer';
+  $('design-library-page').hidden = page !== 'designs'; $('display-page').classList.toggle('design-studio',page==='designer');
+  $('designer-controls').hidden = page !== 'designer'; $('device-page').hidden = page !== 'device';
   $('about-page').hidden = page !== 'about';
   if (page === 'sources') { if (!connectionDialog().open) connectionDialog().show(); }
   else connectionDialog().close();
-  for (const [id, active] of [['display-open', page === 'display'], ['connections-open', page === 'sources'], ['display-settings', page === 'device'], ['about-open', page === 'about']] as const) {
+  for (const [id, active] of [['display-open', page === 'display' || page === 'designer' || page === 'designs'], ['connections-open', page === 'sources'], ['display-settings', page === 'device'], ['about-open', page === 'about']] as const) {
     button(id).classList.toggle('active', active);
     if (active) button(id).setAttribute('aria-current', 'page'); else button(id).removeAttribute('aria-current');
   }
-  $('page-title').textContent = page === 'device' ? 'Display settings' : 'Your display';
-  document.title = `Paperphase · ${page === 'sources' ? 'Data sources' : page === 'about' ? 'About' : page === 'device' ? 'Display settings' : 'Your display'}`;
+  $('page-title').textContent = page === 'designer' ? 'Design component' : page === 'device' ? 'Display settings' : 'Your display';
+  document.title = `Paperphase · ${page === 'designer' ? 'Design component' : page === 'designs' ? 'Component designs' : page === 'sources' ? 'Data sources' : page === 'about' ? 'About' : page === 'device' ? 'Display settings' : 'Your display'}`;
   if (saved) render();
   return true;
 }
-function capture(): EditState { return { layout: clone(draft), settings: clone(draftSettings) }; }
-function restore(state: EditState) { draft = clone(state.layout); draftSettings = clone(state.settings); }
+function capture(): EditState { return {layout:clone(draft),settings:clone(draftSettings),design:designSession?{source:designSession.source,automatic:designSession.automatic,fixedWidth:designSession.fixedWidth,startingPoint:designSession.startingPoint}:undefined}; }
+function restore(state: EditState) { draft=clone(state.layout);draftSettings=clone(state.settings);if(designSession&&state.design){Object.assign(designSession,state.design);designSession.needsFit=false;} }
 
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(path, options);
@@ -174,12 +183,12 @@ function notice(message = '', error = false) {
   $('notice').textContent = message;
   $('notice').classList.toggle('error', error);
 }
-function dirty() { return editing && (!equal(draft, saved.layout) || !equal(draftSettings, saved.refresh_settings)); }
+function dirty() { if (designSession) return !equal(component(), designSession.baseline); return editing && (!equal(draft, saved.layout) || !equal(draftSettings, saved.refresh_settings)); }
 function active() { return editing && viewingDraft && !saving; }
 function component() { return draft.components.find(c => c.id === selected); }
-function editingContents() { return contentMode && editing && viewingDraft && !!component(); }
+function editingContents() { return (!!designSession || contentMode) && editing && viewingDraft && !!component(); }
 function element() { return component()?.blocks.find(block => block.id === selectedElement); }
-function elementName(block: Block) { return block.source.kind === 'literal' ? block.source.text.trim().split('\n')[0]?.slice(0, 36) || 'Empty text' : block.source.kind === 'field' ? block.source.binding.field_id : block.source.kind === 'icon' ? 'Icon' : 'Time & date'; }
+function elementName(block: Block) { return block.source.kind === 'literal' ? block.source.text.trim().split('\n')[0]?.slice(0, 36) || 'Empty text' : block.source.kind === 'field' ? (designSession?friendlyField(block.source.binding.field_id):block.source.binding.field_id) : block.source.kind === 'icon' ? 'Icon' : 'Time & date'; }
 function name(c: Component): string {
   if (c.label) return c.label;
   const first = c.blocks[0];
@@ -200,6 +209,7 @@ function validRect(rect: Rect, id: string, layout = draft): boolean {
     && !layout.components.some(c => c.id !== id && rect.x < c.rect.x + c.rect.width && rect.x + rect.width > c.rect.x && rect.y < c.rect.y + c.rect.height && rect.y + rect.height > c.rect.y);
 }
 function locallyValid(layout: Layout) {
+  if (designSession) return layout.components.length === 1 && designGeometryValid(layout.components[0]!);
   return layout.components.length <= 64 && layout.components.every(c => validRect(c.rect, c.id, layout) && validElements(c));
 }
 function remember(before: EditState, key = '') {
@@ -216,9 +226,10 @@ function change(update: (layout: Layout) => void, key = '', rebuild = true) {
   if (!active()) return;
   const before = capture();
   update(draft);
+  if (designSession) { designSession.recordFit=undefined; designSession.needsFit=designSession.automatic; const c=component(); if (c) draft.display = {id:'component-design',width:c.rect.width,height:c.rect.height}; designSession.ready=false; }
   if (!locallyValid(draft)) {
     restore(before);
-    notice('That change overlaps another item or leaves too little content space. The previous valid arrangement is kept.', true);
+    notice('That change leaves the content area or too little content space. The previous valid arrangement is kept.', true);
     renderInspector();
     return;
   }
@@ -234,6 +245,7 @@ function change(update: (layout: Layout) => void, key = '', rebuild = true) {
   queuePreview();
 }
 function normaliseSelection() {
+  if (designSession) { contentMode=true; if (selectedElement && !element()) selectedElement=null; return; }
   if (!component() || component()?.content_layout !== 'positioned') { contentMode = false; selectedElement = null; }
   if (selectedElement && !element()) selectedElement = null;
 }
@@ -252,7 +264,7 @@ async function enterContents() {
   } catch (error) { notice(String(error), true); }
   finally { converting = false; if (selected === id && active()) renderInspector(); }
 }
-function leaveContents() { if (drag) endDrag(); contentMode = false; selectedElement = null; autoFit = true; render(); }
+function leaveContents() { if (designSession) { void closeDesigner(); return; } if (drag) endDrag(); contentMode = false; selectedElement = null; autoFit = true; render(); }
 function useFlow() {
   const id = selected; if (!id) return;
   change(layout => { const c = layout.components.find(c => c.id === id)!; c.content_layout = 'flow'; for (const block of c.blocks) delete block.rect; });
@@ -270,27 +282,45 @@ async function preview() {
   previewAbort?.abort();
   previewAbort = new AbortController();
   try {
-    const result = await api<Preview>('/api/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(draft), signal: previewAbort.signal });
+    if (designSession) {
+      const current=component()!;
+      if (!current.blocks.length) { designSession.ready=false; designSession.error=''; render(false); return; }
+      if (designSession.automatic && designSession.needsFit) {
+        designSession.ready=false;
+        const measurable=clone(current); if(!measurable.label?.trim())delete measurable.label;
+        const fitted=await api<{component:Component}>('/api/component-fit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({component:measurable,width:designSession.fixedWidth??null}),signal:previewAbort.signal});
+        if (sequence!==previewSequence || !designSession) return;
+        const explicitFit=!!designSession.recordFit;
+        if(designSession.recordFit&&!equal(designSession.recordFit.layout.components[0],fitted.component))remember(designSession.recordFit);
+        designSession.recordFit=undefined;designSession.needsFit=false; fitted.component.label=current.label; draft.components[0]=fitted.component; draft.display={id:'component-design',width:fitted.component.rect.width,height:fitted.component.rect.height};
+        if(explicitFit)renderInspector();
+      }
+    }
+    const previewLayout=clone(draft); if(designSession&&!previewLayout.components[0]?.label?.trim())delete previewLayout.components[0]!.label;
+    const result = await api<Preview>('/api/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(previewLayout), signal: previewAbort.signal });
     if (sequence !== previewSequence || !editing) return;
     draftImage = `data:image/png;base64,${result.png_base64}`;
     reports = result.components;
     if (viewingDraft) $<HTMLImageElement>('frame').src = draftImage;
+    if (designSession) { designSession.ready=true; designSession.error=''; render(false); }
     renderReport();
   } catch (error) {
-    if (sequence === previewSequence && !(error instanceof DOMException && error.name === 'AbortError')) notice(String(error), true);
+    if (sequence === previewSequence && !(error instanceof DOMException && error.name === 'AbortError')) { if (designSession) { designSession.ready=false; designSession.error=String(error); render(false); } else notice(String(error), true); }
   }
 }
 function renderReport() {
   const report = reports.find(r => r.id === selected);
   const target = $('render-report');
   if (!target) return;
-  const issues = report?.warnings.map(w => w.replaceAll('_', ' ')) ?? [];
+  const issues = report?.warnings.filter(w=>w!=='overflow').map(w => w.replaceAll('_', ' ')) ?? [];
+  if(report?.warnings.includes('overflow'))issues.push(element()&&report.blocks.find(block=>block.id===selectedElement)?.overflow?'This item is clipped. Enlarge its box in Position, or reduce its text size in Style.':`Clipped items: ${clippedItemNames()}.`);
   if (report?.state === 'stale') issues.unshift('Last good data is shown with a stale indicator.');
   if (report?.state === 'unavailable') issues.unshift('The selected data is unavailable.');
   target.textContent = issues.length ? [...new Set(issues)].join(' · ') : 'Rendered at fixed font sizes. Resize to reflow the content.';
 }
 function render(rebuildInspector = true) {
   const isDirty = dirty();
+  if (!designSession) { button('refresh').hidden=false; button('designs-main').hidden=false; }
   button('edit').hidden = editing;
   button('edit').disabled = !connected;
   $('draft-badge').hidden = !editing;
@@ -314,17 +344,20 @@ function render(rebuildInspector = true) {
   button('redo').disabled = !active() || !redo.length;
   $('add-tools').hidden = !active();
   button('display-settings').disabled = !connected || saving;
-  $('add-target').textContent = editingContents() ? 'Add an element inside this component.' : 'Choose what to put on your display.';
-  $('placement-note').textContent = editingContents() ? 'Elements each own a box. Padding and data status stay outside their space.' : 'Components sit side by side. Each one owns its space on the display.';
+  $('add-title').textContent=designSession?'Add an item':'Add a component';
+  $('add-target').textContent = designSession?'Choose what this component should show.':editingContents() ? 'Add an element inside this component.' : 'Choose what to put on your display.';
+  $('placement-note').textContent = designSession?'Items stack automatically. Arrange freely when you want to move them yourself.':editingContents() ? 'Elements each own a box. Padding and data status stay outside their space.' : 'Components sit side by side. Each one owns its space on the display.';
   $('library-title').textContent = editingContents() ? 'Elements' : 'Components';
-  button('add-open').textContent = editingContents() ? 'Add element' : 'Add component';
+  button('add-open').textContent = designSession?'Add item':editingContents() ? 'Add element' : 'Add component';
   $('canvas-title').textContent = editingContents() ? `Content · ${name(component()!)}` : viewingDraft ? 'Draft preview' : 'Last completed frame';
-  $('canvas-caption').textContent = editingContents() ? 'Element boxes reflow text at fixed font sizes. Data status stays reserved.' : viewingDraft ? 'Draft preview · Drag to move, corner to resize.' : 'The last completed display frame.';
+  $('canvas-caption').textContent = designSession?'Your component at the preview zoom shown.':editingContents() ? 'Element boxes reflow text at fixed font sizes. Data status stays reserved.' : viewingDraft ? 'Draft preview · Drag to move, corner to resize.' : 'The last completed display frame.';
   $('content-mode-bar').hidden = !editingContents();
+  $('design-empty').hidden = !designSession || !!component()?.blocks.length;
+  $<HTMLImageElement>('frame').hidden = !!designSession && !component()?.blocks.length;
   $('revision-label').textContent = `Displayed ${saved.displayed_revision} / saved ${saved.revision}`;
   $('data-mode').textContent = saved.connector_execution ? (saved.fixture_data ? 'Monochrome · Connectors + fixtures' : 'Monochrome · Connector data') : 'Monochrome · Sample data';
   const view = editingContents() ? component()!.rect : draft.display;
-  $('dimensions-caption').textContent = `${draft.display.width} × ${draft.display.height} px · `;
+  $('dimensions-caption').textContent = `${draft.display.width} × ${draft.display.height} px${designSession ? ' component' : ''} · `;
   $('dimensions').textContent = `${view.width} × ${view.height} px${editingContents() ? ' · component' : ''}`;
   $('keyboard-hint').textContent = active() ? 'Arrow keys: move · Shift: 8 px · Ctrl/Cmd Z: undo · Ctrl/Cmd S: save' : 'Paperphase 0.1.0 · Experimental';
   $('grid-overlay').style.display = viewingDraft && checked('grid') ? 'block' : 'none';
@@ -335,6 +368,7 @@ function render(rebuildInspector = true) {
   renderTemplates();
   renderOverlays();
   if (rebuildInspector) { renderInspector(); if (currentPage === 'device') retainFocus($('device-settings-body'), () => renderSettings($('device-settings-body'))); }
+  if (designSession) renderDesignerState(); else button('design-place').hidden=true;
   fit();
 }
 function setDisplayedImage(force = false) {
@@ -396,7 +430,7 @@ function renderTemplates() {
     const definition = connectorDefinitions.find(definition => definition.id === connection.connector_id);
     return (definition?.templates ?? []).map(template => ({ connection, template }));
   });
-  if (!available.length) return;
+  // A source without supplied templates still supports a blank custom design.
   parent.append(node('h3', '', 'From your data sources'));
   const groups = new Map<string, HTMLElement>();
   for (const { connection, template } of available) {
@@ -418,7 +452,9 @@ function renderTemplates() {
           }
         }
       }
-      notice(`No free ${component.rect.width} × ${component.rect.height} area is available. Make room for this template first.`);
+      startDesigner(connection.connector_id,connection.id,compactDesign(component));
+      if (designSession) { designSession.automatic=true; designSession.needsFit=true; queuePreview(); }
+      notice('The original template does not fit here. Customise this compact copy, then add it when ready.');
     };
     let group = groups.get(connection.id);
     if (!group) {
@@ -428,6 +464,15 @@ function renderTemplates() {
     }
     group.append(item);
   }
+  for (const connection of connectionStore.connections) {
+    let group=groups.get(connection.id);
+    if (!group) {const details=node('details','template-group');details.open=true;details.append(node('summary','',connection.label));group=node('div');details.append(group);parent.append(details);groups.set(connection.id,group);}
+    for (const design of designLibrary.designs.filter(design=>design.connector_id===connection.connector_id)) {
+      action(design.name,`Use design ${design.name} from ${connection.label}`,group,()=>useSavedDesign(design,connection.id)).className='template';
+    }
+    action('Create custom design',`Design a component for ${connection.label}`,group,()=>startDesigner(connection.connector_id,connection.id)).className='wide-button';
+  }
+
 }
 
 function renderOverlays() { retainFocus($('overlays'), buildOverlays); }
@@ -452,7 +497,7 @@ function buildOverlays() {
       const handle = node('span', 'resize-handle');
       handle.dataset.resize = 'true';
       handle.setAttribute('aria-hidden', 'true');
-      box.append(tag, handle);
+      box.append(tag,handle);
     }
     box.onfocus = () => {
       if (selected !== c.id) {
@@ -467,8 +512,8 @@ function fit() {
   if (!draft) return;
   const viewport = $('viewport');
   const view = editingContents() ? component()!.rect : { x: 0, y: 0, width: draft.display.width, height: draft.display.height };
-  if (autoFit) zoom = Math.min(editingContents() ? 2 : 1, (viewport.clientWidth - 24) / view.width, (viewport.clientHeight - 24) / view.height);
-  zoom = Math.max(.1, Math.min(2, zoom));
+  if (autoFit) zoom = Math.min(designSession ? 4 : editingContents() ? 2 : 1, (viewport.clientWidth - 24) / view.width, (viewport.clientHeight - 24) / view.height);
+  zoom = Math.max(.1, Math.min(designSession ? 4 : 2, zoom));
   Object.assign($('board').style, { width: `${view.width}px`, height: `${view.height}px`, transform: `scale(${zoom})` });
   Object.assign($('frame').style, { width: `${draft.display.width}px`, height: `${draft.display.height}px`, position: 'absolute', left: `${-view.x}px`, top: `${-view.y}px` });
   Object.assign($('board-wrap').style, { width: `${view.width * zoom}px`, height: `${view.height * zoom}px` });
@@ -487,14 +532,15 @@ function renderElementOverlays(overlays: HTMLElement) {
     band.setAttribute('aria-label', 'Reserved data status area'); overlays.append(band);
   }
   for (const block of c.blocks) {
-    if (!block.rect) continue;
+    const measured=block.rect ?? (designSession ? reports.find(report=>report.id===c.id)?.blocks.find(item=>item.id===block.id)?.rect : null);
+    if (!measured) continue;
     const box = node('div', `element-box ${selectedElement === block.id ? 'selected' : ''} ${drag?.blockId === block.id && drag.invalid ? 'invalid' : ''}`);
     box.dataset.element = block.id; box.tabIndex = 0; box.setAttribute('role', 'button'); box.setAttribute('aria-label', `Move element ${elementName(block)}`); box.setAttribute('aria-pressed', String(selectedElement === block.id));
-    const rect = drag?.blockId === block.id && drag.invalid ? proposedRect(drag, lastPointerX, lastPointerY) : block.rect;
+    const rect = drag?.blockId === block.id && drag.invalid ? proposedRect(drag, lastPointerX, lastPointerY) : measured;
     Object.assign(box.style, { left: `${c.padding + rect.x}px`, top: `${c.padding + rect.y}px`, width: `${rect.width}px`, height: `${rect.height}px` });
     if (selectedElement === block.id) {
       const tag = node('span', 'element-tag', elementName(block)); if (c.padding + rect.y < 22) tag.style.top = '1px';
-      const handle = node('span', 'resize-handle'); handle.dataset.resize = 'true'; handle.setAttribute('aria-hidden', 'true'); box.append(tag, handle);
+      const handle = node('span', 'resize-handle'); handle.dataset.resize = 'true'; handle.setAttribute('aria-hidden', 'true'); box.append(tag); if (c.content_layout==='positioned') box.append(handle);
     }
     box.onfocus = () => {
       if (selectedElement !== block.id) { selectedElement = block.id; renderInspector(); renderList(); renderOverlays();
@@ -569,11 +615,11 @@ function buildInspector() {
   }
   const id = c.id;
   const updateComponent = (fn: (c: Component) => void, key = '', rebuild = true) => change(l => fn(l.components.find(c => c.id === id)!), key, rebuild);
-  if (editingContents() && !element()) {
-    const empty = node('div', 'empty-properties'); empty.append(node('h3', '', 'Choose an element.'), node('p', '', 'Select text, a data field, or a clock on the canvas. Add another element from the left panel.')); inspector.append(empty); return;
+  if (editingContents() && !element() && !designSession) {
+    const empty = node('div', 'empty-properties'); empty.append(node('h3', '', 'Choose an element.'), node('p', '', 'Choose text, information or a clock on the canvas or in the strip below. Use Add element to include more.')); inspector.append(empty); return;
   }
   inspector.append(node('div', 'inspector-heading', ''));
-  inspector.firstElementChild!.append(node('h2', '', editingContents() ? elementName(element()!) : name(c)));
+  inspector.firstElementChild!.append(node('h2', '', editingContents() && element() ? elementName(element()!) : name(c)));
   const tabs = node('div', 'inspector-tabs'); tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', 'Component properties'); inspector.append(tabs);
   const panes = new Map<string, HTMLElement>();
   for (const [value, title] of [['content', 'Content'], ['position', 'Position'], ['style', 'Style']]) {
@@ -585,6 +631,16 @@ function buildInspector() {
     const pane = node('div'); pane.id = `inspector-pane-${value}`; pane.setAttribute('role', 'tabpanel'); pane.setAttribute('aria-labelledby', tab.id); pane.hidden = inspectorTab !== value; panes.set(value!, pane); inspector.append(pane);
   }
   const positionPane = panes.get('position')!; const stylePane = panes.get('style')!;
+  if (designSession) {
+    const sizing=section('Design dimensions',positionPane); const sizeFields=node('div','field-grid'); sizing.append(sizeFields);
+    for(const key of ['width','height'] as const) numeric(key==='width'?'Width':'Height',c.rect[key],32,4096,sizeFields,value=>{designSession!.automatic=false;updateComponent(component=>{component.rect[key]=value;});});
+    const spacing=section('Component spacing',stylePane); const fields=node('div','field-grid');spacing.append(fields);
+    numeric('Padding',c.padding,0,64,fields,value=>updateComponent(component=>{component.padding=value;}));
+    numeric('Item gap',c.gap,0,64,fields,value=>updateComponent(component=>{component.gap=value;}));
+    const border=node('input');border.type='checkbox';border.checked=c.border;border.onchange=()=>updateComponent(component=>{component.border=border.checked;});
+    const borderLabel=node('label','check');borderLabel.append(border,document.createTextNode('Draw component border'));spacing.append(borderLabel);
+    if(!element()) panes.get('content')!.append(node('p','property-section subtle','Select an item on the preview or in the strip below to change its content.'));
+  }
   if (!editingContents()) {
     const placement = section('Position & size', positionPane);
     const geometry = node('div', 'field-grid'); placement.append(geometry);
@@ -607,6 +663,7 @@ function buildInspector() {
     action(c.content_layout === 'positioned' ? 'Edit individual elements' : 'Position elements freely', c.content_layout === 'positioned' ? 'Edit individual elements' : 'Position elements freely', layout, () => { void enterContents(); }, converting).className = 'wide-button';
   }
   const content = section(editingContents() ? 'Selected element' : 'Component content', panes.get('content')!);
+  if (!editingContents()) action('Design this component', 'Design this component', content, () => { void designExisting(c); }).className='wide-button';
   if (!editingContents()) { const identity = section('Component name', stylePane); textField('Component name', c.label ?? '', identity, value => updateComponent(c => { c.label = value.trim() ? value : undefined; }, `${id}.label`, false), false, 96); }
   c.blocks.forEach((block, index) => {
     if (editingContents() && block.id !== selectedElement) return;
@@ -630,7 +687,7 @@ function buildInspector() {
       if (kind === 'literal') b.source = { kind: 'literal', text: 'Your text' };
       else if (kind === 'clock') b.source = { kind: 'clock', clock: newClock('time') };
       else if (kind === 'icon') b.source = { kind: 'icon', pack_id: iconPacks[0]?.id ?? 'missing', icon: { kind: 'literal', icon_id: iconPacks[0]?.icons[0] ?? 'unknown' }, size: 48 };
-      else if (catalog[0]) b.source = { kind: 'field', binding: newBinding(catalog[0]) };
+      else if (bindingCatalog()[0]) b.source = { kind: 'field', binding: newBinding(bindingCatalog()[0]!) };
     }));
     if (block.source.kind === 'literal') {
       textField('Text', block.source.text, card, value => updateBlock(b => { if (b.source.kind === 'literal') b.source.text = value; }, `${id}.${block.id}.text`, false), true, 4096);
@@ -648,36 +705,41 @@ function buildInspector() {
       select('Icon pack', source.pack_id, iconPacks.map(pack => [pack.id, pack.name]), card, value => updateIcon(s => { s.pack_id = value; if (s.icon.kind === 'literal') s.icon.icon_id = iconPacks.find(p => p.id === value)!.icons[0]!; }));
       if (!pack) card.append(node('p', 'render-report', 'Icon pack unavailable. Load its plugin asset manifest and restart the service.'));
       numeric('Icon size (px)', source.size, 8, 256, card, value => updateIcon(s => { s.size = value; }));
-      select('Icon selection', source.icon.kind, [['literal', 'Choose an icon'], ['field', 'Dataset field']], card, value => updateIcon(s => {
+      const iconDatasets=bindingCatalog().filter(dataset=>dataset.fields.some(field=>field.kind==='text'));
+      const iconSelection=select('Icon selection', source.icon.kind, [['literal', 'Choose an icon'], ['field', 'Dataset field']], card, value => updateIcon(s => {
         if (value === 'literal') s.icon = { kind: 'literal', icon_id: pack?.icons[0] ?? 'unknown' };
-        else if (catalog[0]) s.icon = { kind: 'field', binding: newIconBinding(catalog[0]) };
+        else if (iconDatasets[0]) {const dataset=iconDatasets.find(dataset=>dataset.fields.some(field=>/^icon(?:[-_](?:key|id))?$/.test(field.id)))??iconDatasets[0]!;s.icon = { kind: 'field', binding: newIconBinding(dataset) };}
       }));
+      iconSelection.querySelector<HTMLOptionElement>('option[value=field]')!.disabled=!iconDatasets.length;
+      if(!iconDatasets.length)card.append(node('p','render-report','No text fields are available for this design. Choose a plugin-backed design with an information source, or choose an icon here.'));
       if (source.icon.kind === 'literal') {
         select('Icon', source.icon.icon_id, pack?.icons.map(id => [id, id.replaceAll('_', ' ')]) ?? [], card, value => updateIcon(s => { s.icon = { kind: 'literal', icon_id: value }; }));
       } else {
         const binding = source.icon.binding;
         const key = `${binding.connection_id}/${binding.dataset_id}`;
-        const dataset = catalog.find(d => `${d.connection_id}/${d.dataset_id}` === key);
-        select('Dataset', key, catalog.map(d => [`${d.connection_id}/${d.dataset_id}`, `${d.connection_label ?? d.connection_id} / ${d.dataset_id}`]), card, value => updateIcon(s => { s.icon = { kind: 'field', binding: newIconBinding(catalog.find(d => `${d.connection_id}/${d.dataset_id}` === value)!) }; }));
-        select('Field', binding.field_id, dataset?.fields.filter(f => f.kind === 'text').map(f => [f.id, f.id]) ?? [], card, value => updateIcon(s => { if (s.icon.kind === 'field') s.icon.binding.field_id = value; }));
-        numeric('Row (first row = 0)', binding.row ?? 0, 0, 511, card, value => updateIcon(s => { if (s.icon.kind === 'field') s.icon.binding.row = value; }));
+        const dataset = bindingCatalog().find(d => `${d.connection_id}/${d.dataset_id}` === key);
+        select(designSession ? 'Information group' : 'Dataset', key, bindingCatalog().map(d => [`${d.connection_id}/${d.dataset_id}`, designSession ? friendlyField(d.dataset_id) : `${d.connection_label ?? d.connection_id} / ${d.dataset_id}`]), card, value => updateIcon(s => { s.icon = { kind: 'field', binding: newIconBinding(bindingCatalog().find(d => `${d.connection_id}/${d.dataset_id}` === value)!) }; }));
+        select(designSession ? 'Show information' : 'Field', binding.field_id, dataset?.fields.filter(f => f.kind === 'text').map(f => [f.id, designSession?friendlyField(f.id):f.id]) ?? [], card, value => updateIcon(s => { if (s.icon.kind === 'field') s.icon.binding.field_id = value; }));
+        card.append(node('p','render-report','This field must contain an icon name from the selected pack. For weather, use Icon key.'));
+        numeric(designSession?'Item number':'Row (first row = 0)', (binding.row??0)+(designSession?1:0), designSession?1:0, designSession?512:511, card, value => updateIcon(s => { if (s.icon.kind === 'field') s.icon.binding.row = value-(designSession?1:0); }));
       }
     } else {
       const binding = block.source.binding;
       const updateBinding = (fn: (b: Binding) => void, key = '', rebuild = true) => updateBlock(b => { if (b.source.kind === 'field') fn(b.source.binding); }, key, rebuild);
       const key = `${binding.connection_id}/${binding.dataset_id}`;
-      const dataset = catalog.find(d => `${d.connection_id}/${d.dataset_id}` === key);
-      select('Dataset', key, catalog.map(d => [`${d.connection_id}/${d.dataset_id}`, `${d.connection_label ?? d.connection_id} / ${d.dataset_id}`]), card, value => {
-        const d = catalog.find(d => `${d.connection_id}/${d.dataset_id}` === value)!;
+      const dataset = bindingCatalog().find(d => `${d.connection_id}/${d.dataset_id}` === key);
+      select(designSession ? 'Information group' : 'Dataset', key, bindingCatalog().map(d => [`${d.connection_id}/${d.dataset_id}`, designSession ? friendlyField(d.dataset_id) : `${d.connection_label ?? d.connection_id} / ${d.dataset_id}`]), card, value => {
+        const d = bindingCatalog().find(d => `${d.connection_id}/${d.dataset_id}` === value)!;
         updateBlock(b => { b.source = { kind: 'field', binding: newBinding(d) }; });
       });
-      select('Field', binding.field_id, dataset?.fields.map(f => [f.id, `${f.id} · ${f.kind}`]) ?? [], card, value => updateBinding(b => { b.field_id = value; b.decimals = null; }));
-      numeric('Row (first row = 0)', binding.row ?? 0, 0, 511, card, n => updateBinding(b => { b.row = n; }));
+      select(designSession ? 'Show information' : 'Field', binding.field_id, dataset?.fields.map(f => [f.id, designSession ? friendlyField(f.id) : `${f.id} · ${f.kind}`]) ?? [], card, value => updateBinding(b => { b.field_id = value; b.decimals = null; }));
+      const format=designSession?node('details','advanced'):card; if(designSession){format.append(node('summary','','More formatting'));card.append(format);}
+      numeric(designSession?'Item number':'Row (first row = 0)', (binding.row??0)+(designSession?1:0), designSession?1:0, designSession?512:511, format, n => updateBinding(b => { b.row = n-(designSession?1:0); }));
       if (dataset?.fields.find(f => f.id === binding.field_id)?.kind === 'number') {
-        select('Decimal places', binding.decimals == null ? '' : String(binding.decimals), [['', 'Automatic'], ...Array.from({ length: 7 }, (_, i): [string, string] => [String(i), String(i)])], card, value => updateBinding(b => { b.decimals = value === '' ? null : Number(value); }));
+        select('Decimal places', binding.decimals == null ? '' : String(binding.decimals), [['', 'Automatic'], ...Array.from({ length: 7 }, (_, i): [string, string] => [String(i), String(i)])], format, value => updateBinding(b => { b.decimals = value === '' ? null : Number(value); }));
       }
-      textField('Prefix', binding.prefix ?? '', card, value => updateBinding(b => { b.prefix = value; }, `${id}.${block.id}.prefix`, false));
-      textField('Suffix', binding.suffix ?? '', card, value => updateBinding(b => { b.suffix = value; }, `${id}.${block.id}.suffix`, false));
+      textField(designSession?'Text before':'Prefix', binding.prefix ?? '', format, value => updateBinding(b => { b.prefix = value; }, `${id}.${block.id}.prefix`, false));
+      textField(designSession?'Text after':'Suffix', binding.suffix ?? '', format, value => updateBinding(b => { b.suffix = value; }, `${id}.${block.id}.suffix`, false));
     }
     card.append(sourceOptions);
     const styles = section(elementName(block), stylePane); styles.dataset.block = block.id;
@@ -687,7 +749,7 @@ function buildInspector() {
     if (block.source.kind !== 'icon') select('Overflow', block.overflow ?? 'wrap', [['wrap', 'Wrap'], ['clip', 'Clip'], ['ellipsis', 'Ellipsis']], styles, value => updateBlock(b => { b.overflow = value; }));
   });
   action(editingContents() ? '+ Add text element' : '+ Add text block', editingContents() ? 'Add text element' : 'Add text block', content, () => {
-    if (c.content_layout === 'positioned') addElement('text'); else updateComponent(c => { c.blocks.push(newBlock()); });
+    if (designSession) addDesignBlock('text'); else if (c.content_layout === 'positioned') addElement('text'); else updateComponent(c => { c.blocks.push(newBlock()); });
   }, c.blocks.length >= 32).className = 'wide-button';
   const report = node('p', 'render-report'); report.id = 'render-report'; content.append(report); renderReport();
   if (!editingContents()) {
@@ -695,11 +757,11 @@ function buildInspector() {
     action('Remove component', 'Remove component', remove, () => { change(l => { l.components = l.components.filter(c => c.id !== id); }); selected = null; render(); }).className = 'danger wide-button';
   }
 }
-function newIconBinding(dataset: Dataset): Binding { const binding = newBinding(dataset); binding.field_id = dataset.fields.find(f => f.kind === 'text')?.id ?? binding.field_id; return binding; }
+function newIconBinding(dataset: Dataset): Binding { const binding = newBinding(dataset); binding.field_id = dataset.fields.find(f => f.kind==='text'&&/^icon(?:[-_](?:key|id))?$/.test(f.id))?.id ?? dataset.fields.find(f => f.kind === 'text')?.id ?? binding.field_id; return binding; }
 function newBinding(dataset: Dataset): Binding { return { connection_id: dataset.connection_id, dataset_id: dataset.dataset_id, field_id: dataset.fields[0]!.id, row: 0, decimals: null, prefix: '', suffix: '' }; }
 // getRandomValues also works over plain HTTP on a LAN; randomUUID requires HTTPS.
 function identifier(prefix: string) { return `${prefix}-${Array.from(crypto.getRandomValues(new Uint8Array(8)), n => n.toString(16).padStart(2, '0')).join('')}`; }
-function newBlock(): Block { return { id: identifier('block'), source: { kind: 'literal', text: 'Your text' }, font_size: 20, align: 'left', overflow: 'wrap' }; }
+function newBlock(): Block { return { id: identifier('block'), source: { kind: 'literal', text: 'Your text' }, font_size: designSession ? 14 : 20, align: 'left', overflow: 'wrap' }; }
 function newClock(content: ClockSpec['content']): ClockSpec { return { timezone: 'Europe/Dublin', content, hour_cycle: 'twenty_four', date_format: 'short' }; }
 function renderSettings(parent: HTMLElement) {
   parent.replaceChildren();
@@ -731,6 +793,7 @@ function renderSettings(parent: HTMLElement) {
   panel.append(node('p', 'render-report', 'Use Save to apply these settings, or Discard to restore them. Refresh display also respects quiet hours.'));
 }
 function addComponent(kind: 'text' | 'data' | 'clock') {
+  if (designSession) { addDesignBlock(kind); return; }
   if (editingContents()) { addElement(kind); return; }
   const block = newBlock();
   const blocks = [block];
@@ -738,8 +801,8 @@ function addComponent(kind: 'text' | 'data' | 'clock') {
     block.source = { kind: 'clock', clock: newClock('time') }; block.font_size = 40;
     const date = newBlock(); date.source = { kind: 'clock', clock: newClock('date') }; date.font_size = 14; blocks.push(date);
   } else if (kind === 'data') {
-    if (!catalog[0]) { notice('No datasets are available. Start with a text component.'); return; }
-    block.source = { kind: 'field', binding: newBinding(catalog[0]) };
+    if (!bindingCatalog()[0]) { notice('No datasets are available. Start with a text component.'); return; }
+    block.source = { kind: 'field', binding: newBinding(bindingCatalog()[0]!) };
   }
   const c: Component = { id: identifier('component'), rect: { x: 0, y: 0, width: 256, height: 128 }, padding: 12, gap: 8, border: false, blocks };
   for (let y = 16; y + c.rect.height <= draft.display.height; y += 8) {
@@ -755,7 +818,7 @@ function addElement(kind: 'text' | 'data' | 'clock') {
   const current = component(); if (!current || current.content_layout !== 'positioned' || !active()) return;
   if (current.blocks.length >= 32) { notice('Each component can contain at most 32 elements.'); return; }
   const block = newBlock();
-  if (kind === 'data') { if (!catalog[0]) return; block.source = { kind: 'field', binding: newBinding(catalog[0]) }; }
+  if (kind === 'data') { if (!bindingCatalog()[0]) return; block.source = { kind: 'field', binding: newBinding(bindingCatalog()[0]!) }; }
   if (kind === 'clock') block.source = { kind: 'clock', clock: newClock('date_time') };
   const candidate = clone(current); candidate.blocks.push(block);
   const rect = freeElementRect(candidate, block.id, kind === 'clock' ? 60 : 30);
@@ -788,13 +851,14 @@ $('board').addEventListener('pointerdown', event => {
   else selected = box.dataset.component!;
 
   const c = component()!;
+  if (designSession && c.content_layout !== 'positioned') { render(); for (const next of $('overlays').querySelectorAll<HTMLElement>('[data-element]')) if (next.dataset.element===selectedElement) next.focus({preventScroll:true}); return; }
   const rect = inside ? element()!.rect! : c.rect;
   drag = { id: c.id, blockId: inside ? selectedElement! : undefined, startX: event.clientX, startY: event.clientY, original: { ...rect }, last: { ...rect }, baseline: capture(), resize: !!target.closest('[data-resize]'), pointerId: event.pointerId, invalid: false };
   lastPointerX = event.clientX; lastPointerY = event.clientY;
   $('board').setPointerCapture(event.pointerId);
   document.body.classList.add('dragging');
   coalescedKey = '';
-  render();
+  render(); $('viewport').focus({preventScroll:true});
 });
 $('board').addEventListener('pointermove', event => {
   if (!drag || event.pointerId !== drag.pointerId) return;
@@ -818,7 +882,7 @@ function endDrag(cancel = false) {
     if (state.blockId) component()!.blocks.find(block => block.id === state.blockId)!.rect = state.last;
     else component()!.rect = state.last;
     if (!equal(state.baseline, capture())) remember(state.baseline);
-    if (state.invalid) notice(state.blockId ? 'Elements cannot overlap or leave the content area. Restored the last valid position.' : 'Components must fit the display and their positioned contents. Restored the last valid position.');
+    if (state.invalid) notice(state.blockId ? 'Items must stay inside the component’s content area. Restored the last valid position.' : 'Components must fit the display and their positioned contents. Restored the last valid position.');
   }
   if ($('board').hasPointerCapture(state.pointerId)) $('board').releasePointerCapture(state.pointerId);
   document.body.classList.remove('dragging');
@@ -839,6 +903,7 @@ function history(direction: 'undo' | 'redo') {
   notice(); render(); queuePreview();
 }
 async function save() {
+  if (designSession) { await saveDesign(); return; }
   if (!dirty() || saving || conflict || !connected || drag) return;
   saving = true; render(false); notice();
   try {
@@ -856,6 +921,7 @@ button('edit').onclick = () => {
   undo = []; redo = []; selected = null; conflict = false; notice(); render(); queuePreview();
 };
 button('discard').onclick = async () => {
+  if (designSession) { await closeDesigner(); return; }
   if (drag) endDrag(true);
   try {
     const current = await api<Workspace>('/api/state');
@@ -894,15 +960,17 @@ button('zoom-fit').onclick = () => { autoFit = true; fit(); };
 button('zoom-in').onclick = () => { autoFit = false; zoom += .1; fit(); };
 button('zoom-out').onclick = () => { autoFit = false; zoom -= .1; fit(); };
 new ResizeObserver(() => { if (!drag) fit(); }).observe($('viewport'));
-window.addEventListener('beforeunload', event => { if (dirty() || connectionDirty()) { event.preventDefault(); event.returnValue = ''; } });
+window.addEventListener('beforeunload', event => { if (dirty() || connectionDirty() || !!designSession?.previous.editing && (!equal(designSession.previous.state.layout, saved.layout) || !equal(designSession.previous.state.settings,saved.refresh_settings))) { event.preventDefault(); event.returnValue = ''; } });
 document.addEventListener('keydown', event => {
-  if ($<HTMLDialogElement>('confirm-dialog').open || currentPage === 'sources' || currentPage === 'about') return;
+  if (document.querySelector(':popover-open')) return;
+  if ($<HTMLDialogElement>('confirm-dialog').open || currentPage === 'sources' || currentPage === 'about' || currentPage === 'designs') return;
   if (event.key === 'Escape' && !$('add-picker').hidden) { event.preventDefault(); closePicker(); button('add-open').focus(); return; }
   const typing = (event.target as HTMLElement).closest('input,textarea,select,[contenteditable=true]');
   const mod = event.ctrlKey || event.metaKey;
   if (mod && event.key.toLowerCase() === 's') { event.preventDefault(); void save(); return; }
   if (!active()) return;
   if (event.key === 'Escape') {
+    if (designSession && !drag) { $('viewport').focus({preventScroll:true}); selectedElement=null; render(); return; }
     if (drag) endDrag(true);
     else if (editingContents()) { $('viewport').focus({preventScroll:true}); if (selectedElement) { selectedElement = null; render(); } else leaveContents(); }
     else { $('viewport').focus({preventScroll:true}); selected = null; render(); }
@@ -911,7 +979,7 @@ document.addEventListener('keydown', event => {
   if (typing || drag) return;
   if (mod && event.key.toLowerCase() === 'z') { event.preventDefault(); history(event.shiftKey ? 'redo' : 'undo'); return; }
   const c = component();
-  if (!c || currentPage !== 'display' || !(event.target as HTMLElement).closest('#overlays, #component-list, #viewport')) return;
+  if (!c || (currentPage !== 'display' && currentPage !== 'designer')) return;
   if (event.key === 'Delete' || event.key === 'Backspace') {
     event.preventDefault();
     if (editingContents()) {
@@ -922,6 +990,8 @@ document.addEventListener('keydown', event => {
   const delta: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
   const movement = delta[event.key];
   if (movement) {
+    if (designSession && c.content_layout !== 'positioned') return;
+    if (!(event.target as HTMLElement).closest('#overlays, #component-list, #viewport')) return;
     event.preventDefault(); const step = event.shiftKey ? 8 : 1;
     if (editingContents() && !selectedElement) return;
     change(l => {
@@ -957,11 +1027,12 @@ async function poll() {
     if (dataChanged) {
       const updated = await api<Dataset[]>('/api/catalog');
       if (saving || drag) return;
-      const changedSchema = JSON.stringify(updated.map(d => [d.connection_id, d.connection_label, d.dataset_id, d.fields])) !== JSON.stringify(catalog.map(d => [d.connection_id, d.connection_label, d.dataset_id, d.fields]));
+      const changedSchema = JSON.stringify(updated.map(d => [d.connection_id, d.connection_label, d.dataset_id, d.fields])) !== JSON.stringify(bindingCatalog().map(d => [d.connection_id, d.connection_label, d.dataset_id, d.fields]));
       catalog = updated;
       if (editing && viewingDraft) queuePreview();
       if (changedSchema && active() && !document.activeElement?.closest('input,textarea,select')) renderInspector();
     }
+    if (designSession) { const minute=Math.floor(current.clock_now/60); if(minute!==draftMinute&&component()?.blocks.some(block=>block.source.kind==='clock')){draftMinute=minute;queuePreview();} connected=true; saved.phase=current.phase; saved.refresh=current.refresh; saved.clock_now=current.clock_now; saved.data_revision=current.data_revision; updateStatus(); return; }
     const changed = !connected || current.revision !== saved.revision || current.frame_id !== saved.frame_id || current.displayed_revision !== saved.displayed_revision || current.phase !== saved.phase;
     connected = true;
     if (editing) {
@@ -983,14 +1054,15 @@ let pollTimer = 0;
 async function loadMetadata() {
   const requests = await Promise.allSettled([
     api<Dataset[]>('/api/catalog'), api<string[]>('/api/timezones'),
-    api<{ connectors: ConnectorDefinition[] }>('/api/connectors'), api<Connections>('/api/connections'), api<IconPack[]>('/api/icon-packs'),
+    api<{ connectors: ConnectorDefinition[] }>('/api/connectors'), api<Connections>('/api/connections'), api<IconPack[]>('/api/icon-packs'), api<DesignLibrary>('/api/designs'),
   ]);
-  const [datasets, timezones, definitions, connections, packs] = requests;
+  const [datasets, timezones, definitions, connections, packs, library] = requests;
   if (datasets?.status === 'fulfilled') catalog = datasets.value as Dataset[];
   if (timezones?.status === 'fulfilled') zones = timezones.value as string[];
   if (definitions?.status === 'fulfilled') connectorDefinitions = (definitions.value as {connectors: ConnectorDefinition[]}).connectors;
   if (connections?.status === 'fulfilled') connectionStore = connections.value as Connections;
   if (packs?.status === 'fulfilled') iconPacks = packs.value as IconPack[];
+  if (library?.status === 'fulfilled') { designLibrary=library.value as DesignLibrary; designLibraryLoaded=true; }
   const failures = requests.filter(result => result.status === 'rejected').length;
   $('metadata-warning').hidden = !failures;
   if (failures) $('metadata-message').textContent = 'Some data sources or editing options could not load. Your display is available. Retry to restore the missing options.';
@@ -1414,3 +1486,228 @@ connectionDialog().addEventListener('keydown', event => {
   }
 });
 window.setInterval(() => { void refreshConnectionStatus(); }, 1000);
+
+function bindingCatalog(): Dataset[] {
+  if (!designSession) return catalog;
+  const source=designSession.source ?? 'design.source';
+  const available=catalog.filter(dataset=>dataset.connection_id===source);
+  const inferred=new Map<string,Dataset>();
+  for (const template of connectorDefinitions.find(item=>item.id===designSession?.connector)?.templates ?? []) {
+    for (const block of template.component.blocks) {
+      const binding=sourceBinding(block.source); if (!binding) continue;
+      let dataset=inferred.get(binding.dataset_id);
+      if (!dataset) { dataset={connection_id:source,dataset_id:binding.dataset_id,fields:[],rows:0,stale:true}; inferred.set(binding.dataset_id,dataset); }
+      if (!dataset.fields.some(field=>field.id===binding.field_id)) dataset.fields.push({id:binding.field_id,kind:block.source.kind==='icon'?'text':binding.decimals!=null?'number':'text'});
+    }
+  }
+  return [...available,...[...inferred.values()].filter(dataset=>!available.some(item=>item.dataset_id===dataset.dataset_id))];
+}
+function useSavedDesign(design: SavedDesign, source: string) {
+  const c=bindDesign(design.component,source); c.id=identifier('component'); c.label=design.name;
+  const rect=designFits(c,draft);
+  if (!rect) {startDesigner(design.connector_id,source,design.component,design.id);notice('No free area fits this design yet. It stays editable here.');return;}
+  c.rect=rect; selected=c.id; contentMode=false; selectedElement=null;
+  change(layout=>layout.components.push(c)); closePicker();
+}
+function retainEditor(): RetainedEditor {
+  return {state:capture(),editing,viewingDraft,selected,contentMode,selectedElement,undo:clone(undo),redo:clone(redo),image:draftImage,reports:clone(reports),conflict,page:currentPage,focusId:(document.activeElement as HTMLElement)?.id,focusLabel:document.activeElement?.getAttribute('aria-label')??undefined};
+}
+function restoreEditor(previous: RetainedEditor) {
+  ++previewSequence; previewAbort?.abort(); window.clearTimeout(previewTimer);
+  restore(previous.state); editing=previous.editing; viewingDraft=previous.viewingDraft;
+  selected=previous.selected; contentMode=previous.contentMode; selectedElement=previous.selectedElement;
+  undo=previous.undo; redo=previous.redo; draftImage=previous.image; reports=previous.reports; conflict=previous.conflict;
+  designSession=undefined; lastInspectedId=null;
+  showPage(previous.page); if(previous.page==='designs')renderDesignLibrary(); notice(); render(); if (editing) queuePreview(); void poll();
+  const origin=previous.focusId?document.getElementById(previous.focusId):previous.focusLabel?document.querySelector<HTMLElement>(`[aria-label="${CSS.escape(previous.focusLabel)}"]`):null;
+  (origin??(previous.page==='designs'?$('design-library-title'):$('page-title'))).focus({preventScroll:true});
+}
+async function loadDesignLibrary() {
+  designLibrary=await api<DesignLibrary>('/api/designs'); designLibraryLoaded=true;
+}
+async function openDesignLibrary() {
+  if (!saved || designSession) return;
+  if (!showPage('designs')) return;
+  renderDesignLibrary();
+  try { await loadDesignLibrary(); renderDesignLibrary(); }
+  catch (error) { $('design-library-notice').textContent=`Could not load saved designs. ${String(error)} Use Reload designs to try again.`; }
+}
+function pluginLabel(id: string) { return id===builtinDesigns ? 'Text & time' : connectorDefinitions.find(plugin=>plugin.id===id)?.name ?? 'Unavailable plugin'; }
+function renderDesignLibrary() {
+  const sources=$('design-source-choices'); sources.replaceChildren();
+  const definitions=[{id:builtinDesigns,name:'Text & time'},...connectorDefinitions];
+  const advanced=node('details','advanced');advanced.append(node('summary','','Demo & test sources'));const advancedList=node('div');advanced.append(advancedList);
+  for (const definition of definitions) {
+    const row=node('div','design-source-choice');
+    row.append(node('h3','',definition.name));
+    const count=designLibrary.designs.filter(design=>design.connector_id===definition.id).length;
+    row.append(node('p','subtle',`${count} saved ${count===1?'design':'designs'}`));
+    action('Create design',`Create design for ${definition.name}`,row,()=>startDesigner(definition.id)); (/^(demo|example)\./.test(definition.id)?advancedList:sources).append(row);
+  }
+  if(advancedList.childElementCount)sources.append(advanced);
+  const list=$('saved-design-list'); list.replaceChildren();
+  const page=$('design-library-page'); const savedSection=list.parentElement!; const creation=$('design-source-choices').parentElement!;
+  if(designLibrary.designs.length)page.insertBefore(savedSection,creation);else page.append(savedSection);
+  if (!designLibrary.designs.length) list.append(node('p','subtle','Your saved designs will appear here. Create one from a source or start with text and time.'));
+  for (const design of designLibrary.designs) {
+    const row=node('div','saved-design-row'); const copy=node('div');
+    copy.append(node('h3','',design.name),node('p','subtle',`${pluginLabel(design.connector_id)} · ${design.component.rect.width} × ${design.component.rect.height} px`)); row.append(copy);
+    const available=design.connector_id===builtinDesigns || connectorDefinitions.some(plugin=>plugin.id===design.connector_id);
+    action('Edit design',`Edit design ${design.name}`,row,()=>startDesigner(design.connector_id,undefined,design.component,design.id),!available);
+    const remove=action('Delete',`Delete design ${design.name}`,row,async()=>{
+      if (!await confirmAction(`Delete ${design.name}?`,'This removes the reusable design. Components already added to your display are kept.','Delete design')) return;
+      remove.disabled=true;
+      try { designLibrary=await api<DesignLibrary>(`/api/designs/${encodeURIComponent(design.id)}`,{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:designLibrary.revision})}); renderDesignLibrary(); }
+      catch (error) { $('design-library-notice').textContent=String(error); remove.disabled=false; }
+    }); remove.classList.add('danger'); list.append(row);
+  }
+}
+function startDesigner(connector: string, source?: string, componentCopy?: Component, id?: string, original?: string) {
+  if (!saved || designSession || saving) return;
+  if (connectionDraft) { connectionNotice('Save or discard the connection form before designing a component.'); return; }
+  const previous=retainEditor(); closePicker();
+  const connection=source ?? connectionStore.connections.find(connection=>connection.connector_id===connector)?.id;
+  const c=componentCopy ? bindDesign(componentCopy,connection) : {id:identifier('design'),label:'New design',rect:{x:0,y:0,width:32,height:32},padding:4,gap:2,border:false,content_layout:'flow' as const,blocks:[]};
+  if (componentCopy && original) { c.blocks=clone(componentCopy.blocks); c.rect.x=0; c.rect.y=0; }
+  c.label ||= componentCopy?name(componentCopy):'New design';
+  designSession={previous,connector,source:connection,id,baseline:clone(c),original,busy:false,automatic:!componentCopy,fixedWidth:undefined,ready:false,error:'',needsFit:true,startingPoint:componentCopy&&!original&&!id?connectorDefinitions.find(plugin=>plugin.id===connector)?.templates?.find(template=>equal(template.component.blocks.map(block=>block.id),componentCopy.blocks.map(block=>block.id)))?.id:undefined};
+  draft={schema_version:1,display:{id:'component-design',width:c.rect.width,height:c.rect.height},components:[c]};
+  selected=c.id; selectedElement=c.blocks[0]?.id??null; editing=true; viewingDraft=true; contentMode=true;
+  undo=[]; redo=[]; reports=[]; draftImage=''; conflict=false; autoFit=true; lastInspectedId=null;
+  ++previewSequence; previewAbort?.abort(); window.clearTimeout(previewTimer);
+  $<HTMLImageElement>('frame').removeAttribute('src');
+  showPage('designer'); renderDesignerControls(); render(); queuePreview(); $('design-name').focus({preventScroll:true});
+}
+async function designExisting(c: Component) {
+  const source=c.blocks.map(block=>sourceBinding(block.source)?.connection_id).find(Boolean);
+  const firstBinding=c.blocks.map(block=>sourceBinding(block.source)).find(Boolean);
+  const connector=connectionStore.connections.find(connection=>connection.id===source)?.connector_id
+    ?? (firstBinding ? connectorDefinitions.find(plugin=>plugin.templates?.some(template=>template.component.blocks.some(block=>sourceBinding(block.source)?.dataset_id===firstBinding.dataset_id)))?.id : undefined);
+  // Existing legacy/fixture bindings stay intact even without a configured source.
+  startDesigner(connector ?? builtinDesigns,source,c,undefined,c.id);
+}
+function renderDesignerControls() {
+  const session=designSession; if (!session) return;
+  const nameInput=$<HTMLInputElement>('design-name'); nameInput.value=component()?.label??'';
+  const source=$<HTMLSelectElement>('design-connection'); source.replaceChildren();
+  const connections=connectionStore.connections.filter(connection=>connection.connector_id===session.connector);
+  const empty=node('option','','Choose a source later'); empty.value=''; source.append(empty);
+  for (const connection of connections) { const option=node('option','',connection.label); option.value=connection.id; source.append(option); }
+  if (session.source && !connections.some(connection=>connection.id===session.source)) { const option=node('option','','Current component source'); option.value=session.source; source.append(option); }
+  source.value=session.source??''; source.parentElement!.hidden=session.connector===builtinDesigns; $('design-source-label').textContent=pluginLabel(session.connector);
+  const starts=$<HTMLSelectElement>('design-starting-point'); starts.replaceChildren();
+  const blank=node('option','','Blank design'); blank.value=''; starts.append(blank);
+  for (const template of connectorDefinitions.find(plugin=>plugin.id===session.connector)?.templates??[]) { const option=node('option','',template.name); option.value=template.id; starts.append(option); }
+  starts.value=session.startingPoint??'';
+  $('design-starting-label').hidden=!!session.original || !!session.id || starts.options.length===1;
+  source.onchange=()=>{
+    const selectedSource=source.value||undefined;
+    change(layout=>{session.source=selectedSource;layout.components[0]=bindDesign(layout.components[0]!,session.source);},'design.source'); renderDesignerState();
+  };
+  starts.onchange=()=>{
+    const template=connectorDefinitions.find(plugin=>plugin.id===session.connector)?.templates?.find(template=>template.id===starts.value);
+    const c=template ? compactDesign(bindDesign(template.component,session.source)) : {id:component()!.id,label:'New design',rect:{x:0,y:0,width:32,height:32},padding:4,gap:2,border:false,content_layout:'flow' as const,blocks:[]};
+    c.id=component()!.id; if (template) c.label=template.name;
+    const startingPoint=starts.value;
+    change(layout=>{session.automatic=true;session.fixedWidth=undefined;session.startingPoint=startingPoint;selectedElement=c.blocks[0]?.id??null;layout.components[0]=c;},''); renderDesignerControls();
+  };
+  nameInput.oninput=()=>change(layout=>{layout.components[0]!.label=nameInput.value;},'design.name',false);
+}
+function clippedItemNames() { const c=component(); const ids=reports.find(report=>report.id===selected)?.blocks.filter(block=>block.overflow).map(block=>block.id)??[]; return c?.blocks.filter(block=>ids.includes(block.id)).map(elementName).join(', ')||'some content'; }
+function designHasOverflow() { return reports.find(report=>report.id===selected)?.warnings.includes('overflow') ?? false; }
+function renderDesignerState() {
+  const session=designSession; const c=component(); if (!session || !c) return;
+  button('edit').hidden=true; button('refresh').hidden=true; button('discard').hidden=false; button('discard').textContent='Close designer';
+  button('save').hidden=false; button('save').textContent='Save design'; button('save').classList.remove('primary');
+  button('save').disabled=!!session.libraryConflict || session.busy || !session.ready || !c.label?.trim() || !designGeometryValid(c) || !validElements(c) || !c.blocks.length;
+  button('design-place').hidden=false; button('design-place').textContent=session.original?'Apply to layout':'Add to display';
+  const nameMissing=!c.label?.trim(); const nameTooLong=new TextEncoder().encode(c.label??'').length>128;
+  $('design-name-error').textContent=nameMissing?'Enter a design name before saving.':nameTooLong?'Use a shorter design name (up to 128 bytes).':'';
+  $('design-name-error').hidden=!nameMissing&&!nameTooLong; $('design-name').setAttribute('aria-invalid',String(nameMissing||nameTooLong));
+  button('save').disabled ||=nameTooLong;
+  const requiresSource=c.blocks.some(block=>sourceBinding(block.source));
+  button('design-place').disabled=nameMissing||nameTooLong||session.busy||!session.ready||!validElements(c)||!c.blocks.length||requiresSource&&!session.source;
+  $('inspector-body').inert=session.busy;
+  $('designer-controls').inert=session.busy;
+  $('save-state').textContent=session.busy?'Saving design…':dirty()?'Unsaved design changes':session.id?'Design saved':'New component design';
+  $('draft-badge').textContent='Component design';
+  $('canvas-title').textContent='Component preview';
+  button('view-current').hidden=true; button('view-draft').textContent='Component preview';
+  button('exit-content').hidden=true; button('use-flow').hidden=true;
+  $('content-mode-bar').hidden=true;
+  button('design-flow-toggle').hidden=!c.blocks.length; button('design-flow-toggle').textContent=c.content_layout==='positioned'?'Stack items':'Arrange freely';
+  $('library-title').textContent='Items';
+  button('designs-main').hidden=true;
+  button('custom-design-new').hidden=true; button('designs-open').hidden=true;
+  const needed=c.rect.width*c.rect.height/(session.previous.state.layout.display.width*session.previous.state.layout.display.height)*100;
+  $('design-footprint').textContent=`${c.rect.width} × ${c.rect.height} px · ${Math.max(.1,Math.round(needed*10)/10)}% of your display`;
+  $('design-feedback').textContent=session.error || (designHasOverflow()?`Clipped items: ${clippedItemNames()}. You can save this design. Use Fit to contents, or enlarge the affected items.`:requiresSource&&!session.source?'Choose a source to use live information when adding. You can save this design first.':!c.blocks.length?'Add your first item to begin.':session.ready?'Preview uses current values. Leave extra room for longer information.':'Preparing your preview…');
+  $('design-feedback').classList.toggle('error',!!session.error);
+  $('design-feedback').classList.toggle('clipping-warning',!session.error&&designHasOverflow());
+  const width=$<HTMLInputElement>('design-width'); width.max=String(Math.max(session.previous.state.layout.display.width,c.rect.width)); width.min=String(Math.max(32,2*c.padding+1)); if (document.activeElement!==width) width.value=String(c.rect.width);
+  const fonts=[...new Set(c.blocks.filter(block=>block.source.kind!=='icon').map(block=>block.font_size))]; const size=$<HTMLSelectElement>('design-text-size'); size.value=fonts.length===1?String(fonts[0]):''; size.disabled=c.content_layout==='positioned';
+  button('design-library-retry').hidden=designLibraryLoaded;
+  button('design-fit').disabled=session.busy||!c.blocks.length;
+  if(document.activeElement!==$('design-connection'))$<HTMLSelectElement>('design-connection').value=session.source??'';
+  if(document.activeElement!==$('design-starting-point'))$<HTMLSelectElement>('design-starting-point').value=session.startingPoint??'';
+  if (document.activeElement!==$('design-name')) $<HTMLInputElement>('design-name').value=c.label??'';
+}
+function clearDesignerChrome() {
+  button('refresh').hidden=false; button('discard').textContent='Discard'; button('save').textContent='Save to display'; button('save').classList.add('primary');
+  button('design-place').hidden=true; $('draft-badge').textContent='Editing draft'; button('view-current').hidden=false; button('view-draft').textContent='Draft'; button('exit-content').hidden=false; button('use-flow').hidden=false; button('design-flow-toggle').hidden=true;
+  button('designs-main').hidden=false; button('custom-design-new').hidden=false; button('designs-open').hidden=false; $('inspector-body').inert=false;
+}
+async function closeDesigner() {
+  if (!designSession || designSession.busy) return;
+  if (dirty() && !await confirmAction('Close without saving this design?','Unsaved design edits will be discarded. Your display layout and any previously saved design are kept.','Discard design edits')) return;
+  const previous=designSession.previous; clearDesignerChrome(); restoreEditor(previous);
+}
+function focusDesignContent() { [...$('inspector-body').querySelectorAll<HTMLElement>('textarea,input:not([type=checkbox]),select')].find(control=>control.getClientRects().length>0&&!control.closest('details:not([open])'))?.focus({preventScroll:true}); }
+function addDesignBlock(kind: 'text'|'data'|'clock') {
+  const session=designSession; const c=component(); if (!session||!c||c.blocks.length>=32) return;
+  if (c.content_layout==='positioned') { addElement(kind); focusDesignContent(); return; }
+  const block=newBlock();
+  if (kind==='clock') block.source={kind:'clock',clock:newClock('date_time')};
+  if (kind==='data') { const dataset=bindingCatalog()[0]; if (!dataset) { notice('No information fields are available yet. Set up a source in Data sources, or add text and time first.'); return; } block.source={kind:'field',binding:newBinding(dataset)}; }
+  selectedElement=block.id;
+  change(layout=>{session.automatic=true;layout.components[0]!.blocks.push(block);}); closePicker(); focusDesignContent();
+}
+async function saveDesign() {
+  const session=designSession; const c=component(); if (!session||!c||session.busy||session.libraryConflict||!session.ready) return;
+  session.busy=true; render(false);
+  try {
+    if (!designLibraryLoaded) await loadDesignLibrary();
+    const id=session.id??identifier('design');
+    designLibrary=await api<DesignLibrary>(`/api/designs/${encodeURIComponent(id)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({base_revision:designLibrary.revision,connector_id:session.connector,name:c.label,component:c})});
+    if (designSession!==session) return;
+    session.id=id; session.baseline=clone(c); notice(designHasOverflow()?'Design saved. Some items are clipped; you can keep editing. Your display has not changed.':'Design saved to Paperphase. Your display has not changed.');
+  } catch (error) { if (error instanceof ApiFailure && error.status===409) {designLibraryLoaded=false;session.libraryConflict=true;} notice(String(error),true); }
+  finally { if (designSession===session) { session.busy=false; render(false); } }
+}
+function placeDesign() {
+  const session=designSession; const c=component(); if (!session||!c||!c.label?.trim()||!session.ready||session.busy||c.blocks.some(block=>sourceBinding(block.source))&&!session.source) return;
+  const layout=clone(session.previous.state.layout); const target=clone(c);
+  const original=layout.components.find(component=>component.id===session.original);
+  if (session.original) layout.components=layout.components.filter(component=>component.id!==session.original);
+  let rect: Rect|null=null;
+  if (original && validRect({...target.rect,x:original.rect.x,y:original.rect.y},target.id,{...layout,components:[...layout.components,target]})) rect={...target.rect,x:original.rect.x,y:original.rect.y};
+  rect??=designFits(target,layout);
+  if (!rect) { notice('This design does not fit a free area yet. Make it smaller, or save it and make room on your display. Your design is kept.',true); return; }
+  target.rect=rect; target.id=session.original??identifier('component');
+  const previous=session.previous; const originalId=session.original; clearDesignerChrome(); restoreEditor(previous);
+  if (!editing) { editing=true; viewingDraft=true; undo=[]; redo=[]; draft=clone(previous.state.layout); draftSettings=clone(previous.state.settings); }
+  currentPage='display'; showPage('display'); viewingDraft=true; selected=target.id; contentMode=false; selectedElement=null;
+  change(layout=>{if (originalId) layout.components=layout.components.filter(component=>component.id!==originalId);layout.components.push(target);});
+  notice(originalId?'Component design applied to your layout draft. Save to update the display.':'Component added to your layout draft. Save to update the display.');
+}
+button('design-place').onclick=placeDesign;
+button('designs-main').onclick=()=>{void openDesignLibrary();};
+button('designs-open').onclick=()=>{void openDesignLibrary();};
+button('custom-design-new').onclick=()=>{void openDesignLibrary();};
+button('design-library-back').onclick=()=>showPage('display');
+button('design-library-reload').onclick=async()=>{try{await loadDesignLibrary();$('design-library-notice').textContent='Design library reloaded. Your current component edits are kept.';renderDesignLibrary();}catch(error){$('design-library-notice').textContent=String(error);}};
+button('design-library-retry').onclick=async()=>{try{await loadDesignLibrary();if(designSession)designSession.libraryConflict=false;render(false);notice('Design library reloaded. You can save your draft again.');}catch(error){notice(String(error),true);}};
+button('design-fit').onclick=()=>{if(designSession){designSession.recordFit=capture();designSession.automatic=true;designSession.needsFit=true;designSession.fixedWidth=undefined;queuePreview();}};
+$<HTMLInputElement>('design-width').oninput=()=>{if(designSession){const width=$<HTMLInputElement>('design-width').valueAsNumber;change(layout=>{designSession!.automatic=true;designSession!.fixedWidth=width;layout.components[0]!.rect.width=width;},'design.width',false);}};
+$<HTMLSelectElement>('design-text-size').onchange=()=>{if(designSession){const size=Number($<HTMLSelectElement>('design-text-size').value);if(!size)return;change(layout=>{designSession!.automatic=true;for(const block of layout.components[0]!.blocks)if(block.source.kind!=='icon')block.font_size=size;});}};
+button('design-flow-toggle').onclick=()=>{if(!designSession)return;if(component()?.content_layout==='positioned'){designSession.automatic=true;useFlow();}else{designSession.automatic=false;void enterContents();}};

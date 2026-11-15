@@ -5,7 +5,7 @@ mod renderer;
 
 pub use frame::Frame;
 pub use renderer::{
-    BlockReport, ComponentReport, DataState, RenderWarning, RenderedFrame, Renderer,
+    BlockReport, ComponentReport, ContentSize, DataState, RenderWarning, RenderedFrame, Renderer,
 };
 
 mod icons;

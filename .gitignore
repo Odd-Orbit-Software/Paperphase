@@ -22,3 +22,6 @@ google-client*.json
 *.pfx
 id_rsa
 id_ed25519
+
+# Private reusable component designs may contain personal text.
+*.designs.json

@@ -398,6 +398,8 @@ pub(super) mod tests {
             ))
             .unwrap(),
             connections: AsyncMutex::new(super::super::connections::ConnectionStore::default()),
+            designs: AsyncMutex::new(super::super::designs::Store::default()),
+            designs_file: dir.path().join("designs.json"),
             connections_file: dir.path().join("connections.json"),
             workspace: AsyncMutex::new(workspace),
             renderer: Mutex::new(renderer),

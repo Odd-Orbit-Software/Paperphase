@@ -361,10 +361,12 @@ test('internal elements preserve pixels on conversion and support visual placeme
   await page.mouse.move(start.x, start.y); await page.mouse.down();
   await page.mouse.move(start.x + 32 * scale, start.y + 16 * scale);
   await page.mouse.move(start.x + 32 * scale, start.y + 96 * scale);
+  await expect(page.locator('.element-box.invalid')).toHaveCount(0);
+  await page.mouse.move(start.x + 32 * scale, start.y + 420 * scale);
   await expect(page.locator('.element-box.invalid')).toHaveCount(1);
   await page.mouse.up();
   await expect(page.getByLabel('Element X', { exact: true })).toHaveValue('32');
-  await expect(page.getByLabel('Element Y', { exact: true })).toHaveValue('16');
+  await expect(page.getByLabel('Element Y', { exact: true })).toHaveValue('96');
   await expect(page.locator('#notice')).toContainText('last valid position');
   await page.getByRole('button', { name: 'Undo', exact: true }).click();
   await expect(page.getByLabel('Element X', { exact: true })).toHaveValue('0');
@@ -793,7 +795,7 @@ test('generic JSON mappings use editable rows and optional empty authentication'
  await placePluginBoard(page,request,'Add JSON summary from Room sensors','Room sensors · JSON summary','generic-json-display');
 });
 
-test('Google setup keeps credentials private and returns cross-site callbacks to the originating editor', async ({page, request}) => {
+test('Google setup keeps credentials private and returns cross-site callbacks to the originating editor', async ({page, request,baseURL}) => {
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
   await page.goto('/');
   await page.getByRole('button', {name:'Data sources',exact:true}).click();
@@ -813,7 +815,7 @@ test('Google setup keeps credentials private and returns cross-site callbacks to
     expect(auth.searchParams.get('code_challenge_method')).toBe('S256');
     expect(auth.searchParams.get('redirect_uri')).toBe('https://auth.paperphase.oddorbit.software/oauth/google/callback');
     const payload = JSON.parse(Buffer.from(pendingState,'base64url').toString());
-    expect(payload.return_to).toBe('http://127.0.0.1:8097/api/google/callback');
+    expect(payload.return_to).toBe(new URL('/api/google/callback',baseURL).href);
     const callback = new URL(payload.return_to); callback.searchParams.set('state',pendingState); callback.searchParams.set('error','access_denied');
     await route.fulfill({contentType:'text/html',body:`<a href="${callback.href.replaceAll('&','&amp;')}">Return to editor</a>`});
   });
@@ -822,7 +824,7 @@ test('Google setup keeps credentials private and returns cross-site callbacks to
   await expect(page).toHaveURL(/^https:\/\/accounts\.google\.com\//);
   await page.getByRole('link',{name:'Return to editor'}).click();
   await expect(page.locator('#connections-notice')).toContainText('Google account linking was declined');
-  await expect(page).toHaveURL('http://127.0.0.1:8097/');
+  await expect(page).toHaveURL(new URL('/',baseURL).href);
   const failure = await (await request.get('/api/google')).json();
   expect(failure.last_link_error.code).toBe('access_denied');
   expect(JSON.stringify(failure)).not.toContain(pendingState);
@@ -830,7 +832,7 @@ test('Google setup keeps credentials private and returns cross-site callbacks to
   expect(crossSite.status()).toBe(403);
   const crossSiteRead = await request.get('/api/google',{headers:{'sec-fetch-site':'cross-site','sec-fetch-mode':'navigate','sec-fetch-dest':'document'}});
   expect(crossSiteRead.status()).toBe(403);
-  const wrongPi = await request.get('/api/google/callback',{params:{state:pendingState,error:'access_denied'},headers:{host:'other-pi.local:8097','sec-fetch-site':'cross-site'},maxRedirects:0});
+  const wrongPi = await request.get('/api/google/callback',{params:{state:pendingState,error:'access_denied'},headers:{host:`other-pi.local:${new URL(baseURL!).port}`,'sec-fetch-site':'cross-site'},maxRedirects:0});
   expect(wrongPi.status()).toBe(403);
   const replay = await request.get('/api/google/callback',{params:{state:pendingState,error:'access_denied'},headers:{'sec-fetch-site':'cross-site'},maxRedirects:0});
   expect(replay.status()).toBe(303);
@@ -839,7 +841,7 @@ test('Google setup keeps credentials private and returns cross-site callbacks to
   expect(errors).toEqual([]);
 });
 
-test('Google linking retains an unsaved layout instead of navigating away', async ({page,request}) => {
+test('Google linking retains an unsaved layout instead of navigating away', async ({page,request,baseURL}) => {
   const before = await (await request.get('/api/state')).json();
   const config = await request.put('/api/google/config',{data:{client_id:'browser-fixture.apps.googleusercontent.com',client_secret:'fixture-browser-secret',redirect_uri:'https://auth.paperphase.oddorbit.software/oauth/google/callback'}});
   expect(config.ok()).toBeTruthy();
@@ -853,7 +855,7 @@ test('Google linking retains an unsaved layout instead of navigating away', asyn
   await page.getByLabel('New Google account label',{exact:true}).fill('Work');
   await page.getByRole('button',{name:'Link Google account',exact:true}).click();
   await expect(page.locator('#connections-notice')).toContainText('Save or discard your layout');
-  await expect(page).toHaveURL('http://127.0.0.1:8097/');
+  await expect(page).toHaveURL(new URL('/',baseURL).href);
   await page.getByRole('button',{name:'Back to display',exact:true}).click();
   await expect(page.getByLabel('Text',{exact:true}).first()).toHaveValue('Retain this layout draft');
   expect((await (await request.get('/api/state')).json()).revision).toBe(before.revision);

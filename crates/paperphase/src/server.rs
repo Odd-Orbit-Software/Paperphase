@@ -31,6 +31,7 @@ use tokio::sync::{Mutex as AsyncMutex, Semaphore};
 use crate::simulator::read_json;
 mod agenda;
 mod connections;
+mod designs;
 mod fetching;
 mod google;
 mod reference;
@@ -73,6 +74,8 @@ struct App {
     connector_catalog: ConnectorCatalog,
     connections: AsyncMutex<connections::ConnectionStore>,
     connections_file: PathBuf,
+    designs: AsyncMutex<designs::Store>,
+    designs_file: PathBuf,
     workspace: AsyncMutex<Workspace>,
     renderer: Mutex<Renderer>,
     snapshots: SnapshotSet,
@@ -146,6 +149,14 @@ pub fn run(
     let lock_path = state_file.with_extension("json.lock");
     let connections_file = state_file.with_extension("connections.json");
     let google_file = state_file.with_extension("google.json");
+    let designs_file = state_file.with_extension("designs.json");
+    for other in [&state_file, &connections_file, &google_file, &lock_path] {
+        ensure!(
+            !crate::simulator::same_file(&designs_file, other)?,
+            "design storage must be separate from other state"
+        );
+    }
+    let design_store = designs::load(&designs_file)?;
     ensure!(
         !crate::simulator::same_file(&state_file, &connections_file)?,
         "workspace and connections paths must differ"
@@ -162,6 +173,10 @@ pub fn run(
         .chain(connector_definitions.iter())
         .chain(connector_bindings.iter())
     {
+        ensure!(
+            !crate::simulator::same_file(&designs_file, source)?,
+            "design storage must not replace an input"
+        );
         ensure!(
             !crate::simulator::same_file(&state_file, source)?,
             "workspace must not replace a fixture input"
@@ -343,6 +358,8 @@ pub fn run(
             connector_catalog,
             connections: AsyncMutex::new(connection_store),
             connections_file,
+            designs: AsyncMutex::new(design_store),
+            designs_file,
             workspace: AsyncMutex::new(Workspace::new(
                 saved,
                 png,
@@ -412,6 +429,12 @@ pub fn run(
                     )
                 }),
             )
+            .route("/api/designs", get(designs::list))
+            .route(
+                "/api/designs/{id}",
+                put(designs::save).delete(designs::remove),
+            )
+            .route("/api/component-fit", post(designs::fit))
             .route("/api/state", get(state))
             .route("/api/catalog", get(catalog))
             .route(

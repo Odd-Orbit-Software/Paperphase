@@ -12,9 +12,10 @@ addresses defaults that cannot be added because they do not fit, and requires a
 blank or template-based design flow for every loaded plugin before placement.
 
 The owner approved the UIUX design for merge on 2026-11-15. Custom component
-design per loaded plugin is next, keeping that design system. Include the
-owner-reported Delete-key regression for highlighted components/internal elements
-and the missing internal-designer workflow in this feature; see the
+design per loaded plugin is implemented on `component-designer`, keeping that
+design system and addressing the highlighted-component Delete and internal-designer
+workflow regressions. See [the implemented design](../design/component-designer.md)
+and the
 [entry and regression criteria](delivery-plan.md#component-design-before-placement).
 
 ## Air quality and pollen

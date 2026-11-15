@@ -34,9 +34,9 @@ is `height - 2p`, less 18 pixels if any element binds a dataset field. This stat
 strip remains reserved even when all data is fresh.
 
 Every element must be at least 8 × 8 native pixels and fit entirely inside that
-content area. Rectangles may touch edges but may not overlap. Rust validates
-bounds using 64-bit sums before allocating or drawing the frame. With at most
-32 blocks per component, pairwise collision checks are bounded and simple.
+content area. Internal rectangles may overlap: they share the component’s
+redraw area, and their monochrome ink combines. Whole components still cannot
+overlap. Rust validates bounds using 64-bit sums before drawing the frame.
 The browser repeats the same geometry checks for immediate interaction feedback.
 
 Moving an outer component moves its contents. Resizing it retains element
@@ -70,7 +70,7 @@ sequenceDiagram
 
 The browser copies these measured rectangles into the blocks and selects
 `positioned`. Empty boxes receive an eight-pixel minimum height. Conversion
-rejects hidden blocks, overlapping measured boxes, or insufficient space rather
+rejects hidden blocks or insufficient content space rather
 than dropping content. The user can enlarge the component or adjust its text,
 font sizes, and gap, then retry. A response cannot convert a draft that changed
 while the request was running.

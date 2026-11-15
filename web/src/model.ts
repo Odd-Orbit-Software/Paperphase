@@ -8,4 +8,4 @@ export function sourceBinding(source: Source): Binding | undefined { return sour
 export type Block = { id: string; source: Source; font_size: number; align: string; overflow: string; rect?: Rect };
 export type Component = { id: string; label?: string; rect: Rect; padding: number; gap: number; border: boolean; content_layout?: 'flow' | 'positioned'; refresh_hint?: 'automatic' | 'partial' | 'full'; blocks: Block[] };
 export type Layout = { schema_version: number; display: { id: string; width: number; height: number }; components: Component[] };
-export type BlockPlacement = { id: string; rect: Rect | null };
+export type BlockPlacement = { id: string; rect: Rect | null; overflow?: boolean };

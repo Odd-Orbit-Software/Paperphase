@@ -54,9 +54,22 @@ pub struct BlockReport {
     pub id: String,
     /// The visible box in content-local coordinates; None for hidden flow blocks.
     pub rect: Option<Rect>,
+    /// Natural unwrapped width and unclipped laid-out height, excluding padding/status.
+    pub content_size: Option<ContentSize>,
+    /// Actual clipped content, independently of nominal font line spacing.
+    pub overflow: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ContentSize {
+    pub minimum_width: u32,
+    pub width: u32,
+    pub height: u32,
 }
 
 struct TextMetrics {
+    minimum_width: u32,
+    width: u32,
     flow_height: u32,
     visible_height: u32,
     overflow: bool,
@@ -143,6 +156,8 @@ impl Renderer {
                     .map(|block| BlockReport {
                         id: block.id.clone(),
                         rect: None,
+                        content_size: None,
+                        overflow: false,
                     })
                     .collect(),
             };
@@ -215,6 +230,9 @@ impl Renderer {
         for (index, (block, value)) in component.blocks.iter().zip(values).enumerate() {
             if component.content_layout == ContentLayout::Flow && u64::from(y) >= body.bottom() {
                 report.warn(RenderWarning::Overflow);
+                for hidden in &mut report.blocks[index..] {
+                    hidden.overflow = true;
+                }
                 break;
             }
             let clip = if component.content_layout == ContentLayout::Positioned {
@@ -261,6 +279,8 @@ impl Renderer {
                     }
                 }
                 TextMetrics {
+                    minimum_width: size32,
+                    width: size32,
                     flow_height: size32,
                     visible_height: size32.min(clip.height),
                     overflow: size32 > clip.width || size32 > clip.height,
@@ -269,6 +289,11 @@ impl Renderer {
             } else {
                 self.text(frame, value, block, clip)
             };
+            report.blocks[index].content_size = Some(ContentSize {
+                minimum_width: metrics.minimum_width,
+                width: metrics.width,
+                height: metrics.flow_height.max(metrics.visible_height),
+            });
             report.blocks[index].rect =
                 Some(if component.content_layout == ContentLayout::Positioned {
                     block.rect.expect("validated")
@@ -280,6 +305,7 @@ impl Renderer {
                         height: metrics.visible_height.min(clip.height),
                     }
                 });
+            report.blocks[index].overflow = metrics.overflow;
             if metrics.overflow {
                 report.warn(RenderWarning::Overflow);
             }
@@ -340,6 +366,19 @@ impl Renderer {
             })
             .collect();
         let px = f32::from(style.font_size);
+        let minimum_width = text
+            .chars()
+            .map(|ch| self.font.metrics(ch, px).advance_width.ceil() as u32)
+            .max()
+            .unwrap_or(0);
+        let natural_width = if matches!(style.overflow, Overflow::Wrap) {
+            text.lines()
+                .map(|line| measure(&self.font, line, px).ceil() as u32)
+                .max()
+                .unwrap_or(0)
+        } else {
+            measure(&self.font, &text.replace('\n', " "), px).ceil() as u32
+        };
         let width = clip.width as f32;
         let wrap = matches!(style.overflow, Overflow::Wrap);
         let mut overflow = false;
@@ -393,7 +432,8 @@ impl Renderer {
             .append(&[&self.font], &TextStyle::new(&text, px, 0));
         let height = self.flow.height().ceil() as u32;
         let mut visible_height = height;
-        overflow |= height > clip.height;
+        // Line advance includes leading/descender room. A tight positioned box
+        // is only vertically clipped when visible ink actually leaves it.
         for glyph in self.flow.glyphs() {
             if glyph.width == 0 || glyph.height == 0 {
                 continue;
@@ -407,6 +447,7 @@ impl Renderer {
                 || x + glyph.width as i64 <= i64::from(clip.x)
                 || y + glyph.height as i64 <= i64::from(clip.y)
             {
+                overflow = true;
                 continue;
             }
             if !self.cache.contains_key(&glyph.key) {
@@ -424,12 +465,20 @@ impl Renderer {
             for row in 0..metrics.height {
                 for column in 0..metrics.width {
                     if bitmap[row * metrics.width + column] >= 128 {
-                        frame.ink(x + column as i64, y + row as i64, clip);
+                        let ink_x = x + column as i64;
+                        let ink_y = y + row as i64;
+                        overflow |= ink_x < i64::from(clip.x)
+                            || ink_x >= clip.right() as i64
+                            || ink_y < i64::from(clip.y)
+                            || ink_y >= clip.bottom() as i64;
+                        frame.ink(ink_x, ink_y, clip);
                     }
                 }
             }
         }
         TextMetrics {
+            minimum_width,
+            width: natural_width,
             flow_height: height,
             visible_height,
             overflow,

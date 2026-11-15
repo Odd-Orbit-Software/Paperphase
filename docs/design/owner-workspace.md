@@ -52,7 +52,8 @@ flowchart LR
 Display editing still uses a cloned `Layout` and `RefreshSettings`, one shared
 undo/redo history and explicit save/discard. Last displayed pixels and draft
 preview remain separate. Content mode, component selection and element selection
-retain their existing geometry and non-overlap rules.
+retain their content bounds; internal items may overlap, while whole components
+keep the non-overlap rule.
 
 ## Content and precision editing
 
@@ -130,3 +131,7 @@ optional metadata retry, initial failure retry, destructive confirmation,
 Google prerequisites and narrow-width access. Fixture accounts/providers are
 synthetic. Desktop checks do not establish Pi resource use, real Google consent
 or physical display behaviour. Those validations remain separate.
+
+The subsequent [component designer](component-designer.md) extends this system
+with plugin-specific designs before placement, saved designs and restored
+mouse-selected deletion.

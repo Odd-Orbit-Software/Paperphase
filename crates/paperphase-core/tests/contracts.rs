@@ -143,7 +143,7 @@ fn snapshot_dataset_validation_preserves_source_provenance() {
 }
 
 #[test]
-fn positioned_elements_require_explicit_non_overlapping_content_local_boxes() {
+fn positioned_elements_allow_overlap_but_require_content_local_boxes() {
     use paperphase_core::ContentLayout;
     let mut scene = layout();
     assert_eq!(scene.components[0].content_layout, ContentLayout::Flow);
@@ -163,7 +163,7 @@ fn positioned_elements_require_explicit_non_overlapping_content_local_boxes() {
     let saved: Layout = serde_json::from_slice(&serde_json::to_vec(&scene).unwrap()).unwrap();
     assert_eq!(saved.components[0].blocks[1].rect.unwrap().x, 32);
     scene.components[0].blocks[1].rect.as_mut().unwrap().x = 31;
-    assert!(scene.validate().unwrap_err().message.contains("overlaps"));
+    scene.validate().unwrap();
     scene.components[0].blocks.pop();
     scene.components[0].blocks[0].rect.as_mut().unwrap().width = 7;
     assert!(scene.validate().unwrap_err().message.contains("8 × 8"));
