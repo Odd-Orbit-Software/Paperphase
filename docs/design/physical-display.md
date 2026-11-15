@@ -3,8 +3,10 @@
 The explicit `--display waveshare-v2` backend connects the shared compositor and
 refresh worker to the owner's monochrome Waveshare 7.5-inch V2 / Rev2.3 HAT.
 The default remains `simulator`; opening the desktop editor never probes GPIO.
-This first hardware profile supports full refresh only. Partial/fast refresh and
-long-term maintenance/ghosting qualification remain separate work.
+The `waveshare-v2` profile supports full refresh only. The explicit
+`waveshare-v2-partial` profile enables the tested sleep/wake partial path on
+this panel; fast refresh and longer maintenance/ghosting qualification remain
+separate work.
 
 ## Execution and acknowledgement
 
@@ -108,3 +110,80 @@ Device settings. The Impeccable finish reviewer scored the one requested fix
 ![Physical startup awaiting its first confirmed image](images/physical-display-pending.png)
 
 ![Unconfirmed completed reference with full-refresh retry timing](images/physical-display-recovery.png)
+
+## Partial qualification boundary
+
+The safe `waveshare-v2` profile still selects full refresh only. A separate opt-in tool can
+exercise a full baseline followed by a single partial window within one bounded
+adapter operation. It crops each row using the full frame's 100-byte stride and
+requires byte-aligned X/width and unchanged pixels outside the window. The vendor
+method's 48,000-byte padded transfer is limited to exactly `width × height / 8`
+bytes, preserving its command, D/C and chip-select transitions and complement
+polarity. The transfer is checked against a fake vendor before Pi use.
+
+The qualification wrapper preserves the existing private completion receipt and
+atomically advances only its restart deadline before hardware access. The app
+recovers with a full refresh after the test. This experiment does not certify
+RAM retention across sleep/power release, repeated partials, optical ghosting,
+maintenance cadence or fast waveforms. Owner visual evidence is required in
+addition to the electrical acknowledgement.
+
+### First rectangle operation — 2026-11-15
+
+The 160×48 window at 8,385 completed electrically with a 960-byte payload.
+The full baseline took 5.746 seconds; the partial transfer/BUSY operation took
+0.418 seconds, with BUSY asserted for 0.307 seconds. The combined bounded
+operation took 9.178 seconds and acknowledged sleep and GPIO/power release.
+The owner confirmed the white-on-black **PART B** marker was correct and
+outside pixels remained unchanged. This is one partial following a full baseline in
+the same powered session, not a qualification of partials after sleep.
+
+### Sleep/wake and app profile
+
+Two four-partial sequences completed in separate Python processes, with deep
+sleep and GPIO/power release after every operation. Partial transfers took
+0.412 seconds (about 3.226 seconds including process startup and sleep). The
+owner confirmed the slower 15-second observation sequence: reversal, clearing,
+re-addition and unchanged outside content.
+
+`--display waveshare-v2-partial` connects that path to the shared controller.
+It keeps the 180-second minimum and retry floor, allows at most three partials,
+and promotes changes above 40% of the display or older than 30 minutes to full.
+Saved policies can be stricter. Startup, failure and unknown baseline always
+require full recovery. Each partial invocation validates the previous/desired
+frames and window, then acknowledges both hashes, exact region and byte count
+before the completed image/receipt advances. The Rust worker retains ownership
+and drains on shutdown exactly as for full updates.
+
+The supplied Pi unit selects this explicit profile on the confirmed test panel.
+Switch to `waveshare-v2` for full-only output. Longer integrated-cycle evidence
+is recorded separately; these short optical checks do not establish lifetime
+performance or all panel variants.
+
+The profile's owner-facing explanation was reviewed in actual compiled desktop
+and mobile captures. It keeps technical limits in the existing disclosure:
+
+![Partial-capable physical profile guidance](images/physical-display-partial-settings.png)
+
+### Integrated cycle — 2026-11-15
+
+The normal service completed a 12-minute cycle without layout edits or display
+errors: full recovery, three automatic partials, then full maintenance for
+`partial_limit`. Partial count returned to zero. The owner confirmed the live
+partial image was correct and the maintenance result was clean/readable without
+noticeable leftover text or ghosting.
+
+| Operation | Region | Transfer/refresh | Complete worker |
+| --- | --- | --- | --- |
+| Startup full | 800×480 | 5.746 s | 8.578 s |
+| Partial 1 | 728×190 at 24,159 | 0.497 s | 3.312 s |
+| Partial 2 | 728×190 at 24,159 | 0.497 s | 3.311 s |
+| Partial 3 | 664×190 at 88,159 | 0.491 s | 3.309 s |
+| Full maintenance | 800×480 | 5.744 s | 8.570 s |
+
+The later completion intervals were 183.356, 184.207 and 189.431 seconds,
+including each new worker's operation. No saved layout, connection or account
+configuration changed during this observation. Both service units remained
+active and enabled. This bounded cycle establishes the tested path and cap;
+it does not establish overnight/lifetime ghosting, all temperatures, fast
+waveforms or interrupted-power recovery.

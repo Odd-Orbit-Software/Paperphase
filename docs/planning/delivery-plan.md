@@ -13,8 +13,11 @@ account validation and physical-panel validation remain open. The owner has
 identified the labels as HAT revision 2.3 / monochrome 7.5-inch screen V2;
 the vendor's documented 800 × 480 resolution matches the simulator. A one-shot
 full refresh was visually confirmed on 2026-11-14; automatic full-refresh
-integration and graceful restart recovery are now validated on this Pi. Partial/fast refresh, physical quiet-hours and longer
-ghosting/maintenance runs remain open. See the
+integration and graceful restart recovery are now validated on this Pi. The owner also confirmed small-window partial updates
+and separate-process sleep/wake reversal, clearing and re-addition. The explicit
+partial app profile completed a 12-minute full/three-partial/full maintenance
+cycle, with owner-confirmed clean output. Fast refresh, physical
+quiet-hours and longer ghosting/maintenance runs remain open. See the
 [physical-display results](../usage/foundation-harness.md#automatic-physical-display-results--2026-11-15).
 
 Product scope is in [requirements.md](requirements.md). Architectural boundaries
@@ -216,7 +219,10 @@ headless service on 2026-11-15: startup, source-driven updates, two automatic cl
 updates and graceful restart recovery completed. The owner confirmed the integrated
 image was readable. The original layout was restored exactly after the temporary
 clock check. The first profile is full-refresh-only with a three-minute minimum;
-this does not complete partial/fast-refresh or longer-run qualification. See the
+The owner subsequently confirmed partial-window and cold/sleep/wake optical
+checks, including removal. An opt-in partial app profile is implemented with
+three-minute spacing, a three-partial cap and full recovery. This does not
+complete fast-refresh or longer lifetime qualification. See the
 [implementation](../design/physical-display.md) and
 [operator guide](../usage/physical-display.md).
 

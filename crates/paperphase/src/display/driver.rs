@@ -23,6 +23,7 @@ pub(crate) enum Kind {
     #[default]
     Simulator,
     WaveshareV2,
+    WaveshareV2Partial,
 }
 #[derive(Clone, Debug)]
 pub(crate) struct Options {
@@ -55,6 +56,7 @@ struct Journal {
     completed: Option<Completed>,
 }
 struct Physical {
+    partial: bool,
     vendor: PathBuf,
     python: PathBuf,
     worker: tempfile::NamedTempFile,
@@ -167,6 +169,7 @@ impl Driver {
         worker.flush()?;
         Ok(Self {
             physical: Some(Physical {
+                partial: matches!(options.kind, Kind::WaveshareV2Partial),
                 vendor,
                 python: options.python,
                 worker,
@@ -180,16 +183,20 @@ impl Driver {
         self.physical.is_some()
     }
     pub fn profile(&self) -> Profile {
-        if self.is_physical() {
+        if let Some(physical) = &self.physical {
             Profile {
-                id: "waveshare-7.5-v2-full",
-                partial: false,
+                id: if physical.partial {
+                    "waveshare-7.5-v2-partial"
+                } else {
+                    "waveshare-7.5-v2-full"
+                },
+                partial: physical.partial,
                 align_x: 8,
                 align_y: 1,
                 min_interval_ms: INTERVAL * 1000,
-                max_partials: 0,
-                max_full_age_secs: 7200,
-                max_partial_area_percent: 0,
+                max_partials: if physical.partial { 3 } else { 0 },
+                max_full_age_secs: if physical.partial { 1800 } else { 7200 },
+                max_partial_area_percent: if physical.partial { 40 } else { 0 },
                 min_retry_ms: INTERVAL * 1000,
             }
         } else {
@@ -240,7 +247,7 @@ impl Driver {
             return Ok(Outcome { warning: None });
         };
         ensure!(
-            operation.plan.mode == Mode::Full,
+            operation.plan.mode == Mode::Full || physical.partial,
             "partial refresh is not validated for this profile"
         );
         let mut journal = physical
@@ -257,7 +264,7 @@ impl Driver {
         crate::server::persist(&physical.file, &attempt)
             .context("saving display attempt before hardware access")?;
         *journal = attempt;
-        let result = physical.transfer(frame);
+        let result = physical.transfer(frame, operation, journal.completed.as_ref());
         journal.not_before = unix_now().saturating_add(INTERVAL);
         if result.is_ok() {
             journal.completed = Some(Completed {
@@ -278,7 +285,12 @@ impl Driver {
     }
 }
 impl Physical {
-    fn launch(&self, pbm: Option<&Path>, budget: Duration) -> Result<serde_json::Value> {
+    fn launch(
+        &self,
+        pbm: Option<&Path>,
+        partial: Option<(&Path, paperphase_core::Rect)>,
+        budget: Duration,
+    ) -> Result<serde_json::Value> {
         let mut output = tempfile::tempfile()?;
         // lgpio creates notification files in CWD; never use the read-only app/vendor tree.
         let runtime_directory = tempfile::tempdir()?;
@@ -297,6 +309,17 @@ impl Physical {
             command.arg("--pbm").arg(path);
         } else {
             command.arg("--power-off-only");
+        }
+        if let Some((target, region)) = partial {
+            command
+                .arg("--partial-only")
+                .arg("--partial-after")
+                .arg(target)
+                .arg("--region")
+                .args(
+                    [region.x, region.y, region.width, region.height]
+                        .map(|value| value.to_string()),
+                );
         }
         let mut child = command
             .stdin(Stdio::from(self.lock.try_clone()?))
@@ -335,24 +358,75 @@ impl Physical {
         );
         Ok(report)
     }
-    fn transfer(&self, frame: &Frame) -> Result<()> {
+    fn transfer(
+        &self,
+        frame: &Frame,
+        operation: &Operation,
+        previous: Option<&Completed>,
+    ) -> Result<()> {
         let mut input = tempfile::NamedTempFile::new()?;
         frame.write_pbm(&mut input)?;
         input.flush()?;
-        match self.launch(Some(input.path()), Duration::from_secs(WATCHDOG)) {
+        let mut baseline = None;
+        let partial = if operation.plan.mode == Mode::Partial {
+            let previous = previous.context("partial output requires a completed reference")?;
+            let mut file = tempfile::NamedTempFile::new()?;
+            Frame::from_packed(&previous.layout.display, STANDARD.decode(&previous.bits)?)?
+                .write_pbm(&mut file)?;
+            file.flush()?;
+            baseline = Some(file);
+            Some((input.path(), operation.plan.region))
+        } else {
+            None
+        };
+        let before = baseline.as_ref().map_or(input.path(), |file| file.path());
+        match self.launch(Some(before), partial, Duration::from_secs(WATCHDOG)) {
             Ok(report) => {
+                let (mode, acknowledgement, timing) = if partial.is_some() {
+                    ensure!(
+                        report["mode"] == "partial",
+                        "partial acknowledgement mode differs"
+                    );
+                    ensure!(
+                        report["frame_sha256"]
+                            == hash(
+                                &STANDARD
+                                    .decode(&previous.context("partial reference missing")?.bits)?
+                            ),
+                        "partial acknowledgement reference differs"
+                    );
+                    let region = operation.plan.region;
+                    ensure!(
+                        report["region"]
+                            == serde_json::json!([region.x, region.y, region.width, region.height])
+                            && report["partial_payload_bytes"]
+                                == u64::from(region.width) * u64::from(region.height) / 8,
+                        "partial acknowledgement rectangle differs"
+                    );
+                    (
+                        "partial",
+                        &report["target_sha256"],
+                        &report["partial_refresh_ms"],
+                    )
+                } else {
+                    ensure!(
+                        report["mode"] == "full",
+                        "full acknowledgement mode differs"
+                    );
+                    ("full", &report["frame_sha256"], &report["refresh_ms"])
+                };
                 ensure!(
-                    report["frame_sha256"] == hash(frame.bits()),
+                    acknowledgement == &hash(frame.bits()),
                     "display acknowledgement frame differs"
                 );
                 eprintln!(
-                    "physical display full refresh: {} ms; operation {} ms",
-                    report["refresh_ms"], report["elapsed_ms"]
+                    "physical display {mode} refresh: {timing} ms; operation {} ms",
+                    report["elapsed_ms"]
                 );
                 Ok(())
             }
             Err(error) => {
-                let _ = self.launch(None, Duration::from_secs(10));
+                let _ = self.launch(None, None, Duration::from_secs(10));
                 Err(error)
             }
         }
@@ -404,7 +478,17 @@ if '--power-off-only' in args:
  print(json.dumps({'ok':True,'power_released':True}));sys.exit(0)
 p=pathlib.Path(args[args.index('--pbm')+1]);raw=p.read_bytes().split(b'\n',2)[2]
 folder=pathlib.Path(args[args.index('--vendor-dir')+1]);(folder/'called').write_text('called')
-print(json.dumps({'ok':True,'sleep_completed':True,'power_released':True,'frame_sha256':hashlib.sha256(raw).hexdigest(),'refresh_ms':1,'elapsed_ms':2}))
+print(json.dumps({'ok':True,'sleep_completed':True,'power_released':True,'mode':'full','frame_sha256':hashlib.sha256(raw).hexdigest(),'refresh_ms':1,'elapsed_ms':2}))
+"#;
+    const PARTIAL_ACK: &str = r#"import sys,json,hashlib,pathlib
+args=sys.argv
+assert '--partial-only' in args
+before=pathlib.Path(args[args.index('--pbm')+1]).read_bytes()[11:]
+after=pathlib.Path(args[args.index('--partial-after')+1]).read_bytes()[11:]
+offset=args.index('--region')+1
+region=list(map(int,args[offset:offset+4]))
+assert len(before)==len(after)==48000 and before!=after
+print(json.dumps({'ok':True,'sleep_completed':True,'power_released':True,'mode':'partial','frame_sha256':hashlib.sha256(before).hexdigest(),'target_sha256':hashlib.sha256(after).hexdigest(),'region':region,'partial_payload_bytes':region[2]*region[3]//8,'partial_refresh_ms':1,'elapsed_ms':2}))
 "#;
     fn driver(dir: &Path, script: &str) -> Driver {
         let mut worker = tempfile::NamedTempFile::new().unwrap();
@@ -412,6 +496,7 @@ print(json.dumps({'ok':True,'sleep_completed':True,'power_released':True,'frame_
         worker.flush().unwrap();
         Driver {
             physical: Some(Physical {
+                partial: false,
                 vendor: dir.to_path_buf(),
                 python: "/usr/bin/python3".into(),
                 worker,
@@ -522,11 +607,12 @@ print(json.dumps({'ok':True,'sleep_completed':True,'power_released':True,'frame_
         let dir = tempfile::tempdir().unwrap();
         let driver = driver(dir.path(), "import time\ntime.sleep(20)\n");
         let started = std::time::Instant::now();
-        let result = driver
-            .physical
-            .as_ref()
-            .unwrap()
-            .launch(None, Duration::from_millis(150));
+        let result =
+            driver
+                .physical
+                .as_ref()
+                .unwrap()
+                .launch(None, None, Duration::from_millis(150));
         assert!(result.is_err());
         assert!(started.elapsed() < Duration::from_secs(3));
     }
@@ -559,5 +645,68 @@ print(json.dumps({'ok':True,'sleep_completed':True,'power_released':True,'frame_
                 >= now + Duration::from_secs(180)
         );
         assert!(!controller.profile.partial);
+    }
+
+    fn prepare_partial(dir: &Path, script: &str) -> (Driver, Layout, Frame, Frame, Operation) {
+        let mut driver = driver(dir, ACK);
+        let old = scene("Before");
+        let before = pixels(&old);
+        driver.execute(&before, &old, &operation()).unwrap();
+        let physical = driver.physical.as_mut().unwrap();
+        physical.partial = true;
+        physical.journal.lock().unwrap().not_before = 0;
+        physical.worker.as_file_mut().set_len(0).unwrap();
+        physical.worker.seek(SeekFrom::Start(0)).unwrap();
+        physical.worker.write_all(script.as_bytes()).unwrap();
+        physical.worker.flush().unwrap();
+        let new = scene("After");
+        let after = pixels(&new);
+        let mut controller = Controller::new();
+        controller.profile = driver.profile();
+        controller.baseline_known = true;
+        let plan = controller
+            .plan(
+                &before,
+                &after,
+                &old,
+                &new,
+                &paperphase_core::RefreshPolicy::default(),
+                tokio::time::Instant::now(),
+            )
+            .unwrap()
+            .unwrap();
+        assert_eq!(plan.mode, Mode::Partial);
+        (driver, new, before, after, Operation { revision: 8, plan })
+    }
+
+    #[test]
+    fn partial_dispatch_acknowledges_both_frames_and_exact_region_before_publishing() {
+        let dir = tempfile::tempdir().unwrap();
+        let (driver, layout, _, desired, operation) = prepare_partial(dir.path(), PARTIAL_ACK);
+        driver.execute(&desired, &layout, &operation).unwrap();
+        let restored = driver.restore().unwrap().unwrap();
+        assert_eq!(restored.frame, desired);
+        assert_eq!(restored.revision, 8);
+        assert!(driver.restart_wait() >= Duration::from_secs(178));
+        let profile = driver.profile();
+        assert!(profile.partial);
+        assert_eq!(profile.max_partials, 3);
+        assert_eq!(profile.max_partial_area_percent, 40);
+        assert_eq!(profile.min_interval_ms, 180000);
+    }
+
+    #[test]
+    fn partial_acknowledgement_mismatches_retain_previous_receipt() {
+        for (original, wrong) in [
+            ("'region':region", "'region':[0,0,8,1]"),
+            ("hashlib.sha256(before).hexdigest()", "'wrong-reference'"),
+            ("hashlib.sha256(after).hexdigest()", "'wrong-target'"),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let (driver, layout, before, desired, operation) =
+                prepare_partial(dir.path(), &PARTIAL_ACK.replace(original, wrong));
+            assert!(driver.execute(&desired, &layout, &operation).is_err());
+            assert_eq!(driver.restore().unwrap().unwrap().frame, before);
+        }
     }
 }

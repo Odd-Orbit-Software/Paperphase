@@ -4,7 +4,7 @@ import { bindDesign, compactDesign, designFits, designGeometryValid, friendlyFie
 import { contentBounds, validElement, validElements, positioned, freeElementRect } from './elements';
 type Policy = { min_interval_ms: number; full_after_partials: number; full_after_secs: number; max_partial_area_percent: number };
 type Operation = { mode: 'partial' | 'full'; reason: string; region: Rect; revision: number };
-type RefreshStatus = { profile: { id: string; max_partials: number; max_full_age_secs: number; max_partial_area_percent: number; min_interval_ms: number }; active: Operation | null; last_completed: Operation | null; partial_count: number; baseline_known: boolean; failures: number; wait_ms: number };
+type RefreshStatus = { profile: { id: string; partial?: boolean; max_partials: number; max_full_age_secs: number; max_partial_area_percent: number; min_interval_ms: number }; active: Operation | null; last_completed: Operation | null; partial_count: number; baseline_known: boolean; failures: number; wait_ms: number };
 type RefreshSettings = { policy: Policy; quiet_hours: { timezone: string; start: string; end: string } | null };
 type Workspace = { mode?:'simulated'|'physical'; display_frame_available?:boolean; display_warning?:string|null; clock_fixed: boolean; refresh: RefreshStatus; last_error: string | null; revision: number; displayed_revision: number; data_revision: number; frame_id: string; clock_now: number; pending: boolean; phase: string; layout: Layout; refresh_settings: RefreshSettings; addresses: string[]; connector_execution: boolean; fixture_data: boolean };
 type EditState = { layout: Layout; settings: RefreshSettings; design?: {source?:string;automatic:boolean;fixedWidth?:number;startingPoint?:string} };
@@ -767,7 +767,7 @@ function newClock(content: ClockSpec['content']): ClockSpec { return { timezone:
 function renderSettings(parent: HTMLElement) {
   parent.replaceChildren();
   const panel = section('Refresh & quiet hours', parent);
-  if (saved.mode === 'physical') panel.append(node('p', 'render-report', 'This display currently uses full refreshes at least three minutes apart. Changes wait in the queue; the screen sleeps between updates.'));
+  if (saved.mode === 'physical') panel.append(node('p', 'render-report', saved.refresh.profile.partial ? 'Small changes can update part of the screen. Updates are at least three minutes apart, with a full refresh after at most three partial updates. The screen sleeps between updates.' : 'This display currently uses full refreshes at least three minutes apart. Changes wait in the queue; the screen sleeps between updates.'));
   const toggle = node('label', 'check');
   const input = node('input'); input.type = 'checkbox'; input.checked = !!draftSettings.quiet_hours;
   input.onchange = () => change(() => { draftSettings.quiet_hours = input.checked ? { timezone: 'Europe/Dublin', start: '22:00', end: '07:00' } : null; });
@@ -775,7 +775,7 @@ function renderSettings(parent: HTMLElement) {
   panel.append(node('p', 'render-report', 'During quiet hours the displayed frame stays still. The clock continues; the latest saved layout is rendered when quiet hours end.'));
   const advanced = node('details', 'advanced'); advanced.append(node('summary', '', 'Advanced refresh policy')); panel.append(advanced);
   const policy = section('Refresh limits', advanced);
-  policy.append(node('p', 'render-report', saved.mode==='physical'?'The connected display profile enforces its limits. Partial refresh is not enabled.':'Software simulator only. These example limits are not validated for a physical panel. Profile limits always apply.'));
+  policy.append(node('p', 'render-report', saved.mode==='physical'?(saved.refresh.profile.partial?'The connected display profile allows partial refresh for small changes. Large changes and recovery use a full refresh.':'The connected display profile enforces its limits. Partial refresh is not enabled.'):'Software simulator only. These example limits are not validated for a physical panel. Profile limits always apply.'));
   const settings = draftSettings.policy;
   const profile = saved.refresh.profile;
   policy.append(node('p', 'render-report', `${saved.mode === 'physical' ? 'Display profile limits' : 'Simulator limits'}: at least ${profile.min_interval_ms} ms between completed updates and the next start, at most ${profile.max_partials} partial updates, ${profile.max_full_age_secs} seconds between full updates when content changes, and ${profile.max_partial_area_percent}% partial area.`));
@@ -1010,7 +1010,7 @@ function physicalDisplayCaption(): string {
   if (saved.refresh.active) return `${reference} Updating the screen now.`;
   const seconds = Math.ceil(saved.refresh.wait_ms / 1000);
   if (saved.last_error) return `${reference} ${saved.last_error}${seconds > 0 ? ` Retry can start in about ${seconds} seconds.` : ' Waiting to retry a full refresh.'}`;
-  if (saved.pending) return `${reference} ${seconds > 0 ? `Next update can start in about ${seconds} seconds.` : 'Latest content is queued for a full refresh.'}`;
+  if (saved.pending) return `${reference} ${seconds > 0 ? `Next update can start in about ${seconds} seconds.` : 'Latest content is queued for a screen update.'}`;
   return reference;
 }
 function renderRefreshStatus() {

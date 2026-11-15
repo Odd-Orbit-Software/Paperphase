@@ -9,6 +9,47 @@ Owner accepted the component designer and authorized its commit, merge to
 `main`, and GitHub push. This publication also includes the previously local
 UIUX redesign commit. Foundation version remains `0.1.0`.
 
+### Enable bounded physical partial updates
+
+- Added explicit `--display waveshare-v2-partial` for the confirmed panel,
+  retaining the safe full-only profile and simulator default. The shared
+  controller enforces 180-second spacing/retry, at most three partials, a 40%
+  area limit and a 30-minute full-refresh age when content changes. Startup,
+  unknown baseline and failure still recover with a full refresh.
+- Added cold/wake partial transfers with row-stride cropping and exact region
+  length in place of the pinned vendor method's full-frame padding. Validate
+  unchanged outside pixels, previous/target hashes, region, payload length,
+  BUSY, sleep and power release before advancing the completed receipt.
+- Added an opt-in qualification wrapper preserving saved layouts and private
+  completed receipts, with shared hardware ownership, durable cooldown
+  reservation, bounded workers and an overall 130-second deadline. Reversal,
+  clearing and re-addition run in separate power-releasing processes; observation
+  gaps can be extended to 15 seconds without leaving the panel energised.
+- Added profile-specific Device guidance and a generic queued-update caption,
+  preserving the existing desktop/mobile design. The supplied test-Pi unit now
+  selects the explicit partial profile; full-only rollback remains documented.
+
+Desktop verification: `sh scripts/check.sh` passed 185 Rust tests and 11 Python
+adapter/qualification tests; all 39 Chromium workflows and ARM64 release build
+passed. New contracts cover partial dispatch, exact rectangle and both frame
+acknowledgements, retained receipts after mismatches, cold partials without a
+hidden full refresh, cropping, isolation, cleanup and private durable writes.
+The UX finish reviewer returned `ship` for the narrow profile-guidance extension.
+
+Pi qualification: the first 160×48 partial took 0.418 seconds (960 bytes), with
+full baseline 5.746 seconds and complete bounded operation 9.178 seconds. The
+owner confirmed correct polarity and unchanged outside content. Two four-partial
+cold/sleep/wake sequences completed at approximately 0.412 seconds per transfer
+(3.226 seconds including process startup/sleep). The owner confirmed reversal,
+clearing, re-addition and unchanged outside content during the slower sequence.
+The real app completed a 12-minute cycle: startup full, three automatic partials
+(0.491–0.497 s, 664–728×190 regions), then a full refresh for `partial_limit`
+(5.744 s), resetting the counter to zero. No errors occurred; the layout revision
+stayed unchanged. The owner confirmed the integrated image and clean maintenance
+result. Both services remain active and boot-enabled. Longer
+lifetime ghosting/power, fast waveforms, physical quiet-hours and interrupted-power
+checks remain open. Version remains `0.1.0`.
+
 ### Connect automatic Waveshare V2 full updates
 
 - Added an explicit physical backend for the confirmed 800×480 monochrome

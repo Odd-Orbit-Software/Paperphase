@@ -296,7 +296,7 @@ with representative plugins before choosing production budgets.
 | Google multi-account OAuth and refresh-token renewal | Pending credentials and setup-flow validation |
 | Luas forecast endpoint availability | One HTTPS response parsed successfully for Ranelagh on 2026-11-10; two directions and seven tram entries |
 | Luas polling allowance and attribution requirements | Still need verification before integration |
-| Panel revision / physical refresh | HAT 2.3 / monochrome 7.5-inch screen V2; one-shot 800 × 480 full refresh visually confirmed on 2026-11-14. Automatic full-refresh updates and graceful restart recovery validated on 2026-11-15; partial refresh and longer runs remain pending |
+| Panel revision / physical refresh | HAT 2.3 / monochrome 7.5-inch screen V2; one-shot 800 × 480 full refresh visually confirmed on 2026-11-14. Automatic full-refresh updates and graceful restart recovery validated on 2026-11-15; partial-window/cold-wake and a 12-minute maintenance cycle validated on 2026-11-15; longer-duration/fast/interrupted-power checks remain pending |
 
 The Luas check used the endpoint published in the
 [TII forecasting dataset](https://data.gov.ie/dataset/luas-forecasting-api), with
@@ -339,3 +339,32 @@ This is full-refresh integration, not completion of hardware qualification.
 Partial/fast waveforms, physical quiet-hours pause/resume, interrupted-power
 recovery and longer ghosting/maintenance/power runs remain pending. See the
 [design](../design/physical-display.md) and [operator guide](physical-display.md).
+
+
+## Partial-window and sleep/wake results — 2026-11-15
+
+The opt-in bounded qualification tool updated an unused 160×48 window at 8,385
+without modifying saved layouts or connections. The first partial took 0.418 s
+with exactly 960 bytes; its full baseline took 5.746 s. BUSY, sleep and power
+release were acknowledged. The owner confirmed correct white-on-black **PART B**
+and unchanged outside content. The normal full service restored the saved image.
+
+Two subsequent four-partial runs used fresh Python processes, each ending in
+deep sleep and GPIO/power release. Transfers took approximately 0.412 s, with
+complete workers around 3.226 s including startup/sleep. The owner missed the
+first short sequence, then confirmed reversal, clearing and re-addition when
+repeated with 15-second powered-off observation gaps. These are short controlled
+checks, not a qualification of faster production cadence or lifetime ghosting.
+
+The `waveshare-v2-partial` app profile now connects that path to the normal
+controller. Desktop validation passed 185 Rust tests, 11 Python tests and all
+39 browser workflows; the ARM64 release build passed. The new profile keeps
+three-minute spacing/retry and full startup/recovery, caps partials at three
+and changed area at 40%, and uses a 30-minute full age when content changes.
+The real app then completed full → three partials → full maintenance over
+12 minutes without errors or configuration changes. Partials across 664–728×190
+regions took 0.491–0.497 s; full maintenance for `partial_limit` took 5.744 s and
+reset the count to zero. The owner confirmed the live partial image and clean
+maintenance result. Both service units remained active and enabled. Longer
+overnight/lifetime, fast-refresh, physical quiet-hours and interrupted-power
+checks remain separate. See the [cycle table](../design/physical-display.md#integrated-cycle--2026-11-15).
