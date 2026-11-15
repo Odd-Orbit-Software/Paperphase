@@ -1,4 +1,4 @@
-//! Editor service with fixtures and compiled connectors. Physical drivers are separate work.
+//! Editor, data scheduling and acknowledged simulator/physical display output.
 use std::{
     fs::{File, OpenOptions},
     io::Write,
@@ -64,9 +64,13 @@ struct Workspace {
     last_tick: u64,
     next_due: Option<u64>,
     last_error: Option<String>,
+    display_frame_available: bool,
+    display_warning: Option<String>,
 }
 
 struct App {
+    driver: Arc<crate::display::driver::Driver>,
+    stopping: std::sync::atomic::AtomicBool,
     executors: Option<Arc<fetching::Registry>>,
     google: Option<Arc<google::Service>>,
     fetch_slots: Arc<Semaphore>,
@@ -112,7 +116,7 @@ fn internal(error: impl std::fmt::Display) -> ApiError {
     )
 }
 
-fn persist(path: &Path, saved: &impl Serialize) -> Result<()> {
+pub(crate) fn persist(path: &Path, saved: &impl Serialize) -> Result<()> {
     let bytes = serde_json::to_vec_pretty(saved)?;
     ensure!(
         bytes.len() < crate::simulator::MAX_JSON_BYTES,
@@ -134,6 +138,11 @@ fn persist(path: &Path, saved: &impl Serialize) -> Result<()> {
     Ok(())
 }
 
+pub struct Options {
+    pub fixed_now: Option<u64>,
+    pub display: crate::display::driver::Options,
+}
+
 pub fn run(
     listen: SocketAddr,
     state_file: PathBuf,
@@ -141,8 +150,17 @@ pub fn run(
     data: Option<PathBuf>,
     connector_definitions: Option<PathBuf>,
     connector_bindings: Option<PathBuf>,
-    fixed_now: Option<u64>,
+    options: Options,
 ) -> Result<()> {
+    let fixed_now = options.fixed_now;
+    ensure!(
+        fixed_now.is_none()
+            || matches!(
+                options.display.kind,
+                crate::display::driver::Kind::Simulator
+            ),
+        "physical output requires the real host clock"
+    );
     let state_file = std::path::absolute(state_file)?;
     let parent = state_file.parent().context("invalid workspace path")?;
     std::fs::create_dir_all(parent)?;
@@ -150,6 +168,19 @@ pub fn run(
     let connections_file = state_file.with_extension("connections.json");
     let google_file = state_file.with_extension("google.json");
     let designs_file = state_file.with_extension("designs.json");
+    let display_file = state_file.with_extension("display.json");
+    for other in [
+        &state_file,
+        &connections_file,
+        &google_file,
+        &designs_file,
+        &lock_path,
+    ] {
+        ensure!(
+            !crate::simulator::same_file(&display_file, other)?,
+            "display journal must be separate from other state"
+        );
+    }
     for other in [&state_file, &connections_file, &google_file, &lock_path] {
         ensure!(
             !crate::simulator::same_file(&designs_file, other)?,
@@ -173,6 +204,10 @@ pub fn run(
         .chain(connector_definitions.iter())
         .chain(connector_bindings.iter())
     {
+        ensure!(
+            !crate::simulator::same_file(&display_file, source)?,
+            "display journal must not replace an input"
+        );
         ensure!(
             !crate::simulator::same_file(&designs_file, source)?,
             "design storage must not replace an input"
@@ -228,6 +263,11 @@ pub fn run(
     );
     saved.layout.validate()?;
     saved.refresh_settings.validate()?;
+    let driver = Arc::new(crate::display::driver::Driver::open(
+        options.display,
+        &saved.layout,
+        display_file,
+    )?);
     let connector_catalog: ConnectorCatalog = if let Some(path) = connector_definitions {
         read_json(&path)?
     } else {
@@ -350,7 +390,34 @@ pub fn run(
                 }
             })
             .collect();
+        let mut workspace = Workspace::new(saved, png, frame.frame, &initial_data, initial_now)?;
+        if driver.is_physical() {
+            workspace.controller.profile = driver.profile();
+            workspace.controller.baseline_known = false;
+            workspace.controller.retry_at =
+                Some(tokio::time::Instant::now() + driver.restart_wait());
+            workspace.pending = true;
+            if let Some(completed) = driver.restore()? {
+                workspace.displayed_revision = completed.revision;
+                workspace.completed_layout = completed.layout;
+                workspace.completed_frame = completed.frame;
+                workspace.png.clear();
+                workspace.completed_frame.write_png(&mut workspace.png)?;
+            } else {
+                workspace.display_frame_available = false;
+                workspace.completed_frame = Frame::blank(&workspace.saved.layout.display)?;
+                workspace.completed_layout = Layout {
+                    schema_version: 1,
+                    display: workspace.saved.layout.display.clone(),
+                    components: vec![],
+                };
+                workspace.png.clear();
+                workspace.completed_frame.write_png(&mut workspace.png)?;
+            }
+        }
         let app = Arc::new(App {
+            driver,
+            stopping: std::sync::atomic::AtomicBool::new(false),
             executors,
             google,
             fetch_slots: fetching::slots(),
@@ -360,13 +427,7 @@ pub fn run(
             connections_file,
             designs: AsyncMutex::new(design_store),
             designs_file,
-            workspace: AsyncMutex::new(Workspace::new(
-                saved,
-                png,
-                frame.frame,
-                &initial_data,
-                initial_now,
-            )?),
+            workspace: AsyncMutex::new(workspace),
             renderer: Mutex::new(renderer),
             snapshots,
             state_file,
@@ -479,7 +540,7 @@ pub fn run(
             .with_state(Arc::clone(&app));
         let reference_scheduler = fetching::start_references(Arc::clone(&app));
         let fetch_scheduler = fetching::start(Arc::clone(&app));
-        let scheduler = scheduling::start(app);
+        let scheduler = scheduling::start(Arc::clone(&app));
         let browser_address = if address.ip().is_unspecified() {
             SocketAddr::new(
                 if address.is_ipv4() {
@@ -495,13 +556,33 @@ pub fn run(
         println!("Paperphase editor: http://{browser_address}");
         std::io::stdout().flush()?;
         axum::serve(listener, routes)
-            .with_graceful_shutdown(async {
-                let _ = tokio::signal::ctrl_c().await;
+            .with_graceful_shutdown({
+                let app = Arc::clone(&app);
+                async move {
+                    #[cfg(unix)]
+                    {
+                        let mut term = tokio::signal::unix::signal(
+                            tokio::signal::unix::SignalKind::terminate(),
+                        )
+                        .expect("install SIGTERM handler");
+                        tokio::select! {_=tokio::signal::ctrl_c()=>{},_=term.recv()=>{}}
+                    }
+                    #[cfg(not(unix))]
+                    {
+                        let _ = tokio::signal::ctrl_c().await;
+                    }
+                    app.stopping.store(true, Ordering::SeqCst);
+                    app.workspace.lock().await.refresh_wake.notify_one();
+                }
             })
             .await?;
         scheduler.abort();
         reference_scheduler.abort();
         fetch_scheduler.abort();
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(95);
+        while app.workspace.lock().await.worker_running && tokio::time::Instant::now() < deadline {
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
         Ok(())
     })
 }
@@ -585,7 +666,7 @@ async fn state(State(app): State<Shared>) -> Json<serde_json::Value> {
             "baseline_known": ws.controller.baseline_known, "failures": ws.controller.failures,
             "wait_ms": ws.controller.ready_at(&ws.saved.refresh_settings.policy, tokio::time::Instant::now()).saturating_duration_since(tokio::time::Instant::now()).as_millis()},
         "data_revision": app.data_epoch.load(Ordering::SeqCst),
-        "mode": "simulated", "addresses": app.addresses, "fixture_data": !app.snapshots.snapshots.is_empty(), "connector_execution": app.executors.is_some(),
+        "mode": if app.driver.is_physical(){"physical"}else{"simulated"}, "display_frame_available":ws.display_frame_available,"display_warning":ws.display_warning, "addresses": app.addresses, "fixture_data": !app.snapshots.snapshots.is_empty(), "connector_execution": app.executors.is_some(),
     }))
 }
 

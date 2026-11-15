@@ -1,5 +1,9 @@
 # Simulated refresh policy
 
+For the attached Waveshare V2 and its three-minute full-refresh profile, use the
+[physical-display guide](physical-display.md). The simulator values below remain
+separate from hardware capabilities.
+
 In **Device**, the display-status disclosure shows the active or last completed refresh
 mode and its reason. Hover the mode to see its pixel region and layout revision.
 Saved content can be queued while an older refresh is active; **On display**

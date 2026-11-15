@@ -1,4 +1,5 @@
-//! Pure refresh decisions. The profile below describes only the software simulator.
+//! Refresh decisions and backend execution.
+pub(crate) mod driver;
 use std::time::Duration;
 
 use anyhow::Result;
@@ -17,6 +18,7 @@ pub(crate) struct Profile {
     pub max_partials: u32,
     pub max_full_age_secs: u64,
     pub max_partial_area_percent: u32,
+    pub min_retry_ms: u64,
 }
 
 impl Default for Profile {
@@ -30,6 +32,7 @@ impl Default for Profile {
             max_partials: 20,
             max_full_age_secs: 7200,
             max_partial_area_percent: 60,
+            min_retry_ms: 0,
         }
     }
 }
@@ -213,8 +216,10 @@ impl Controller {
         self.baseline_known = false;
         self.active = None;
         self.failures = self.failures.saturating_add(1);
-        self.retry_at =
-            Some(now + Duration::from_secs(1 << self.failures.saturating_sub(1).min(5)));
+        self.retry_at = Some(
+            now + Duration::from_secs(1 << self.failures.saturating_sub(1).min(5))
+                .max(Duration::from_millis(self.profile.min_retry_ms)),
+        );
     }
 }
 

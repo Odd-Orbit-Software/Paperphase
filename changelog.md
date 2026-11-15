@@ -9,6 +9,50 @@ Owner accepted the component designer and authorized its commit, merge to
 `main`, and GitHub push. This publication also includes the previously local
 UIUX redesign commit. Foundation version remains `0.1.0`.
 
+### Connect automatic Waveshare V2 full updates
+
+- Added an explicit physical backend for the confirmed 800×480 monochrome
+  Waveshare 7.5-inch V2 / Rev2.3 HAT. It reuses the compositor, desired/completed
+  queue, source/clock scheduling and quiet-hours gates. The default stays the
+  simulator; the hardware profile enforces full refreshes at least 180 seconds
+  apart with the same retry floor.
+- Added a pinned, isolated Python adapter with bounded BUSY waits, watchdog,
+  exact-frame acknowledgement, shared hardware ownership and sleep/power
+  release. Private writable worker directories support lgpio notifications
+  under the read-only service filesystem.
+- Persisted conservative attempt deadlines before GPIO access and private
+  completed-frame receipts after success. Restart restores a labelled reference
+  image, honours cooldown and requires full recovery. Failed updates retain the
+  reference; recovery-storage failures have a separate warning. Graceful shutdown
+  drains the active bounded operation.
+- Distinguished physical pending, completed and unconfirmed images in the editor;
+  added full-refresh guidance. Added boot-enabled non-root service examples and
+  design/operator notes. Preserved existing Pi workspace, connections and plugins.
+
+Validation: `sh scripts/check.sh` passed 183 Rust tests, four Python adapter
+tests, host/Wasm builds and lint checks; 38 Chromium tests passed. ARM64 release
+build passed. On the attached Pi, the first integrated full refresh took
+5.743 seconds (8.670 seconds including sleep/cleanup); the owner confirmed a
+readable image. Source-driven output, two automatic clock updates, retained
+restart cooldown and full recovery completed. The temporary clock was removed
+and the original layout matched exactly. Both services were active and enabled.
+Partial/fast refresh, physical quiet-hours and interrupted-power recovery, and
+longer ghosting/maintenance runs remain pending; hardware stage 4 remains open.
+The final two physical-state browser tests also passed after adding visible
+cooldown/retry captions. The UX reviewer scored that requested fix resolved at
+desktop, laptop and mobile sizes. Version remains `0.1.0`.
+
+### Record potential screen improvements after hardware integration
+
+- Added an owner-approved backlog for alternating components, combined feeds,
+  pages with pinned information, scheduled views, relevance priority, and
+  summary/detail views. Keep physical-display integration next; revisit the
+  options after real-panel refresh and ghosting validation.
+- Recorded presentation reliability considerations without promising unmeasured
+  switching intervals or marking these features implemented.
+
+Validation: planning-only change; local document links and whitespace checked.
+
 ### Allow internal overlap and fix design save warnings
 
 - Allowed positioned items to overlap inside their parent component, following

@@ -201,8 +201,8 @@ image after sleep, and GPIO resources were released.
 This was a single developer test using
 [`scripts/waveshare-v2-smoke.py`](../../scripts/waveshare-v2-smoke.py) and the
 vendor Python reference. It does not connect the Rust refresh worker to the
-physical panel: the editor still reports simulated completion, and saving or
-fetching does not yet update the attached screen automatically. Partial/fast
+physical panel. It has since been followed by the integrated full-refresh test
+[below](#automatic-physical-display-results--2026-11-15). Partial/fast
 refresh, ghosting/maintenance limits, quiet-hours hardware behaviour and recovery
 from interrupted updates remain unvalidated.
 
@@ -296,7 +296,7 @@ with representative plugins before choosing production budgets.
 | Google multi-account OAuth and refresh-token renewal | Pending credentials and setup-flow validation |
 | Luas forecast endpoint availability | One HTTPS response parsed successfully for Ranelagh on 2026-11-10; two directions and seven tram entries |
 | Luas polling allowance and attribution requirements | Still need verification before integration |
-| Panel revision / physical refresh | HAT 2.3 / monochrome 7.5-inch screen V2; one-shot 800 × 480 full refresh visually confirmed on 2026-11-14. Automatic physical updates and partial-refresh validation remain pending |
+| Panel revision / physical refresh | HAT 2.3 / monochrome 7.5-inch screen V2; one-shot 800 × 480 full refresh visually confirmed on 2026-11-14. Automatic full-refresh updates and graceful restart recovery validated on 2026-11-15; partial refresh and longer runs remain pending |
 
 The Luas check used the endpoint published in the
 [TII forecasting dataset](https://data.gov.ie/dataset/luas-forecasting-api), with
@@ -305,3 +305,37 @@ availability check, not a guarantee about future uptime or permitted polling.
 
 Browser fixtures accept `PAPERPHASE_TEST_PORT` (default 8097) so automated tests
 can use a separate service and workspace while an owner edits the local preview.
+
+
+## Automatic physical display results — 2026-11-15
+
+The `waveshare-v2` backend was cross-built for ARM64 and installed as the
+non-root, boot-enabled `paperphase` systemd service on the existing Zero 2 W
+test image. Existing workspace, connections, Google setup and nine plugin
+registrations were preserved. The test-only demo source has its own service.
+
+- The first integrated full refresh took **5.743 s**; the complete adapter
+  operation, including sleep and power release, took **8.670 s**. The owner
+  confirmed the image was visible and readable.
+- A source-driven change completed without a layout edit. A temporary clock
+  in unused space completed two automatic updates through the three-minute
+  cooldown. The clock was then removed; the original layout matched exactly.
+- A graceful service restart retained the last completed image and reported
+  the physical baseline as unknown. The persisted cooldown remained in force
+  before a full recovery refresh completed the restored layout, with no error.
+- Both service units were active and enabled after the checks. No screen,
+  keyboard or interactive login is needed for normal service startup.
+
+Initial service testing exposed lgpio notification files being created in the
+read-only application directory. Giving each bounded worker a private writable
+temporary directory fixed that failure; the acknowledgement test covers it.
+
+Desktop verification: `sh scripts/check.sh` passed **183 Rust tests**, **four
+Python adapter tests**, host/Wasm builds and lint checks. **38 Chromium tests**
+passed, including physical pending/completed/recovery UI states. These are
+separate from the Pi and owner observations above.
+
+This is full-refresh integration, not completion of hardware qualification.
+Partial/fast waveforms, physical quiet-hours pause/resume, interrupted-power
+recovery and longer ghosting/maintenance/power runs remain pending. See the
+[design](../design/physical-display.md) and [operator guide](physical-display.md).

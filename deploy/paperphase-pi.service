@@ -1,0 +1,25 @@
+[Unit]
+Description=Paperphase e-paper display and LAN editor
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=600
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=pmck
+WorkingDirectory=/home/pmck/paperphase-test
+ExecStart=/home/pmck/paperphase-test/bin/paperphase serve --listen 0.0.0.0:8080 --state-file live/workspace.json --connector-bindings live/bindings.json --display waveshare-v2 --waveshare-vendor-dir /home/pmck/paperphase-test/panel
+Restart=on-failure
+RestartSec=10
+KillSignal=SIGTERM
+KillMode=mixed
+TimeoutStopSec=100
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/pmck/paperphase-test/live /tmp
+
+[Install]
+WantedBy=multi-user.target

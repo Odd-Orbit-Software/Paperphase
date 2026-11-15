@@ -24,6 +24,17 @@ impl Frame {
         })
     }
 
+    /// Restore a validated packed frame from a private completed-display receipt.
+    pub fn from_packed(display: &DisplaySpec, bits: Vec<u8>) -> Result<Self> {
+        let mut frame = Self::blank(display)?;
+        ensure!(
+            bits.len() == frame.bits.len(),
+            "packed frame byte count differs from display"
+        );
+        frame.bits = bits;
+        Ok(frame)
+    }
+
     pub fn width(&self) -> u32 {
         self.width
     }

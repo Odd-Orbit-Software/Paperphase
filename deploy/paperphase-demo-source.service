@@ -1,0 +1,17 @@
+[Unit]
+Description=Paperphase test-image synthetic temperature source
+After=network.target
+
+[Service]
+Type=simple
+User=pmck
+WorkingDirectory=/home/pmck/paperphase-test
+ExecStart=/home/pmck/paperphase-test/bin/paperphase demo-source --listen 127.0.0.1:9001
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+
+[Install]
+WantedBy=multi-user.target

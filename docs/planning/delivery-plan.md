@@ -12,8 +12,10 @@ eight modules registered. Production resource budgets, longer runs, Google
 account validation and physical-panel validation remain open. The owner has
 identified the labels as HAT revision 2.3 / monochrome 7.5-inch screen V2;
 the vendor's documented 800 × 480 resolution matches the simulator. A one-shot
-full refresh was visually confirmed on 2026-11-14; integrated physical updates
-and partial/maintenance/recovery behaviour remain open.
+full refresh was visually confirmed on 2026-11-14; automatic full-refresh
+integration and graceful restart recovery are now validated on this Pi. Partial/fast refresh, physical quiet-hours and longer
+ghosting/maintenance runs remain open. See the
+[physical-display results](../usage/foundation-harness.md#automatic-physical-display-results--2026-11-15).
 
 Product scope is in [requirements.md](requirements.md). Architectural boundaries
 are in [architecture.md](architecture.md).
@@ -30,6 +32,17 @@ health and the Pi's new account setup UI with nine registered modules. Saved
 layout/connections were preserved. Real Google client configuration, consent
 and renewal are still pending; the next-work order above is unchanged. See
 [Calendar validation](../design/google-calendar.md#pi-and-hosted-callback-preflight--2026-11-15).
+
+### Potential screen improvements — after the physical display
+
+The owner approved recording alternating components, combined feeds, display
+pages with pinned information, scheduled views, relevant-information priority,
+and summary/detail views as potential TODOs. See the
+[screen-improvement backlog](component-rotation.md) for the checklist and
+reliability considerations. Implement and validate the physical display first;
+then revisit these ideas and agree their scope/order using the measured panel
+behavior. The first full-refresh integration is implemented; remaining panel
+qualification comes before these presentation features.
 
 ### Component design before placement
 
@@ -198,8 +211,14 @@ same compositor and refresh-controller interfaces as the simulator.
 Initial bring-up: a separate bounded Python utility drove saved layout revision
 3 through the vendor V2 reference on 2026-11-14. Full refresh took 5.74 seconds,
 the owner confirmed a correct image, and the panel entered sleep. This proves
-one-shot full-frame output, not completion of this stage: the Rust service still
-uses the simulator, and automatic physical updates are not connected yet.
+one-shot full-frame output. The integrated backend was then installed as a
+headless service on 2026-11-15: startup, source-driven updates, two automatic clock
+updates and graceful restart recovery completed. The owner confirmed the integrated
+image was readable. The original layout was restored exactly after the temporary
+clock check. The first profile is full-refresh-only with a three-minute minimum;
+this does not complete partial/fast-refresh or longer-run qualification. See the
+[implementation](../design/physical-display.md) and
+[operator guide](../usage/physical-display.md).
 
 - Validate full and partial refresh, alignment constraints, and unchanged frames.
 - Check moved/removed component regions and batched pending updates.

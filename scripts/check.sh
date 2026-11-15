@@ -4,6 +4,7 @@ set -eu
 cd "$(dirname "$0")/.."
 
 cargo fmt --all -- --check
+python3 -B -m unittest discover -s scripts/tests -v
 cargo clippy --locked --workspace --all-targets -- -D warnings
 cargo clippy --locked --release -p paperphase-temperature-example -p paperphase-weather-plugin -p paperphase-rss-plugin -p paperphase-luas-plugin -p paperphase-dublin-bus-plugin -p paperphase-air-quality-plugin -p paperphase-daily-quote-plugin -p paperphase-generic-json-plugin -p paperphase-google-calendar-plugin --target wasm32-unknown-unknown -- -D warnings
 cargo build --locked --release -p paperphase-temperature-example -p paperphase-weather-plugin -p paperphase-rss-plugin -p paperphase-luas-plugin -p paperphase-dublin-bus-plugin -p paperphase-air-quality-plugin -p paperphase-daily-quote-plugin -p paperphase-generic-json-plugin -p paperphase-google-calendar-plugin --target wasm32-unknown-unknown

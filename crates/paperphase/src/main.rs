@@ -34,7 +34,7 @@ enum Command {
         #[arg(long, default_value = "127.0.0.1:9001")]
         listen: std::net::SocketAddr,
     },
-    /// Start the LAN editor with a simulated display (no hardware access).
+    /// Start the LAN editor with a simulator or explicitly selected physical display.
     Serve {
         #[arg(long, default_value = "127.0.0.1:8080")]
         listen: std::net::SocketAddr,
@@ -52,6 +52,14 @@ enum Command {
         /// Local portable-Wasm registrations and explicit HTTP origin grants.
         #[arg(long)]
         connector_bindings: Option<PathBuf>,
+        /// Display backend; hardware access requires an explicit Waveshare selection.
+        #[arg(long,value_enum,default_value_t=display::driver::Kind::Simulator)]
+        display: display::driver::Kind,
+        /// Directory containing the pinned waveshare_epd package.
+        #[arg(long)]
+        waveshare_vendor_dir: Option<PathBuf>,
+        #[arg(long, default_value = "/usr/bin/python3")]
+        display_python: PathBuf,
         /// Unix seconds; omit to evaluate snapshot freshness using the host clock.
         #[arg(long)]
         now: Option<u64>,
@@ -121,6 +129,9 @@ fn main() -> Result<()> {
             data,
             connector_definitions,
             connector_bindings,
+            display,
+            waveshare_vendor_dir,
+            display_python,
             now,
         } => {
             return server::run(
@@ -130,7 +141,14 @@ fn main() -> Result<()> {
                 data,
                 connector_definitions,
                 connector_bindings,
-                now,
+                server::Options {
+                    fixed_now: now,
+                    display: display::driver::Options {
+                        kind: display,
+                        vendor_dir: waveshare_vendor_dir,
+                        python: display_python,
+                    },
+                },
             );
         }
         Command::Simulate {

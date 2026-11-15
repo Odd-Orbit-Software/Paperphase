@@ -6,7 +6,7 @@ type Policy = { min_interval_ms: number; full_after_partials: number; full_after
 type Operation = { mode: 'partial' | 'full'; reason: string; region: Rect; revision: number };
 type RefreshStatus = { profile: { id: string; max_partials: number; max_full_age_secs: number; max_partial_area_percent: number; min_interval_ms: number }; active: Operation | null; last_completed: Operation | null; partial_count: number; baseline_known: boolean; failures: number; wait_ms: number };
 type RefreshSettings = { policy: Policy; quiet_hours: { timezone: string; start: string; end: string } | null };
-type Workspace = { clock_fixed: boolean; refresh: RefreshStatus; last_error: string | null; revision: number; displayed_revision: number; data_revision: number; frame_id: string; clock_now: number; pending: boolean; phase: string; layout: Layout; refresh_settings: RefreshSettings; addresses: string[]; connector_execution: boolean; fixture_data: boolean };
+type Workspace = { mode?:'simulated'|'physical'; display_frame_available?:boolean; display_warning?:string|null; clock_fixed: boolean; refresh: RefreshStatus; last_error: string | null; revision: number; displayed_revision: number; data_revision: number; frame_id: string; clock_now: number; pending: boolean; phase: string; layout: Layout; refresh_settings: RefreshSettings; addresses: string[]; connector_execution: boolean; fixture_data: boolean };
 type EditState = { layout: Layout; settings: RefreshSettings; design?: {source?:string;automatic:boolean;fixedWidth?:number;startingPoint?:string} };
 type Dataset = { connection_id: string; connection_label?: string; dataset_id: string; fields: { id: string; kind: string; unit?: string }[]; rows: number; stale: boolean };
 type Report = { id: string; state: string; warnings: string[]; blocks: BlockPlacement[] };
@@ -350,10 +350,10 @@ function render(rebuildInspector = true) {
   $('library-title').textContent = editingContents() ? 'Elements' : 'Components';
   button('add-open').textContent = designSession?'Add item':editingContents() ? 'Add element' : 'Add component';
   $('canvas-title').textContent = editingContents() ? `Content · ${name(component()!)}` : viewingDraft ? 'Draft preview' : 'Last completed frame';
-  $('canvas-caption').textContent = designSession?'Your component at the preview zoom shown.':editingContents() ? 'Element boxes reflow text at fixed font sizes. Data status stays reserved.' : viewingDraft ? 'Draft preview · Drag to move, corner to resize.' : 'The last completed display frame.';
+  $('canvas-caption').textContent = designSession?'Your component at the preview zoom shown.':editingContents() ? 'Element boxes reflow text at fixed font sizes. Data status stays reserved.' : viewingDraft ? 'Draft preview · Drag to move, corner to resize.' : saved.mode==='physical'?physicalDisplayCaption():'The last completed display frame.';
   $('content-mode-bar').hidden = !editingContents();
   $('design-empty').hidden = !designSession || !!component()?.blocks.length;
-  $<HTMLImageElement>('frame').hidden = !!designSession && !component()?.blocks.length;
+  $<HTMLImageElement>('frame').hidden = !!designSession && !component()?.blocks.length || !viewingDraft&&saved.mode==='physical'&&saved.display_frame_available===false;
   $('revision-label').textContent = `Displayed ${saved.displayed_revision} / saved ${saved.revision}`;
   $('data-mode').textContent = saved.connector_execution ? (saved.fixture_data ? 'Monochrome · Connectors + fixtures' : 'Monochrome · Connector data') : 'Monochrome · Sample data';
   const view = editingContents() ? component()!.rect : draft.display;
@@ -416,6 +416,7 @@ function renderRuntimeWarning() {
   const configured = connectionStore.connections.filter(connection => connection.enabled && (connectorDefinitions.find(definition => definition.id === connection.connector_id)?.templates?.length ?? 0) > 0);
   const missing = configured.filter(connection => connection.fetch?.status === 'settings_only');
   const messages: string[] = [];
+  if(saved.display_warning)messages.push(saved.display_warning);
   if (missing.length) messages.push('Some configured plugins are not loaded. Components can be arranged, but new data cannot be fetched. Open Data sources for setup.');
   if (configured.length && saved.clock_fixed) messages.push('The host clock is fixed for testing. Restart without --now for live data updates.');
   $('runtime-warning').hidden = !messages.length;
@@ -766,6 +767,7 @@ function newClock(content: ClockSpec['content']): ClockSpec { return { timezone:
 function renderSettings(parent: HTMLElement) {
   parent.replaceChildren();
   const panel = section('Refresh & quiet hours', parent);
+  if (saved.mode === 'physical') panel.append(node('p', 'render-report', 'This display currently uses full refreshes at least three minutes apart. Changes wait in the queue; the screen sleeps between updates.'));
   const toggle = node('label', 'check');
   const input = node('input'); input.type = 'checkbox'; input.checked = !!draftSettings.quiet_hours;
   input.onchange = () => change(() => { draftSettings.quiet_hours = input.checked ? { timezone: 'Europe/Dublin', start: '22:00', end: '07:00' } : null; });
@@ -773,10 +775,10 @@ function renderSettings(parent: HTMLElement) {
   panel.append(node('p', 'render-report', 'During quiet hours the displayed frame stays still. The clock continues; the latest saved layout is rendered when quiet hours end.'));
   const advanced = node('details', 'advanced'); advanced.append(node('summary', '', 'Advanced refresh policy')); panel.append(advanced);
   const policy = section('Refresh limits', advanced);
-  policy.append(node('p', 'render-report', 'Software simulator only. These example limits are not validated for a physical panel. Profile limits always apply.'));
+  policy.append(node('p', 'render-report', saved.mode==='physical'?'The connected display profile enforces its limits. Partial refresh is not enabled.':'Software simulator only. These example limits are not validated for a physical panel. Profile limits always apply.'));
   const settings = draftSettings.policy;
   const profile = saved.refresh.profile;
-  policy.append(node('p', 'render-report', `Simulator limits: at least ${profile.min_interval_ms} ms between completed updates and the next start, at most ${profile.max_partials} partial updates, ${profile.max_full_age_secs} seconds between full updates when content changes, and ${profile.max_partial_area_percent}% partial area.`));
+  policy.append(node('p', 'render-report', `${saved.mode === 'physical' ? 'Display profile limits' : 'Simulator limits'}: at least ${profile.min_interval_ms} ms between completed updates and the next start, at most ${profile.max_partials} partial updates, ${profile.max_full_age_secs} seconds between full updates when content changes, and ${profile.max_partial_area_percent}% partial area.`));
   for (const [key, title, min, max] of [['min_interval_ms', 'Minimum refresh interval (ms)', 0, 3600000], ['full_after_partials', 'Full refresh after partial updates', 1, 1000], ['full_after_secs', 'Maintenance interval (seconds)', 1, 604800], ['max_partial_area_percent', 'Largest partial area (%)', 1, 100]] as const) {
     numeric(title, settings[key], min, max, policy, value => change(() => { draftSettings.policy[key] = value; }));
   }
@@ -1001,17 +1003,28 @@ document.addEventListener('keydown', event => {
     }, `move.${c.id}.${editingContents() ? selectedElement : ''}`);
   }
 });
+function physicalDisplayCaption(): string {
+  const reference = saved.display_frame_available === false ? 'Waiting for the first screen update.' : saved.refresh.baseline_known ? 'Last completed screen update.' : 'Last completed image. Screen state is unconfirmed until a full refresh.';
+  if (!connected) return `${reference} Service unavailable; reconnecting.`;
+  if (saved.phase === 'paused') return `${reference} Quiet hours: the latest content waits until updates resume.`;
+  if (saved.refresh.active) return `${reference} Updating the screen now.`;
+  const seconds = Math.ceil(saved.refresh.wait_ms / 1000);
+  if (saved.last_error) return `${reference} ${saved.last_error}${seconds > 0 ? ` Retry can start in about ${seconds} seconds.` : ' Waiting to retry a full refresh.'}`;
+  if (saved.pending) return `${reference} ${seconds > 0 ? `Next update can start in about ${seconds} seconds.` : 'Latest content is queued for a full refresh.'}`;
+  return reference;
+}
 function renderRefreshStatus() {
   const refresh = saved.refresh; const operation = refresh.active ?? refresh.last_completed;
+  if (saved.mode === 'physical' && !viewingDraft && !designSession) $('canvas-caption').textContent = physicalDisplayCaption();
   const reasons: Record<string, string> = { changed_area: 'Changed area', partial_unsupported: 'Full refresh required by display', unknown_baseline: 'Recovering display state', component_request: 'Requested by component', partial_limit: 'Partial update limit', maintenance_due: 'Maintenance interval reached', large_area: 'Large changed area' };
   const waitingAfterError = saved.last_error && !refresh.active;
-  $('refresh-mode').textContent = !connected ? 'Refresh status unavailable' : waitingAfterError ? 'Display update failed' : operation ? `${operation.mode === 'full' ? 'Full' : 'Partial'} refresh${refresh.active ? ' in progress' : ' completed'}` : 'Software simulator';
+  $('refresh-mode').textContent = !connected ? 'Refresh status unavailable' : waitingAfterError ? 'Display update failed' : operation ? `${operation.mode === 'full' ? 'Full' : 'Partial'} refresh${refresh.active ? ' in progress' : ' completed'}` : saved.mode==='physical'?'Physical display · awaiting a completed refresh':'Software simulator';
   $('refresh-detail').textContent = !connected ? 'Last completed frame retained.' : waitingAfterError ? `${saved.last_error}${refresh.wait_ms > 0 ? ` Retry in ${Math.ceil(refresh.wait_ms / 1000)} s.` : ''}` : saved.phase === 'paused' ? 'Quiet hours · Latest content waits until updates resume.' : saved.pending && !refresh.active ? `Latest content queued${refresh.wait_ms > 0 ? ` · Eligible in ${Math.ceil(refresh.wait_ms / 1000)} s` : ''}.` : operation ? `${refresh.active && operation.revision < saved.revision ? 'Newer saved layout queued · ' : ''}${reasons[operation.reason] ?? operation.reason} · ${refresh.partial_count} partial updates since full refresh` : 'No refresh operation since startup.';
   $('refresh-mode').title = operation ? `${operation.region.width} × ${operation.region.height} pixels at ${operation.region.x}, ${operation.region.y} · revision ${operation.revision}` : '';
 }
 function updateStatus() {
   renderRefreshStatus();
-  $('device-status').textContent = !connected ? 'Service unavailable' : saved.phase === 'paused' ? 'Quiet hours · paused' : saved.phase === 'pending' ? 'Display update pending' : saved.phase === 'error' ? 'Display update failed' : saved.phase === 'refreshing' ? 'Simulator refreshing' : 'Simulator idle';
+  $('device-status').textContent = !connected ? 'Service unavailable' : saved.phase === 'paused' ? 'Quiet hours · paused' : saved.phase === 'pending' ? 'Display update pending' : saved.phase === 'error' ? 'Display update failed' : saved.phase === 'refreshing' ? saved.mode==='physical'?'Updating display':'Simulator refreshing' : saved.mode==='physical'?'Display ready':'Simulator idle';
   const dot = document.querySelector('.device .status-dot')!;
   dot.classList.toggle('busy', connected && saved.phase === 'refreshing'); dot.classList.toggle('offline', !connected);
   const onLan = location.hostname !== 'localhost' && location.hostname !== '127.0.0.1' && location.hostname !== '[::1]';
@@ -1032,6 +1045,7 @@ async function poll() {
       if (editing && viewingDraft) queuePreview();
       if (changedSchema && active() && !document.activeElement?.closest('input,textarea,select')) renderInspector();
     }
+    saved.mode=current.mode;saved.display_frame_available=current.display_frame_available;saved.display_warning=current.display_warning;
     if (designSession) { const minute=Math.floor(current.clock_now/60); if(minute!==draftMinute&&component()?.blocks.some(block=>block.source.kind==='clock')){draftMinute=minute;queuePreview();} connected=true; saved.phase=current.phase; saved.refresh=current.refresh; saved.clock_now=current.clock_now; saved.data_revision=current.data_revision; updateStatus(); return; }
     const changed = !connected || current.revision !== saved.revision || current.frame_id !== saved.frame_id || current.displayed_revision !== saved.displayed_revision || current.phase !== saved.phase;
     connected = true;

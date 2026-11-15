@@ -29,8 +29,9 @@ separate evidence because SPI completion is not optical readback.
 A full refresh on the owner's Rev2.3 HAT / V2 screen was visually confirmed on
 2026-11-14, taking 5.74 seconds. This utility does not implement a `Controller`
 backend or modify the software profile, saved workspace, scheduler or quiet-hours
-behaviour. Automatic physical updates, partial-refresh capabilities and recovery
-still require integration and validation. See the
+behaviour. The integrated full-refresh backend and graceful restart recovery
+are now implemented separately; see [physical display](physical-display.md).
+Partial-refresh capabilities still require validation. See the
 [bring-up instructions and measured results](../usage/foundation-harness.md#one-shot-waveshare-v2-full-refresh).
 
 ## Records and ownership
@@ -39,7 +40,7 @@ still require integration and validation. See the
 | --- | --- |
 | `RefreshHint` | Per-component request: `automatic`, `partial`, or `full` |
 | `RefreshPolicy` | Saved minimum interval, partial-count limit, full-refresh age, and maximum partial area |
-| `Profile` | Host-owned capabilities, alignment and hard limits; currently `software-simulator` |
+| `Profile` | Host-owned capabilities, alignment and hard limits; `software-simulator` or `waveshare-7.5-v2-full` |
 | `Plan` | Mode, reason, aligned operation rectangle, and original changed-pixel bounds |
 | `Operation` | Plan plus the exact layout revision being sent |
 | `Controller` | Known-baseline flag, successful partial count, monotonic full/completion times, failure/backoff state, active and last completed operations |
@@ -131,15 +132,16 @@ service renders current data rather than replaying intermediate frames.
 ## Failure and status
 
 Failure retains the last completed image/revision and marks the display baseline
-unknown. Retry delays are 1, 2, 4, 8, 16, then 32 seconds, capped at 32. Manual
+unknown. Simulator retry delays are 1, 2, 4, 8, 16, then 32 seconds, capped at 32;
+the physical profile applies a 180-second minimum retry floor. Manual
 Refresh display enters the same controller and cannot bypass backoff or interval
 limits. Recovery requires a full refresh even if desired pixels equal the old
 completed image. Success clears the error and failure count.
 
 Fault injection is available only inside Rust tests; the normal simulator
-driver succeeds. A physical driver still needs timeout/disconnection handling
-and a supported profile. This slice claims no SPI/GPIO access or panel health
-validation.
+driver succeeds. The [physical backend](physical-display.md) supplies bounded
+SPI/GPIO execution, durable recovery records and its own conservative profile.
+Simulator tests do not establish panel health.
 
 `GET /api/state` includes the profile, active operation, last completed operation,
 partial count, baseline flag, failures, and remaining eligibility delay. The UI
@@ -163,7 +165,8 @@ and persistence alongside the existing editing flows. An additional browser
 metadata fixture checks failure backoff, active full recovery, and newer queued
 layout status; Rust tests exercise the actual injected driver failure. Initial
 native Pi application checks and the separate one-shot full refresh are now
-recorded in the operator guide. Integrated physical-panel refresh-policy
-validation remains pending.
+recorded in the operator guide. Automatic full-refresh integration and graceful
+restart recovery are now [validated separately](physical-display.md#observed-pi-result).
+Partial refresh and longer panel qualification remain pending.
 
 See [operator instructions](../usage/refresh-controller.md).

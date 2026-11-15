@@ -25,3 +25,8 @@ id_ed25519
 
 # Private reusable component designs may contain personal text.
 *.designs.json
+
+# Physical completed-frame journals may contain personal display content.
+*.display.json
+
+__pycache__/

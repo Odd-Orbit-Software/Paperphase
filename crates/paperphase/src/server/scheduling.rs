@@ -1,4 +1,4 @@
-//! Clock/freshness deadlines and the simulated refresh gate. No provider polling.
+//! Clock/freshness deadlines and serialized acknowledged display operations.
 use std::time::Duration;
 
 use crate::display::{Controller, Operation};
@@ -35,6 +35,8 @@ impl Workspace {
             last_tick: at,
             next_due,
             last_error: None,
+            display_frame_available: true,
+            display_warning: None,
         })
     }
 
@@ -177,6 +179,10 @@ async fn drive(app: Shared) {
     loop {
         let (frame, operation) = {
             let mut ws = app.workspace.lock().await;
+            if app.stopping.load(std::sync::atomic::Ordering::SeqCst) {
+                ws.worker_running = false;
+                return;
+            }
             ws.quiet = ws
                 .saved
                 .refresh_settings
@@ -242,9 +248,16 @@ async fn drive(app: Shared) {
             ws.refreshing = true;
             (frame, operation)
         };
-        // The simulated driver owns this frame until completion. Newer desired
-        // frames cannot cancel it or start a second operation concurrently.
-        tokio::time::sleep(Duration::from_millis(180)).await;
+        // Hardware I/O runs outside the workspace lock. Newer desired frames
+        // cannot cancel this acknowledged operation or start a second one.
+        let driver = std::sync::Arc::clone(&app.driver);
+        let sent_frame = frame.frame.clone();
+        let sent_layout = frame.layout.clone();
+        let sent_operation = operation.clone();
+        let result = tokio::task::spawn_blocking(move || {
+            driver.execute(&sent_frame, &sent_layout, &sent_operation)
+        })
+        .await;
         let mut ws = app.workspace.lock().await;
         ws.refreshing = false;
         ws.quiet = ws
@@ -253,12 +266,24 @@ async fn drive(app: Shared) {
             .is_quiet((app.clock)())
             .unwrap_or(true);
         #[cfg(test)]
-        let failed = std::mem::take(&mut ws.controller.fail_next);
+        let injected = std::mem::take(&mut ws.controller.fail_next);
         #[cfg(not(test))]
-        let failed = false;
-        if failed {
+        let injected = false;
+        let outcome = match result {
+            Ok(Ok(outcome)) if !injected => Some(outcome),
+            Ok(Err(error)) => {
+                eprintln!("display operation failed: {error:#}");
+                None
+            }
+            Err(error) => {
+                eprintln!("display worker failed: {error}");
+                None
+            }
+            _ => None,
+        };
+        if outcome.is_none() {
             ws.controller.failed(Instant::now());
-            ws.last_error = Some("Display update failed; retrying with a full refresh. Last completed frame is shown.".into());
+            ws.last_error = Some(if ws.display_frame_available {"Display update failed; retrying with a full refresh. Last completed frame is shown."}else{"Display update failed; retrying with a full refresh. Screen state is unconfirmed."}.into());
             ws.pending = true;
             if ws.desired.is_none() {
                 ws.desired = Some(frame);
@@ -266,6 +291,8 @@ async fn drive(app: Shared) {
         } else {
             let up_to_date = current(&app, &ws, &frame, (app.clock)());
             ws.controller.complete(operation, Instant::now());
+            ws.display_frame_available = true;
+            ws.display_warning = outcome.and_then(|outcome| outcome.warning);
             ws.png = frame.png;
             ws.completed_frame = frame.frame;
             ws.completed_layout = frame.layout;
@@ -282,6 +309,9 @@ async fn drive(app: Shared) {
 }
 
 pub(super) async fn tick(app: Shared, force: bool) -> ApiResult<()> {
+    if app.stopping.load(std::sync::atomic::Ordering::SeqCst) {
+        return Ok(());
+    }
     let _tick = app.tick_lock.lock().await;
     let now = (app.clock)();
     let saved = {
@@ -389,6 +419,8 @@ pub(super) mod tests {
         let path = dir.path().join("workspace.json");
         persist(&path, &workspace.saved).unwrap();
         let app = Arc::new(App {
+            driver: Arc::new(crate::display::driver::Driver::simulator()),
+            stopping: std::sync::atomic::AtomicBool::new(false),
             executors: None,
             google: None,
             fetch_slots: super::super::fetching::slots(),
