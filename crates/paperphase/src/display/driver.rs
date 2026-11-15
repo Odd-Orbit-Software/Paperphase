@@ -198,6 +198,7 @@ impl Driver {
                 max_full_age_secs: if physical.partial { 1800 } else { 7200 },
                 max_partial_area_percent: if physical.partial { 40 } else { 0 },
                 min_retry_ms: INTERVAL * 1000,
+                scheduled_full: true,
             }
         } else {
             Profile::default()

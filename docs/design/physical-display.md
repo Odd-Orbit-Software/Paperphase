@@ -44,7 +44,8 @@ flowchart LR
 
 `waveshare-7.5-v2-full` enforces at least 180 seconds after completion, with a
 180-second retry floor. Component partial preferences cannot override the profile.
-Unchanged pixels still skip hardware work once the baseline is known. Saves,
+Unchanged pixels skip hardware work once the baseline is known unless physical
+health cleanup is due. Saves,
 background fetches and clock deadlines reuse the existing desired/completed queue;
 missed intermediate changes are not replayed. Quiet hours stop new operations,
 while an already active operation may finish.
@@ -187,3 +188,10 @@ configuration changed during this observation. Both service units remained
 active and enabled. This bounded cycle establishes the tested path and cap;
 it does not establish overnight/lifetime ghosting, all temperatures, fast
 waveforms or interrupted-power recovery.
+
+The subsequent [screen-health change](refresh-controller.md#component-choices-and-scheduled-physical-cleanup)
+makes count/time cleanup independent of content changes. Physical profiles now
+queue full refresh at the shared count limit or full-age deadline even when
+pixels are unchanged; component preferences cannot postpone it. The original
+12-minute Pi result above predates this scheduler change. Accelerated desktop
+static/failure/quiet-hours checks are recorded separately from Pi observations.

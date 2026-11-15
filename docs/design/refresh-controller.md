@@ -64,13 +64,14 @@ The union of actual changed pixels covers new ink, erased ink, old component
 positions, and removed elements. One bounding rectangle deliberately combines
 separate changed regions; sending multiple partial windows is future driver work.
 
-1. Skip unchanged pixels when the baseline is known. A metadata-only save can
-   acknowledge its new revision without an operation or maintenance flash.
+1. Skip unchanged pixels when the baseline is known and no physical health
+   cleanup is due. A metadata-only save can then acknowledge its new revision
+   without an operation.
 2. Round the dirty rectangle outward to profile X/Y alignment, clamping at the
    display edges. The synthetic profile uses eight-pixel X and one-pixel Y
    alignment, including partial windows ending at an odd-width display edge.
-3. Select a full refresh, in priority order, for an unknown baseline, missing
-   partial capability, a full-request component intersecting the dirty bounds,
+3. Select a full refresh, in priority order, for an unknown baseline, due physical
+   health cleanup, missing partial capability, changed pixels in a full-request component,
    an exhausted partial count, elapsed full-refresh age, or an oversized aligned
    region. Otherwise select partial.
 4. A full operation covers the complete display. A partial request is a
@@ -78,8 +79,9 @@ separate changed regions; sending multiple partial windows is future driver work
 
 Full requests consider desired components and the former rectangles of moved
 or removed full-request components. Changing a request on a component that stays
-in place takes effect immediately. Intersection with the union dirty bounds is conservative: a full-request component between
-two changed areas may also promote the operation.
+in place takes effect immediately. Requests inspect actual changed pixels inside
+each component, so an untouched full-request component between two changed areas
+does not promote their operation.
 
 | Policy | Default | Synthetic profile hard limit |
 | --- | --- | --- |
@@ -88,8 +90,9 @@ two changed areas may also promote the operation.
 | Full-refresh age when content next changes | 3600 seconds | At most 7200 seconds |
 | Largest aligned partial region | 40% | At most 60% |
 
-User policy can be stricter. Count/age thresholds trigger on the next changed
-frame, not on an idle timer. A full refresh resets the count and age only after
+User policy can be stricter. Simulator count/age thresholds trigger on the next
+changed frame; physical profiles also schedule cleanup without a new content
+change. A full refresh resets the count and age only after
 success. Failed operations do not increment successful counters.
 
 ## Queuing, timing, and quiet hours
@@ -170,3 +173,39 @@ restart recovery are now [validated separately](physical-display.md#observed-pi-
 Partial refresh and longer panel qualification remain pending.
 
 See [operator instructions](../usage/refresh-controller.md).
+
+
+## Component choices and scheduled physical cleanup
+
+A component's `refresh_hint` is a preference: Automatic lets the controller
+choose, Partial prefers a small update, and Full requests the whole screen when
+that component's pixels change. Requests are evaluated against actual pixels in
+the component rectangle. An unchanged full-preferring component between two
+changed components no longer promotes their union rectangle to full. Moved or
+removed full-preferring content retains the old-area cleanup request.
+
+Physical profiles set `scheduled_full`. Their controller computes a monotonic
+health deadline independently of renderer/data deadlines: the earlier effective
+full-age limit or exhaustion of the shared partial count. Reaching the count
+queues full cleanup even if content stops changing. An elapsed age also permits
+a full operation with identical desired/completed pixels. Successful full
+acknowledgement resets the age and count; planning, failure or metadata saves do
+not reset them. Simulator profiles retain their existing change-driven behaviour.
+
+The scheduler checks health on its existing one-second tick, including static
+layouts without clocks or datasets. Metadata-only save and unchanged-pixel skip
+paths retain due cleanup. A due deadline wakes workers waiting on long owner
+intervals; cleanup/recovery ignore that soft throttle while retaining hardware
+minimum spacing and retry gates. Quiet hours mark cleanup pending and defer it
+until updates resume, rendering the newest saved layout before the full refresh.
+
+The partial profile keeps its qualified three-partial cap, 180-second spacing,
+40% area cap and conservative 30-minute full-age ceiling. These are Paperphase
+policy choices; the vendor does not specify a 15/30-minute maintenance schedule.
+Component controls cannot disable or increase the hardware limits.
+
+These actual compiled captures use synthetic data and mocked physical metadata:
+
+![Visible per-component update preference](images/component-update-method.png)
+
+![Shared count, timer and effective screen limits](images/display-health-settings.png)

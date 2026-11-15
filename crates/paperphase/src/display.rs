@@ -19,6 +19,7 @@ pub(crate) struct Profile {
     pub max_full_age_secs: u64,
     pub max_partial_area_percent: u32,
     pub min_retry_ms: u64,
+    pub scheduled_full: bool,
 }
 
 impl Default for Profile {
@@ -33,6 +34,7 @@ impl Default for Profile {
             max_full_age_secs: 7200,
             max_partial_area_percent: 60,
             min_retry_ms: 0,
+            scheduled_full: false,
         }
     }
 }
@@ -104,11 +106,47 @@ impl Controller {
     }
 
     pub fn ready_at(&self, policy: &RefreshPolicy, now: Instant) -> Instant {
-        let spacing =
-            Duration::from_millis(policy.min_interval_ms.max(self.profile.min_interval_ms));
+        let requested = if self.maintenance_reason(policy, now).is_some()
+            || (self.profile.scheduled_full && !self.baseline_known)
+        {
+            0 // Owner throttling cannot postpone a due screen-health operation.
+        } else {
+            policy.min_interval_ms
+        };
+        let spacing = Duration::from_millis(requested.max(self.profile.min_interval_ms));
         self.last_completed
             .map_or(now, |last| last + spacing)
             .max(self.retry_at.unwrap_or(now))
+    }
+
+    /// A physical health deadline is independent of incoming content changes.
+    pub fn maintenance_deadline(&self, policy: &RefreshPolicy) -> Option<Instant> {
+        if !self.profile.scheduled_full || !self.baseline_known {
+            return None;
+        }
+        if self.partials > 0
+            && self.partials >= policy.full_after_partials.min(self.profile.max_partials)
+        {
+            return self.last_completed;
+        }
+        Some(
+            self.last_full
+                + Duration::from_secs(policy.full_after_secs.min(self.profile.max_full_age_secs)),
+        )
+    }
+
+    pub fn maintenance_reason(&self, policy: &RefreshPolicy, now: Instant) -> Option<Reason> {
+        self.maintenance_deadline(policy)
+            .filter(|deadline| now >= *deadline)
+            .map(|_| {
+                if self.partials > 0
+                    && self.partials >= policy.full_after_partials.min(self.profile.max_partials)
+                {
+                    Reason::PartialLimit
+                } else {
+                    Reason::MaintenanceDue
+                }
+            })
     }
 
     pub fn plan(
@@ -121,7 +159,8 @@ impl Controller {
         now: Instant,
     ) -> Result<Option<Plan>> {
         let dirty = desired.difference_bounds(previous)?;
-        if dirty.is_none() && self.baseline_known {
+        let maintenance = self.maintenance_reason(policy, now);
+        if dirty.is_none() && self.baseline_known && maintenance.is_none() {
             return Ok(None);
         }
         let full = Rect {
@@ -150,21 +189,21 @@ impl Controller {
         };
         let reason = if !self.baseline_known {
             Some(Reason::UnknownBaseline)
+        } else if maintenance.is_some() {
+            maintenance
         } else if !self.profile.partial {
             Some(Reason::PartialUnsupported)
-        } else if new
-            .components
-            .iter()
-            .any(|c| c.refresh_hint == RefreshHint::Full && c.rect.intersects(dirty_region))
-            || old.components.iter().any(|c| {
-                c.refresh_hint == RefreshHint::Full
-                    && c.rect.intersects(dirty_region)
-                    && !new
-                        .components
-                        .iter()
-                        .any(|next| next.id == c.id && next.rect == c.rect)
-            })
-        {
+        } else if new.components.iter().any(|c| {
+            c.refresh_hint == RefreshHint::Full
+                && changed_inside(previous, desired, c.rect, dirty_region)
+        }) || old.components.iter().any(|c| {
+            c.refresh_hint == RefreshHint::Full
+                && changed_inside(previous, desired, c.rect, dirty_region)
+                && !new
+                    .components
+                    .iter()
+                    .any(|next| next.id == c.id && next.rect == c.rect)
+        }) {
             Some(Reason::ComponentRequest)
         } else if self.partials >= policy.full_after_partials.min(self.profile.max_partials) {
             Some(Reason::PartialLimit)
@@ -223,12 +262,189 @@ impl Controller {
     }
 }
 
+fn changed_inside(previous: &Frame, desired: &Frame, rect: Rect, dirty: Rect) -> bool {
+    if !rect.intersects(dirty) {
+        return false;
+    }
+    let left = rect.x.max(dirty.x);
+    let top = rect.y.max(dirty.y);
+    let right = rect
+        .right()
+        .min(dirty.right())
+        .min(u64::from(desired.width()));
+    let bottom = rect
+        .bottom()
+        .min(dirty.bottom())
+        .min(u64::from(desired.height()));
+    (top..bottom as u32)
+        .any(|y| (left..right as u32).any(|x| previous.is_black(x, y) != desired.is_black(x, y)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use paperphase_core::SnapshotSet;
     use paperphase_render::Renderer;
     use serde_json::json;
+
+    #[test]
+    fn physical_health_deadline_refreshes_unchanged_pixels_and_resets_on_success() {
+        let mut controller = Controller::new();
+        controller.profile.scheduled_full = true;
+        controller.profile.max_full_age_secs = 10;
+        let now = Instant::now();
+        controller.last_full = now;
+        let layout = scene("Static information");
+        let pixels = frame(&layout);
+        let policy = RefreshPolicy::default();
+        assert!(
+            controller
+                .plan(
+                    &pixels,
+                    &pixels,
+                    &layout,
+                    &layout,
+                    &policy,
+                    now + Duration::from_secs(9)
+                )
+                .unwrap()
+                .is_none()
+        );
+        let plan = controller
+            .plan(
+                &pixels,
+                &pixels,
+                &layout,
+                &layout,
+                &policy,
+                now + Duration::from_secs(10),
+            )
+            .unwrap()
+            .unwrap();
+        assert_eq!(plan.reason, Reason::MaintenanceDue);
+        assert_eq!(plan.mode, Mode::Full);
+        assert!(plan.dirty.is_none());
+        controller.complete(
+            Operation { revision: 0, plan },
+            now + Duration::from_secs(11),
+        );
+        assert_eq!(
+            controller.maintenance_deadline(&policy),
+            Some(now + Duration::from_secs(21))
+        );
+        controller.profile.scheduled_full = false;
+        assert!(
+            controller
+                .plan(
+                    &pixels,
+                    &pixels,
+                    &layout,
+                    &layout,
+                    &policy,
+                    now + Duration::from_secs(100)
+                )
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn count_cleanup_is_due_without_more_changes_but_cannot_bypass_spacing() {
+        let mut controller = Controller::new();
+        controller.profile.scheduled_full = true;
+        controller.profile.max_partials = 3;
+        controller.profile.min_interval_ms = 180000;
+        let now = Instant::now();
+        controller.last_full = now;
+        let layout = scene("No more incoming changes");
+        let pixels = frame(&layout);
+        let policy = RefreshPolicy {
+            min_interval_ms: 3600000,
+            ..RefreshPolicy::default()
+        };
+        for second in [1, 2, 3] {
+            controller.complete(
+                Operation {
+                    revision: second,
+                    plan: Plan {
+                        mode: Mode::Partial,
+                        reason: Reason::ChangedArea,
+                        region: layout.components[0].rect,
+                        dirty: None,
+                    },
+                },
+                now + Duration::from_secs(second),
+            );
+        }
+        let due = now + Duration::from_secs(3);
+        let plan = controller
+            .plan(&pixels, &pixels, &layout, &layout, &policy, due)
+            .unwrap()
+            .unwrap();
+        assert_eq!(plan.reason, Reason::PartialLimit);
+        assert_eq!(plan.mode, Mode::Full);
+        assert_eq!(
+            controller.ready_at(&policy, due),
+            due + Duration::from_secs(180)
+        );
+        controller.failed(due);
+        assert_eq!(
+            controller.ready_at(&policy, due),
+            due + Duration::from_secs(180)
+        );
+    }
+
+    #[test]
+    fn unchanged_full_preference_between_changed_components_does_not_force_full() {
+        let mut old = scene("A");
+        old.components[0].rect = Rect {
+            x: 0,
+            y: 0,
+            width: 64,
+            height: 64,
+        };
+        for (id, x, text, hint) in [
+            ("middle", 80, "Keep", RefreshHint::Full),
+            ("right", 160, "C", RefreshHint::Partial),
+        ] {
+            let mut component = old.components[0].clone();
+            component.id = id.into();
+            component.rect.x = x;
+            component.refresh_hint = hint;
+            component.blocks[0].source = paperphase_core::TextSource::Literal { text: text.into() };
+            old.components.push(component);
+        }
+        let mut new = old.clone();
+        new.components[0].blocks[0].source =
+            paperphase_core::TextSource::Literal { text: "B".into() };
+        new.components[2].blocks[0].source =
+            paperphase_core::TextSource::Literal { text: "D".into() };
+        let mut controller = Controller::new();
+        controller.profile.max_partial_area_percent = 100;
+        let policy = RefreshPolicy {
+            max_partial_area_percent: 100,
+            ..RefreshPolicy::default()
+        };
+        let before = frame(&old);
+        let after = frame(&new);
+        assert_eq!(
+            controller
+                .plan(&before, &after, &old, &new, &policy, Instant::now())
+                .unwrap()
+                .unwrap()
+                .mode,
+            Mode::Partial
+        );
+        new.components[0].refresh_hint = RefreshHint::Full;
+        assert_eq!(
+            controller
+                .plan(&before, &after, &old, &new, &policy, Instant::now())
+                .unwrap()
+                .unwrap()
+                .reason,
+            Reason::ComponentRequest
+        );
+    }
 
     fn scene(text: &str) -> Layout {
         serde_json::from_value(

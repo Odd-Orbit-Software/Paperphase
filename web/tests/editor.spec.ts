@@ -467,8 +467,8 @@ test('refresh requests and maintenance settings persist while host policy contro
   await page.getByRole('button', { name: 'Edit layout' }).click();
   await selectComponent(page, 'header');
   await properties(page, 'Style');
-  if (!await page.getByLabel('Refresh request', {exact:true}).isVisible()) await page.locator('#inspector-pane-style details summary').click();
-  await page.getByLabel('Refresh request', { exact: true }).selectOption('full');
+  if (!await page.getByLabel('Update method', {exact:true}).isVisible()) await page.locator('#inspector-pane-style details summary').click();
+  await page.getByLabel('Update method', { exact: true }).selectOption('full');
   await properties(page, 'Content');
   await page.getByLabel('Text', { exact: true }).first().fill('Controller ready');
   await page.getByRole('button', { name: 'Save to display' }).click();
@@ -485,8 +485,8 @@ test('refresh requests and maintenance settings persist while host policy contro
   await page.getByLabel('Minimum refresh interval (ms)', { exact: true }).press('Tab');
   await selectComponent(page, 'header');
   await properties(page, 'Style');
-  if (!await page.getByLabel('Refresh request', {exact:true}).isVisible()) await page.locator('#inspector-pane-style details summary').click();
-  await page.getByLabel('Refresh request', { exact: true }).selectOption('partial');
+  if (!await page.getByLabel('Update method', {exact:true}).isVisible()) await page.locator('#inspector-pane-style details summary').click();
+  await page.getByLabel('Update method', { exact: true }).selectOption('partial');
   await properties(page, 'Content');
   await page.getByLabel('Text', { exact: true }).first().fill('One small update');
   await page.getByRole('button', { name: 'Save to display' }).click();

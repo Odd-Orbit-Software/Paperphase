@@ -9,6 +9,35 @@ Owner accepted the component designer and authorized its commit, merge to
 `main`, and GitHub push. This publication also includes the previously local
 UIUX redesign commit. Foundation version remains `0.1.0`.
 
+### Enforce screen-wide cleanup for component preferences
+
+- Exposed each component's existing Automatic / Partial when possible / Full
+  screen preference directly in Style, with clear screen-wide override wording.
+  Evaluate actual changed pixels so an untouched full-preferring component
+  between changed neighbours does not force their update to full.
+- Added physical-profile count/time maintenance independently of data changes.
+  Static screens still receive full cleanup; the shared count resets only on
+  successful full acknowledgement. Metadata-only saves and unchanged-pixel
+  shortcuts cannot discard overdue cleanup.
+- Wake pending workers when health becomes due. Cleanup and recovery override
+  soft owner throttling while hardware spacing, retry and quiet hours remain
+  enforced. Overdue quiet-hours cleanup resumes with the newest content.
+- Kept the qualified three-partial limit and conservative 30-minute ceiling for
+  the partial profile. These are Paperphase policy choices, not a prescribed
+  vendor 15/30-minute schedule. Device shows effective limits, bounds advanced
+  inputs to the profile and explains the shared count/static cleanup.
+
+Verification: `sh scripts/check.sh` passed 192 Rust and 11 Python tests,
+including static deadlines, count-only cleanup, mixed preferences, throttled-worker
+wakeup, failure recovery and quiet hours. All 39 browser workflows and the ARM64
+release build passed. The Impeccable reviewer returned `ship` for the narrow
+desktop/mobile control extension; the owner confirmed its wording and placement.
+The new build is installed on the Pi with scheduled cleanup enabled, the same
+three-partial/30-minute limits, preserved revision 5 and both units active/enabled.
+The deployed build completed full startup recovery with no error and revision 5
+preserved. Accelerated static-content timing checks remain separate from physical
+observations. Version remains `0.1.0`.
+
 ### Enable bounded physical partial updates
 
 - Added explicit `--display waveshare-v2-partial` for the confirmed panel,

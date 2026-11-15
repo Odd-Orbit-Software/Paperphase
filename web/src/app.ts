@@ -4,7 +4,7 @@ import { bindDesign, compactDesign, designFits, designGeometryValid, friendlyFie
 import { contentBounds, validElement, validElements, positioned, freeElementRect } from './elements';
 type Policy = { min_interval_ms: number; full_after_partials: number; full_after_secs: number; max_partial_area_percent: number };
 type Operation = { mode: 'partial' | 'full'; reason: string; region: Rect; revision: number };
-type RefreshStatus = { profile: { id: string; partial?: boolean; max_partials: number; max_full_age_secs: number; max_partial_area_percent: number; min_interval_ms: number }; active: Operation | null; last_completed: Operation | null; partial_count: number; baseline_known: boolean; failures: number; wait_ms: number };
+type RefreshStatus = { profile: { id: string; partial?: boolean; scheduled_full?: boolean; max_partials: number; max_full_age_secs: number; max_partial_area_percent: number; min_interval_ms: number }; active: Operation | null; last_completed: Operation | null; partial_count: number; baseline_known: boolean; failures: number; wait_ms: number };
 type RefreshSettings = { policy: Policy; quiet_hours: { timezone: string; start: string; end: string } | null };
 type Workspace = { mode?:'simulated'|'physical'; display_frame_available?:boolean; display_warning?:string|null; clock_fixed: boolean; refresh: RefreshStatus; last_error: string | null; revision: number; displayed_revision: number; data_revision: number; frame_id: string; clock_now: number; pending: boolean; phase: string; layout: Layout; refresh_settings: RefreshSettings; addresses: string[]; connector_execution: boolean; fixture_data: boolean };
 type EditState = { layout: Layout; settings: RefreshSettings; design?: {source?:string;automatic:boolean;fixedWidth?:number;startingPoint?:string} };
@@ -654,10 +654,10 @@ function buildInspector() {
     numeric('Block gap', c.gap, 0, 64, spacing, n => updateComponent(c => { c.gap = n; }));
     const borderLabel = node('label', 'check'); const border = node('input'); border.type = 'checkbox'; border.checked = c.border;
     border.onchange = () => updateComponent(c => { c.border = border.checked; }); borderLabel.append(border, document.createTextNode('Draw component border')); appearance.append(borderLabel);
-    const advanced = node('details', 'advanced'); advanced.append(node('summary', '', 'Advanced: display updates')); stylePane.append(advanced);
-    const refresh = section('Refresh preference', advanced);
-    select('Refresh request', c.refresh_hint ?? 'automatic', [['automatic', 'Automatic'], ['partial', 'Prefer partial'], ['full', 'Request full']], refresh, value => updateComponent(c => { c.refresh_hint = value as Component['refresh_hint']; }));
-    refresh.append(node('p', 'render-report', 'The host may require a full refresh to respect display limits.'));
+    const refresh = section('Display updates', stylePane);
+    select('Update method', c.refresh_hint ?? 'automatic', [['automatic', 'Automatic (recommended)'], ['partial', 'Partial when possible'], ['full', 'Full screen']], refresh, value => updateComponent(c => { c.refresh_hint = value as Component['refresh_hint']; }));
+    refresh.append(node('p', 'render-report', 'This preference applies when this component changes. Screen-wide cleanup and display limits always take priority.'));
+    if (saved.mode === 'physical' && !saved.refresh.profile.partial) refresh.append(node('p', 'render-report', 'This display currently uses full refreshes. Your preference is saved for a display that supports partial updates.'));
     const layout = section('Element layout', positionPane);
     select('Content layout', c.content_layout ?? 'flow', [['flow', 'Vertical flow'], ['positioned', 'Positioned elements']], layout, value => { if (value === 'flow') useFlow(); else void enterContents(); });
     layout.append(node('p', 'render-report', 'Free positioning converts the current flow into individual element boxes. You can undo this change.'));
@@ -768,6 +768,10 @@ function renderSettings(parent: HTMLElement) {
   parent.replaceChildren();
   const panel = section('Refresh & quiet hours', parent);
   if (saved.mode === 'physical') panel.append(node('p', 'render-report', saved.refresh.profile.partial ? 'Small changes can update part of the screen. Updates are at least three minutes apart, with a full refresh after at most three partial updates. The screen sleeps between updates.' : 'This display currently uses full refreshes at least three minutes apart. Changes wait in the queue; the screen sleeps between updates.'));
+  if (saved.refresh.profile.scheduled_full) {
+    const minutes = Math.ceil(Math.max(saved.refresh.profile.min_interval_ms / 1000, Math.min(draftSettings.policy.full_after_secs, saved.refresh.profile.max_full_age_secs)) / 60);
+    panel.append(node('p', 'render-report', `Full cleanup becomes due within ${minutes} minutes, even when content stays unchanged. The partial-update count is shared across components. Component settings cannot disable cleanup; quiet hours can postpone it.`));
+  }
   const toggle = node('label', 'check');
   const input = node('input'); input.type = 'checkbox'; input.checked = !!draftSettings.quiet_hours;
   input.onchange = () => change(() => { draftSettings.quiet_hours = input.checked ? { timezone: 'Europe/Dublin', start: '22:00', end: '07:00' } : null; });
@@ -778,9 +782,18 @@ function renderSettings(parent: HTMLElement) {
   policy.append(node('p', 'render-report', saved.mode==='physical'?(saved.refresh.profile.partial?'The connected display profile allows partial refresh for small changes. Large changes and recovery use a full refresh.':'The connected display profile enforces its limits. Partial refresh is not enabled.'):'Software simulator only. These example limits are not validated for a physical panel. Profile limits always apply.'));
   const settings = draftSettings.policy;
   const profile = saved.refresh.profile;
-  policy.append(node('p', 'render-report', `${saved.mode === 'physical' ? 'Display profile limits' : 'Simulator limits'}: at least ${profile.min_interval_ms} ms between completed updates and the next start, at most ${profile.max_partials} partial updates, ${profile.max_full_age_secs} seconds between full updates when content changes, and ${profile.max_partial_area_percent}% partial area.`));
-  for (const [key, title, min, max] of [['min_interval_ms', 'Minimum refresh interval (ms)', 0, 3600000], ['full_after_partials', 'Full refresh after partial updates', 1, 1000], ['full_after_secs', 'Maintenance interval (seconds)', 1, 604800], ['max_partial_area_percent', 'Largest partial area (%)', 1, 100]] as const) {
-    numeric(title, settings[key], min, max, policy, value => change(() => { draftSettings.policy[key] = value; }));
+  if (saved.mode === 'physical') policy.append(node('p', 'render-report', 'The values shown include this screen’s enforced limits. You can choose stricter limits.'));
+  policy.append(node('p', 'render-report', `${saved.mode === 'physical' ? 'Display profile limits' : 'Simulator limits'}: at least ${profile.min_interval_ms} ms between completed updates and the next start, at most ${profile.max_partials} partial updates, ${profile.max_full_age_secs} seconds ${profile.scheduled_full ? 'before full cleanup is due' : 'between full updates when content changes'}, and ${profile.max_partial_area_percent}% partial area.`));
+  for (const [key, title, min, max] of [['min_interval_ms', 'Minimum refresh interval (ms)', 0, 3600000], ['full_after_partials', 'Full refresh after partial updates', 1, 1000], ['full_after_secs', 'Full refresh interval (seconds)', 1, 604800], ['max_partial_area_percent', 'Largest partial area (%)', 1, 100]] as const) {
+    let floor: number = min, ceiling: number = max;
+    if (saved.mode === 'physical') {
+      if (!profile.partial && (key === 'full_after_partials' || key === 'max_partial_area_percent')) continue;
+      if (key === 'min_interval_ms') { floor = profile.min_interval_ms; ceiling = Math.max(floor, Math.min(max, profile.max_full_age_secs * 1000)); }
+      if (key === 'full_after_partials') ceiling = Math.min(max, profile.max_partials);
+      if (key === 'full_after_secs') { floor = Math.ceil(profile.min_interval_ms / 1000); ceiling = Math.max(floor, Math.min(max, profile.max_full_age_secs)); }
+      if (key === 'max_partial_area_percent') ceiling = Math.min(max, profile.max_partial_area_percent);
+    }
+    numeric(title, Math.max(floor, Math.min(ceiling, settings[key])), floor, ceiling, policy, value => change(() => { draftSettings.policy[key] = value; }));
   }
   const quiet = draftSettings.quiet_hours;
   if (quiet) {

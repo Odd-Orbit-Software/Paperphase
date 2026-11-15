@@ -105,7 +105,7 @@ Use `--display waveshare-v2-partial` instead of `--display waveshare-v2` to allo
 small aligned changes to update part of the screen. All updates remain at least
 three minutes apart, with at most three partials before full maintenance. Large
 changes (over 40% of the screen), startup and failure recovery use full refresh.
-The hard maintenance age is 30 minutes when content changes. The screen sleeps
+The hard maintenance age is 30 minutes, including unchanged content. The screen sleeps
 and releases HAT power after every full or partial operation. Device settings
 explain the connected profile; saved preferences cannot bypass these limits.
 
@@ -114,3 +114,23 @@ reversal, removal and re-addition checks. Other panels and faster update cadence
 need separate qualification. To return to full-only behaviour, change the unit
 back to `--display waveshare-v2`, reload systemd and restart Paperphase. Keep the
 existing recovery journal so the cooldown survives.
+
+## Component choices and screen-wide cleanup
+
+Choose a component, then **Style → Display updates → Update method**. Automatic
+is recommended; Partial when possible prefers a small update; Full screen requests
+a whole-screen refresh when that component changes. Preferences cannot bypass
+capability, area, timing, recovery or maintenance limits. Unchanged neighbouring
+components do not force full refresh just by lying inside a changed bounding box.
+
+The three-partial limit is shared across the whole display. Reaching it queues
+full cleanup even if no new data arrives. The partial profile also schedules
+full cleanup within the effective full interval (at most 30 minutes), including
+static content. A full acknowledgement resets both age and count. The full-only
+profile similarly schedules its configured full-age cleanup. Quiet hours defer
+cleanup until updates resume, and the hardware's minimum spacing always applies.
+
+Device shows effective, enforced limits rather than an unsupported request such
+as ten partials on a three-partial profile. You can choose stricter values. The
+30-minute value is Paperphase's conservative policy, not a vendor mandate; it is
+independent of the owner's non-concrete 15-minute example.

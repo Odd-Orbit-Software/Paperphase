@@ -145,6 +145,10 @@ pub(super) fn queue(app: &Shared, ws: &mut Workspace, mut frame: PreparedFrame) 
         && ws.controller.baseline_known
         && frame.frame == ws.completed_frame
         && !ws.quiet
+        && ws
+            .controller
+            .maintenance_reason(&ws.saved.refresh_settings.policy, Instant::now())
+            .is_none()
     {
         ws.completed_layout = frame.layout;
         ws.displayed_revision = ws.saved.revision;
@@ -321,13 +325,24 @@ pub(super) async fn tick(app: Shared, force: bool) -> ApiResult<()> {
         ws.last_tick = now;
         ws.quiet = ws.saved.refresh_settings.is_quiet(now).map_err(invalid)?;
         let due = ws.next_due.is_some_and(|due| now >= due);
+        let maintenance = ws
+            .controller
+            .maintenance_reason(&ws.saved.refresh_settings.policy, Instant::now())
+            .is_some();
+        if maintenance && ws.worker_running && !ws.refreshing {
+            ws.refresh_wake.notify_one();
+        }
         if ws.quiet {
-            ws.pending |= force || due || backwards || ws.refreshing;
+            ws.pending |= force || due || maintenance || backwards || ws.refreshing;
             ws.desired = None;
             ws.refresh_wake.notify_one();
             return Ok(());
         }
-        if !force && !was_quiet && !backwards && (ws.worker_running || (!due && !ws.pending)) {
+        if !force
+            && !was_quiet
+            && !backwards
+            && (ws.worker_running || (!due && !maintenance && !ws.pending))
+        {
             return Ok(());
         }
         ws.saved.clone()
@@ -478,6 +493,118 @@ pub(super) mod tests {
         .await
         .unwrap()
         .0
+    }
+
+    fn static_scene() -> Layout {
+        let mut layout = scene();
+        layout.components[0].blocks.remove(0);
+        layout
+    }
+
+    async fn expire_health(app: &Shared) {
+        let mut ws = app.workspace.lock().await;
+        ws.controller.profile.scheduled_full = true;
+        ws.controller.profile.max_full_age_secs = 10;
+        ws.controller.last_full = Instant::now() - Duration::from_secs(11);
+    }
+
+    #[tokio::test]
+    async fn static_content_gets_scheduled_health_cleanup_without_a_save_or_source_tick() {
+        let (app, _clock, _dir) = app(static_scene(), RefreshSettings::default(), empty(), START);
+        let original = app.workspace.lock().await.png.clone();
+        expire_health(&app).await;
+        tick(Arc::clone(&app), false).await.unwrap();
+        settle(&app).await;
+        let ws = app.workspace.lock().await;
+        assert_eq!(ws.frame_serial, 1);
+        assert_eq!(ws.saved.revision, 0);
+        assert_eq!(ws.png, original);
+        assert!(ws.next_due.is_none());
+        assert_eq!(
+            ws.controller.completed.as_ref().unwrap().plan.reason,
+            crate::display::Reason::MaintenanceDue
+        );
+        drop(ws);
+        tick(Arc::clone(&app), false).await.unwrap();
+        assert_eq!(app.workspace.lock().await.frame_serial, 1);
+    }
+
+    #[tokio::test]
+    async fn overdue_static_health_waits_for_quiet_hours_and_runs_on_resume() {
+        let (app, clock, _dir) = app(static_scene(), quiet(), empty(), START + 60);
+        expire_health(&app).await;
+        tick(Arc::clone(&app), false).await.unwrap();
+        {
+            let ws = app.workspace.lock().await;
+            assert_eq!(ws.phase(), "paused");
+            assert!(ws.pending);
+            assert!(!ws.worker_running);
+            assert_eq!(ws.frame_serial, 0);
+        }
+        clock.store(START + 240, Ordering::SeqCst);
+        tick(Arc::clone(&app), false).await.unwrap();
+        settle(&app).await;
+        let ws = app.workspace.lock().await;
+        assert_eq!(ws.frame_serial, 1);
+        assert_eq!(
+            ws.controller.completed.as_ref().unwrap().plan.reason,
+            crate::display::Reason::MaintenanceDue
+        );
+        assert!(!ws.pending);
+    }
+
+    #[tokio::test]
+    async fn failed_static_health_cleanup_retries_as_full_recovery_without_new_pixels() {
+        let (app, _clock, _dir) = app(static_scene(), RefreshSettings::default(), empty(), START);
+        expire_health(&app).await;
+        app.workspace.lock().await.controller.fail_next = true;
+        tick(Arc::clone(&app), false).await.unwrap();
+        wait_for(&app, |ws| ws.controller.failures == 1).await;
+        assert!(!app.workspace.lock().await.controller.baseline_known);
+        wait_for(&app, |ws| ws.frame_serial == 1).await;
+        let ws = app.workspace.lock().await;
+        assert!(ws.last_error.is_none());
+        assert_eq!(
+            ws.controller.completed.as_ref().unwrap().plan.reason,
+            crate::display::Reason::UnknownBaseline
+        );
+        assert_eq!(ws.saved.revision, 0);
+    }
+
+    #[tokio::test]
+    async fn health_deadline_wakes_a_worker_waiting_for_a_long_owner_interval() {
+        let mut settings = RefreshSettings::default();
+        settings.policy.min_interval_ms = 60000;
+        settings.policy.full_after_secs = 600;
+        let (app, _clock, _dir) = app(scene(), settings, empty(), START);
+        {
+            let mut ws = app.workspace.lock().await;
+            ws.controller.profile.scheduled_full = true;
+            ws.controller.last_completed = Some(Instant::now());
+        }
+        edit(&app, "Changed while throttled").await;
+        tokio::time::sleep(Duration::from_millis(220)).await;
+        {
+            let mut ws = app.workspace.lock().await;
+            assert!(ws.worker_running);
+            assert!(!ws.refreshing);
+            assert_eq!(ws.frame_serial, 0);
+            ws.controller.last_full = Instant::now() - Duration::from_secs(601);
+        }
+        tick(Arc::clone(&app), false).await.unwrap();
+        wait_for(&app, |ws| ws.frame_serial == 1).await;
+        assert_eq!(
+            app.workspace
+                .lock()
+                .await
+                .controller
+                .completed
+                .as_ref()
+                .unwrap()
+                .plan
+                .reason,
+            crate::display::Reason::MaintenanceDue
+        );
     }
     pub(in crate::server) async fn assert_current_pixels(app: &Shared) {
         let (layout, settings, png) = {
