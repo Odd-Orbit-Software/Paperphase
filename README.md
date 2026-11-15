@@ -64,6 +64,8 @@ validation remain pending.
 - [Run the desktop editor](docs/usage/desktop-editor.md)
 - [Desktop editor design](docs/design/desktop-editor.md)
 - [Internal element editor](docs/design/internal-editor.md)
+- [Show components in turns](docs/usage/component-rotation.md)
+- [Component rotation design](docs/design/component-rotation.md)
 - [Clock and refresh scheduling](docs/design/clock-and-refresh.md)
 - [Refresh controller design](docs/design/refresh-controller.md)
 - [Configure simulated refresh policy](docs/usage/refresh-controller.md)

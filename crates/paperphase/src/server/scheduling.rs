@@ -6,7 +6,7 @@ use paperphase_core::{Layout, RefreshSettings, SnapshotSet, TextSource};
 use paperphase_render::Frame;
 use tokio::time::Instant;
 
-use super::{ApiResult, Engine, STANDARD, Saved, Shared, Workspace, internal, invalid, render};
+use super::{ApiResult, Engine, STANDARD, Saved, Shared, Workspace, internal, invalid};
 
 impl Workspace {
     pub(super) fn new(
@@ -17,10 +17,14 @@ impl Workspace {
         at: u64,
     ) -> anyhow::Result<Self> {
         let quiet = saved.refresh_settings.is_quiet(at)?;
-        let next_due = next_due(&saved.layout, snapshots, at)?;
+        let mut rotations = super::rotation::Runtime::default();
+        let selected = rotations.selection(&saved.layout, Instant::now());
+        let effective = saved.layout.resolve_rotations(&selected)?;
+        rotations.acknowledge(&saved.layout, &selected, Instant::now());
+        let next_due = next_due(&effective, snapshots, at)?;
         Ok(Self {
             displayed_revision: saved.revision,
-            completed_layout: saved.layout.clone(),
+            completed_layout: effective,
             saved,
             png,
             completed_frame: frame,
@@ -37,6 +41,7 @@ impl Workspace {
             last_error: None,
             display_frame_available: true,
             display_warning: None,
+            rotations,
         })
     }
 
@@ -110,6 +115,8 @@ pub(super) struct PreparedFrame {
     next_due: Option<u64>,
     quiet: bool,
     at: u64,
+    declared: Layout,
+    selection: std::collections::BTreeMap<String, String>,
 }
 
 pub(super) async fn prepare(
@@ -119,16 +126,25 @@ pub(super) async fn prepare(
     at: u64,
 ) -> ApiResult<PreparedFrame> {
     let quiet = settings.is_quiet(at).map_err(invalid)?;
-    let preview = render(app, layout.clone(), at).await?;
+    layout.validate().map_err(invalid)?;
+    let selection = app
+        .workspace
+        .lock()
+        .await
+        .rotations
+        .selection(layout, Instant::now());
+    let preview = super::render_selected(app, layout.clone(), at, selection.clone()).await?;
     Ok(PreparedFrame {
         png: STANDARD.decode(preview.png_base64).map_err(internal)?,
         revision: 0,
-        layout: layout.clone(),
+        layout: preview.effective_layout,
         frame: preview.frame,
         next_due: preview.next_due,
         data_epoch: preview.data_epoch,
         quiet,
         at,
+        declared: layout.clone(),
+        selection,
     })
 }
 
@@ -137,7 +153,10 @@ pub(super) fn queue(app: &Shared, ws: &mut Workspace, mut frame: PreparedFrame) 
     ws.next_due = frame.next_due;
     ws.quiet = frame.quiet;
     ws.pending = true;
-    if frame.data_epoch != app.data_epoch.load(std::sync::atomic::Ordering::SeqCst) {
+    if frame.data_epoch != app.data_epoch.load(std::sync::atomic::Ordering::SeqCst)
+        || frame.selection != ws.rotations.selection(&ws.saved.layout, Instant::now())
+    {
+        ws.refresh_wake.notify_one();
         return;
     }
     // A metadata-only save can acknowledge the completed frame immediately.
@@ -150,6 +169,7 @@ pub(super) fn queue(app: &Shared, ws: &mut Workspace, mut frame: PreparedFrame) 
             .maintenance_reason(&ws.saved.refresh_settings.policy, Instant::now())
             .is_none()
     {
+        acknowledge_rotation(ws, &frame);
         ws.completed_layout = frame.layout;
         ws.displayed_revision = ws.saved.revision;
         ws.desired = None;
@@ -170,11 +190,18 @@ pub(super) fn queue(app: &Shared, ws: &mut Workspace, mut frame: PreparedFrame) 
     });
 }
 
+fn acknowledge_rotation(ws: &mut Workspace, frame: &PreparedFrame) {
+    ws.rotations
+        .acknowledge(&frame.declared, &frame.selection, Instant::now());
+    ws.rotations.retain(&ws.saved.layout);
+}
+
 fn current(app: &Shared, ws: &Workspace, frame: &PreparedFrame, now: u64) -> bool {
     frame.revision == ws.saved.revision
         && frame.data_epoch == app.data_epoch.load(std::sync::atomic::Ordering::SeqCst)
         && now >= frame.at
         && frame.next_due.is_none_or(|due| now < due)
+        && frame.selection == ws.rotations.selection(&ws.saved.layout, Instant::now())
 }
 
 async fn drive(app: Shared) {
@@ -217,6 +244,7 @@ async fn drive(app: Shared) {
             let plan = match plan {
                 Ok(Some(plan)) => plan,
                 Ok(None) => {
+                    acknowledge_rotation(&mut ws, &frame);
                     ws.displayed_revision = frame.revision;
                     ws.completed_layout = frame.layout;
                     ws.pending = false;
@@ -295,6 +323,7 @@ async fn drive(app: Shared) {
         } else {
             let up_to_date = current(&app, &ws, &frame, (app.clock)());
             ws.controller.complete(operation, Instant::now());
+            acknowledge_rotation(&mut ws, &frame);
             ws.display_frame_available = true;
             ws.display_warning = outcome.and_then(|outcome| outcome.warning);
             ws.png = frame.png;
@@ -325,6 +354,7 @@ pub(super) async fn tick(app: Shared, force: bool) -> ApiResult<()> {
         ws.last_tick = now;
         ws.quiet = ws.saved.refresh_settings.is_quiet(now).map_err(invalid)?;
         let due = ws.next_due.is_some_and(|due| now >= due);
+        let rotation_due = ws.rotations.due(&ws.saved.layout, Instant::now());
         let maintenance = ws
             .controller
             .maintenance_reason(&ws.saved.refresh_settings.policy, Instant::now())
@@ -333,7 +363,7 @@ pub(super) async fn tick(app: Shared, force: bool) -> ApiResult<()> {
             ws.refresh_wake.notify_one();
         }
         if ws.quiet {
-            ws.pending |= force || due || maintenance || backwards || ws.refreshing;
+            ws.pending |= force || due || rotation_due || maintenance || backwards || ws.refreshing;
             ws.desired = None;
             ws.refresh_wake.notify_one();
             return Ok(());
@@ -341,7 +371,7 @@ pub(super) async fn tick(app: Shared, force: bool) -> ApiResult<()> {
         if !force
             && !was_quiet
             && !backwards
-            && (ws.worker_running || (!due && !maintenance && !ws.pending))
+            && (ws.worker_running || (!due && !rotation_due && !maintenance && !ws.pending))
         {
             return Ok(());
         }
@@ -855,5 +885,84 @@ pub(super) mod tests {
             app.workspace.lock().await.displayed_revision,
             saved.revision + 2
         );
+    }
+    fn rotating_scene() -> Layout {
+        serde_json::from_str(include_str!("../../../../examples/simulator/rotation.json")).unwrap()
+    }
+    fn shown(ws: &Workspace) -> String {
+        let status =
+            serde_json::to_value(ws.rotations.status(&ws.saved.layout, Instant::now())).unwrap();
+        status[0]["shown_member"].as_str().unwrap().to_owned()
+    }
+    #[tokio::test]
+    async fn rotation_advances_once_after_dwell_without_saving_or_touching_pinned_content() {
+        let (app, _, _dir) = app(rotating_scene(), RefreshSettings::default(), empty(), START);
+        assert_eq!(shown(&*app.workspace.lock().await), "local");
+        app.workspace.lock().await.rotations.age_for_test(900);
+        tick(Arc::clone(&app), false).await.unwrap();
+        settle(&app).await;
+        let ws = app.workspace.lock().await;
+        assert_eq!(shown(&ws), "world");
+        assert_eq!(ws.saved.revision, 0);
+        assert_eq!(ws.frame_serial, 1);
+        assert!(!ws.rotations.due(&ws.saved.layout, Instant::now()));
+        assert_eq!(ws.completed_layout.components[1].id, "pinned");
+        drop(ws);
+        tick(Arc::clone(&app), false).await.unwrap();
+        assert_eq!(app.workspace.lock().await.frame_serial, 1);
+    }
+    #[tokio::test]
+    async fn identical_rotating_items_acknowledge_without_an_output_operation() {
+        let mut layout = rotating_scene();
+        let members = &mut layout.components[0].rotation.as_mut().unwrap().members;
+        let mut same = members[0].clone();
+        same.id = "world".into();
+        members[1] = same;
+        let (app, _, _dir) = app(layout, RefreshSettings::default(), empty(), START);
+        app.workspace.lock().await.rotations.age_for_test(301);
+        tick(Arc::clone(&app), false).await.unwrap();
+        settle(&app).await;
+        let ws = app.workspace.lock().await;
+        assert_eq!(shown(&ws), "world");
+        assert_eq!(ws.frame_serial, 0);
+        assert!(!ws.rotations.due(&ws.saved.layout, Instant::now()));
+    }
+    #[tokio::test]
+    async fn quiet_rotation_keeps_last_acknowledged_item_and_does_not_replay_missed_turns() {
+        let (app, clock, _dir) = app(rotating_scene(), quiet(), empty(), START);
+        app.workspace.lock().await.rotations.age_for_test(900);
+        clock.store(START + 60, Ordering::SeqCst);
+        tick(Arc::clone(&app), false).await.unwrap();
+        assert_eq!(shown(&*app.workspace.lock().await), "local");
+        assert!(app.workspace.lock().await.pending);
+        clock.store(START + 240, Ordering::SeqCst);
+        tick(Arc::clone(&app), false).await.unwrap();
+        settle(&app).await;
+        let ws = app.workspace.lock().await;
+        assert_eq!(shown(&ws), "world");
+        assert_eq!(ws.frame_serial, 1);
+        assert!(!ws.rotations.due(&ws.saved.layout, Instant::now()));
+    }
+    #[tokio::test]
+    async fn failed_rotation_keeps_its_previous_item_until_recovery_is_acknowledged() {
+        let (app, _, _dir) = app(rotating_scene(), RefreshSettings::default(), empty(), START);
+        let before = app.workspace.lock().await.png.clone();
+        {
+            let mut ws = app.workspace.lock().await;
+            ws.rotations.age_for_test(301);
+            ws.controller.fail_next = true;
+        }
+        tick(Arc::clone(&app), false).await.unwrap();
+        wait_for(&app, |ws| ws.controller.failures == 1).await;
+        {
+            let ws = app.workspace.lock().await;
+            assert_eq!(shown(&ws), "local");
+            assert_eq!(ws.png, before);
+        }
+        settle(&app).await;
+        let ws = app.workspace.lock().await;
+        assert_eq!(shown(&ws), "world");
+        assert_eq!(ws.frame_serial, 1);
+        assert!(!ws.rotations.due(&ws.saved.layout, Instant::now()));
     }
 }

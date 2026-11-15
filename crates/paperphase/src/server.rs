@@ -35,6 +35,7 @@ mod designs;
 mod fetching;
 mod google;
 mod reference;
+mod rotation;
 mod scheduling;
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -66,6 +67,7 @@ struct Workspace {
     last_error: Option<String>,
     display_frame_available: bool,
     display_warning: Option<String>,
+    rotations: rotation::Runtime,
 }
 
 struct App {
@@ -392,6 +394,7 @@ pub fn run(
             .collect();
         let mut workspace = Workspace::new(saved, png, frame.frame, &initial_data, initial_now)?;
         if driver.is_physical() {
+            workspace.rotations = rotation::Runtime::default();
             workspace.controller.profile = driver.profile();
             workspace.controller.baseline_known = false;
             workspace.controller.retry_at =
@@ -658,6 +661,7 @@ async fn state(State(app): State<Shared>) -> Json<serde_json::Value> {
     Json(json!({
         "revision": ws.saved.revision, "layout": ws.saved.layout, "refresh_settings": ws.saved.refresh_settings,
         "displayed_revision": ws.displayed_revision,
+        "rotation_epoch": ws.rotations.epoch(), "rotations": ws.rotations.status(&ws.saved.layout, tokio::time::Instant::now()),
         "phase": ws.phase(), "pending": ws.pending, "next_update_at": ws.next_due,
         "frame_id": format!("{}-{}", app.boot_id, ws.frame_serial), "clock_now": (app.clock)(), "clock_fixed": app.clock_fixed,
         "last_error": ws.last_error,
@@ -702,10 +706,21 @@ struct Preview {
     frame: Frame,
     #[serde(skip)]
     next_due: Option<u64>,
+    #[serde(skip)]
+    effective_layout: Layout,
 }
 
 async fn render(app: Shared, layout: Layout, at: u64) -> ApiResult<Preview> {
-    layout.validate().map_err(invalid)?;
+    render_selected(app, layout, at, std::collections::BTreeMap::new()).await
+}
+
+async fn render_selected(
+    app: Shared,
+    layout: Layout,
+    at: u64,
+    selected: std::collections::BTreeMap<String, String>,
+) -> ApiResult<Preview> {
+    let layout = layout.resolve_rotations(&selected).map_err(invalid)?;
     let (data, data_epoch) = {
         let store = app.connections.lock().await;
         (
@@ -734,6 +749,7 @@ async fn render(app: Shared, layout: Layout, at: u64) -> ApiResult<Preview> {
             frame: rendered.frame,
             data_epoch,
             next_due,
+            effective_layout: layout,
         })
     })
     .await
@@ -742,10 +758,29 @@ async fn render(app: Shared, layout: Layout, at: u64) -> ApiResult<Preview> {
 
 async fn preview(
     State(app): State<Shared>,
-    Json(layout): Json<Layout>,
+    Json(request): Json<PreviewRequest>,
 ) -> ApiResult<Json<Preview>> {
     let at = (app.clock)();
-    render(app, layout, at).await.map(Json)
+    match request {
+        PreviewRequest::Layout(layout) => render(app, layout, at).await,
+        PreviewRequest::Selected(request) => {
+            render_selected(app, request.layout, at, request.rotation_selection).await
+        }
+    }
+    .map(Json)
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum PreviewRequest {
+    Layout(Layout),
+    Selected(SelectedPreview),
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SelectedPreview {
+    layout: Layout,
+    rotation_selection: std::collections::BTreeMap<String, String>,
 }
 
 #[derive(Deserialize)]
@@ -777,6 +812,12 @@ async fn save(
         .refresh_settings
         .unwrap_or_else(|| ws.saved.refresh_settings.clone());
     refresh_settings.validate().map_err(invalid)?;
+    let revision = ws
+        .saved
+        .revision
+        .checked_add(1)
+        .ok_or_else(|| internal("revision exhausted"))?;
+    drop(ws);
     let prepared = scheduling::prepare(
         Arc::clone(&app),
         &request.layout,
@@ -786,11 +827,7 @@ async fn save(
     .await?;
     let saved = Saved {
         schema_version: 1,
-        revision: ws
-            .saved
-            .revision
-            .checked_add(1)
-            .ok_or_else(|| internal("revision exhausted"))?,
+        revision,
         layout: request.layout,
         refresh_settings,
     };
@@ -799,7 +836,6 @@ async fn save(
     // Keep ownership of the transaction in a spawned task: disconnecting the
     // browser must not cancel persistence between disk commit and memory commit.
     let app_commit = Arc::clone(&app);
-    drop(ws);
     tokio::spawn(async move {
         let mut ws = app_commit.workspace.lock().await;
         if ws.saved.revision != saved.revision - 1 {

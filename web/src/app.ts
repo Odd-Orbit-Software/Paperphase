@@ -1,12 +1,14 @@
 import type { Rect, Binding, ClockSpec, Block, Component, Layout, BlockPlacement, IconPack } from './model';
 import { sourceBinding } from './model';
+import { fitsArea, validRotation, localItem, rotatingArea } from './rotation';
 import { bindDesign, compactDesign, designFits, designGeometryValid, friendlyField, builtinDesigns, type SavedDesign, type DesignLibrary } from './designs';
 import { contentBounds, validElement, validElements, positioned, freeElementRect } from './elements';
 type Policy = { min_interval_ms: number; full_after_partials: number; full_after_secs: number; max_partial_area_percent: number };
 type Operation = { mode: 'partial' | 'full'; reason: string; region: Rect; revision: number };
 type RefreshStatus = { profile: { id: string; partial?: boolean; scheduled_full?: boolean; max_partials: number; max_full_age_secs: number; max_partial_area_percent: number; min_interval_ms: number }; active: Operation | null; last_completed: Operation | null; partial_count: number; baseline_known: boolean; failures: number; wait_ms: number };
 type RefreshSettings = { policy: Policy; quiet_hours: { timezone: string; start: string; end: string } | null };
-type Workspace = { mode?:'simulated'|'physical'; display_frame_available?:boolean; display_warning?:string|null; clock_fixed: boolean; refresh: RefreshStatus; last_error: string | null; revision: number; displayed_revision: number; data_revision: number; frame_id: string; clock_now: number; pending: boolean; phase: string; layout: Layout; refresh_settings: RefreshSettings; addresses: string[]; connector_execution: boolean; fixture_data: boolean };
+type RotationStatus = { component_id:string; shown_member:string|null; candidate_member:string; paused:boolean; count:number; next_in_ms:number|null };
+type Workspace = { rotation_epoch?:number; rotations?:RotationStatus[]; mode?:'simulated'|'physical'; display_frame_available?:boolean; display_warning?:string|null; clock_fixed: boolean; refresh: RefreshStatus; last_error: string | null; revision: number; displayed_revision: number; data_revision: number; frame_id: string; clock_now: number; pending: boolean; phase: string; layout: Layout; refresh_settings: RefreshSettings; addresses: string[]; connector_execution: boolean; fixture_data: boolean };
 type EditState = { layout: Layout; settings: RefreshSettings; design?: {source?:string;automatic:boolean;fixedWidth?:number;startingPoint?:string} };
 type Dataset = { connection_id: string; connection_label?: string; dataset_id: string; fields: { id: string; kind: string; unit?: string }[]; rows: number; stale: boolean };
 type Report = { id: string; state: string; warnings: string[]; blocks: BlockPlacement[] };
@@ -67,7 +69,10 @@ let googleView = false;
 let choosingSource = false;
 let pendingCalendar = false;
 type RetainedEditor = { state: EditState; editing: boolean; viewingDraft: boolean; selected: string | null; contentMode: boolean; selectedElement: string | null; undo: EditState[]; redo: EditState[]; image: string; reports: Report[]; conflict: boolean; page: Page; focusId?: string; focusLabel?: string };
-type DesignSession = { previous: RetainedEditor; connector: string; source?: string; id?: string; baseline: Component; original?: string; busy: boolean; automatic: boolean; fixedWidth?: number; ready: boolean; error: string; needsFit: boolean; libraryConflict?: boolean; startingPoint?: string; recordFit?: EditState };
+type RotationTarget = { area:string; member?:string; moving?:string };
+const rotationPreview = new Map<string,string>();
+let rotationPicker: string | undefined;
+type DesignSession = { rotationTarget?:RotationTarget; previous: RetainedEditor; connector: string; source?: string; id?: string; baseline: Component; original?: string; busy: boolean; automatic: boolean; fixedWidth?: number; ready: boolean; error: string; needsFit: boolean; libraryConflict?: boolean; startingPoint?: string; recordFit?: EditState };
 let designSession: DesignSession | undefined;
 let designLibrary: DesignLibrary = {schema_version:1,revision:0,designs:[]};
 let designLibraryLoaded = false;
@@ -141,7 +146,7 @@ async function confirmAction(title: string, description: string, accept: string)
   dialog.returnValue = ''; dialog.showModal();
   return new Promise(resolve => dialog.addEventListener('close', () => resolve(dialog.returnValue === 'confirm'), { once: true }));
 }
-function closePicker() { $('add-picker').hidden = true; button('add-open').setAttribute('aria-expanded', 'false'); }
+function closePicker() { rotationPicker=undefined; document.getElementById('rotation-add-item')?.setAttribute('aria-expanded','false'); $('add-picker').hidden = true; button('add-open').setAttribute('aria-expanded', 'false'); }
 function showPage(page: Page) {
   if (designSession && page !== 'designer') { notice('Finish this design or choose Close designer before leaving.'); return false; }
   if (currentPage === 'sources' && page !== 'sources' && (connectionBusy || connectionDirty())) {
@@ -205,12 +210,13 @@ function validRect(rect: Rect, id: string, layout = draft): boolean {
   return Object.values(rect).every(Number.isInteger)
     && rect.x >= 0 && rect.y >= 0 && rect.width >= 32 && rect.height >= 32
     && rect.width > padding && rect.height > padding + status
+    && (!target?.rotation || target.rotation.members.every(item => item.rect.width <= rect.width && item.rect.height <= rect.height))
     && rect.x + rect.width <= layout.display.width && rect.y + rect.height <= layout.display.height
     && !layout.components.some(c => c.id !== id && rect.x < c.rect.x + c.rect.width && rect.x + rect.width > c.rect.x && rect.y < c.rect.y + c.rect.height && rect.y + rect.height > c.rect.y);
 }
 function locallyValid(layout: Layout) {
   if (designSession) return layout.components.length === 1 && designGeometryValid(layout.components[0]!);
-  return layout.components.length <= 64 && layout.components.every(c => validRect(c.rect, c.id, layout) && validElements(c));
+  return layout.components.length <= 64 && layout.components.every(c => validRect(c.rect, c.id, layout) && validRotation(c));
 }
 function remember(before: EditState, key = '') {
   const now = Date.now();
@@ -297,7 +303,7 @@ async function preview() {
       }
     }
     const previewLayout=clone(draft); if(designSession&&!previewLayout.components[0]?.label?.trim())delete previewLayout.components[0]!.label;
-    const result = await api<Preview>('/api/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(previewLayout), signal: previewAbort.signal });
+    const result = await api<Preview>('/api/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(previewLayout.components.some(c=>c.rotation) ? {layout:previewLayout,rotation_selection:previewSelection(previewLayout)} : previewLayout), signal: previewAbort.signal });
     if (sequence !== previewSequence || !editing) return;
     draftImage = `data:image/png;base64,${result.png_base64}`;
     reports = result.components;
@@ -425,6 +431,8 @@ function renderRuntimeWarning() {
 
 function renderTemplates() {
   const parent = $('plugin-templates'); parent.replaceChildren();
+  $('add-tools').hidden=!!rotationPicker; $('add-picker').querySelector<HTMLElement>('.design-picker-actions')!.hidden=!!rotationPicker;
+  if(rotationPicker) { renderRotationPicker(parent); return; }
   parent.hidden = !active() || editingContents();
   if (parent.hidden) return;
   const available = connectionStore.connections.flatMap(connection => {
@@ -600,6 +608,154 @@ function section(title: string, parent: HTMLElement) {
   const result = node('section', 'property-section'); result.append(node('h3', '', title)); parent.append(result); return result;
 }
 function renderInspector() { retainFocus($('inspector-body'), buildInspector); }
+function previewSelection(layout:Layout):Record<string,string> {
+  return Object.fromEntries(layout.components.filter(c=>c.rotation).map(area=>{
+    const members=area.rotation!.members;
+    const choices=[rotationPreview.get(area.id), saved.rotations?.find(r=>r.component_id===area.id)?.shown_member,area.rotation!.paused_member];
+    return [area.id,choices.find(id=>members.some(item=>item.id===id))??members[0]!.id];
+  }));
+}
+function previewRotation(area:Component, member:string) {
+  rotationPreview.set(area.id,member); queuePreview(); renderInspector();
+}
+function rotationStatusText(area:Component):string {
+  const status=saved.rotations?.find(r=>r.component_id===area.id);
+  if(!status)return 'Save to start showing these items in turns.';
+  const actual=saved.layout.components.find(c=>c.id===area.id)?.rotation;
+  const shown=actual?.members.find(item=>item.id===status.shown_member);
+  if(!shown)return 'Waiting for the first item to be shown.';
+  const prefix=`On display: ${name(shown)}.`;
+  if(status.candidate_member!==status.shown_member)return `${prefix} Next item is queued; display limits and quiet hours apply.`;
+  if(status.paused)return `${prefix} Rotation is paused.`;
+  if(status.count<2)return `${prefix} Add another item to start rotation.`;
+  return `${prefix} Next in about ${Math.max(1,Math.ceil((status.next_in_ms??0)/60000))} min, when the display is ready.`;
+}
+function updateRotationStatus() {
+  for(const el of document.querySelectorAll<HTMLElement>('[data-rotation-status]')) {
+    const area=draft.components.find(c=>c.id===el.dataset.rotationStatus);
+    if(area)el.textContent=rotationStatusText(area);
+  }
+}
+function renderRotationInspector(area:Component,parent:HTMLElement) {
+  const r=area.rotation!; const id=area.id;
+  const update=(fn:(r:NonNullable<Component['rotation']>)=>void)=>change(layout=>fn(layout.components.find(c=>c.id===id)!.rotation!));
+  const controls=section('Show in turns',parent); controls.dataset.rotationControls='true';
+  controls.classList.add('rotation-settings');
+  controls.append(node('p','render-report','One shared area. Other components stay in place.'));
+  const settings=node('details','rotation-timing'); settings.id=`rotation-timing-${id}`; settings.append(node('summary','',r.paused?'Timing & pause · Paused':`Timing & pause · ${r.interval_secs%60===0?r.interval_secs/60+' min':r.interval_secs+' sec'} per item`));controls.append(settings);
+  const timing=node('div','field-grid');settings.append(timing);
+  const minutes=r.interval_secs%60===0;
+  const unit=minutes?60:1;
+  numeric(minutes?'Minutes per item':'Seconds per item',r.interval_secs/unit,minutes?1:5,minutes?1440:86400,timing,value=>update(r=>{r.interval_secs=value*unit;}));
+  const pause=node('input'); pause.type='checkbox';pause.checked=r.paused;
+  const pauseLabel=node('label','check');pauseLabel.append(pause,document.createTextNode('Pause rotation')); settings.append(pauseLabel);
+  pause.onchange=()=>update(r=>{r.paused=pause.checked;if(r.paused)r.paused_member=previewSelection(draft)[id];});
+  if(r.paused)select('Keep showing',r.paused_member??r.members[0]!.id,r.members.map(item=>[item.id,name(item)]),settings,value=>update(r=>{r.paused_member=value;}));
+  settings.append(node('p','render-report','Time starts after an item is shown. Quiet hours and screen cleanup can delay a change.'));
+  const live=node('p','rotation-live',rotationStatusText(area));live.dataset.rotationStatus=id;controls.append(live);
+  const preview=section('Items in order',parent);preview.dataset.rotationControls='true';
+  const add=action('Add item','Add item to rotation',preview,()=>openRotationPicker(id),r.members.length>=8);add.id='rotation-add-item';add.setAttribute('aria-expanded',String(rotationPicker===id));add.setAttribute('aria-controls','add-picker');
+  const heading=preview.querySelector('h3')!;const headingRow=node('div','rotation-heading');heading.replaceWith(headingRow);headingRow.append(heading,add);
+  const shown=previewSelection(draft)[id]; const index=r.members.findIndex(item=>item.id===shown);
+  const bar=node('div','rotation-preview-controls');preview.append(bar);
+  action('Previous','Preview previous item',bar,()=>previewRotation(area,r.members[(index+r.members.length-1)%r.members.length]!.id),r.members.length<2);
+  bar.append(node('span','',`${index+1} of ${r.members.length}`));
+  action('Next','Preview next item',bar,()=>previewRotation(area,r.members[(index+1)%r.members.length]!.id),r.members.length<2);
+  preview.append(node('p','render-report','Preview only. Previous and Next never change your display.'));
+  const list=node('ol','rotation-items');preview.append(list);
+  r.members.forEach((item,i)=>{
+    const row=node('li',`rotation-item ${item.id===shown?'previewing':''}`);row.dataset.rotationItem=item.id;
+    row.append(node('strong','',name(item)),node('small','',`${item.rect.width} × ${item.rect.height} px${item.id===shown?' · Previewing':''}`));
+    const actions=node('div','rotation-item-actions');row.append(actions);
+    action('Preview',`Preview ${name(item)}`,actions,()=>previewRotation(area,item.id));
+    action('Edit design',`Edit design for ${name(item)}`,actions,()=>{void designExisting(item,{area:id,member:item.id});});
+    const ordering=node('div','rotation-order-actions');row.append(ordering);
+    action('','Move item up',ordering,()=>update(r=>{[r.members[i-1],r.members[i]]=[r.members[i]!,r.members[i-1]!];}),i===0).append(icon('up'));
+    action('','Move item down',ordering,()=>update(r=>{[r.members[i+1],r.members[i]]=[r.members[i]!,r.members[i+1]!];}),i===r.members.length-1).append(icon('down'));
+    action('Remove',`Remove ${name(item)} from rotation`,ordering,()=>update(r=>{r.members=r.members.filter(m=>m.id!==item.id);if(r.paused_member===item.id)r.paused_member=r.members[0]!.id;}),r.members.length===1);
+    list.append(row);
+  });
+
+  preview.append(node('p','render-report',r.members.length>=8?'This area has the maximum of 8 items.':r.members.length===1?'Add a second item to start rotation.':'Save to apply item, order and timing edits.'));
+  if(r.members.length===1)action('Keep as single component','Keep as single component',preview,()=>change(layout=>{const i=layout.components.findIndex(c=>c.id===id);const plain=clone(r.members[0]!);plain.id=id;plain.rect.x=area.rect.x;plain.rect.y=area.rect.y;layout.components[i]=plain;})).className='wide-button';
+}
+function openRotationPicker(id:string) {
+  rotationPicker=id; $('add-picker').hidden=false; document.getElementById('rotation-add-item')?.setAttribute('aria-expanded','true');
+  $('add-title').textContent='Add a rotating item'; $('add-target').textContent='Move a component here, use a saved design, or create an item.';
+  $('placement-note').textContent='Items keep their design and size. Your other components stay in place.';
+  renderTemplates();button('add-close').focus({preventScroll:true});
+}
+function addRotationCopy(areaId:string,item:Component,moving?:string,resize=false) {
+  const area=draft.components.find(c=>c.id===areaId);if(!area?.rotation||area.rotation.members.length>=8)return;
+  const copy=localItem(item,identifier('item'));
+  change(layout=>{
+    if(moving)layout.components=layout.components.filter(c=>c.id!==moving);
+    const target=layout.components.find(c=>c.id===areaId)!;
+    if(resize){target.rect.width=Math.max(target.rect.width,copy.rect.width);target.rect.height=Math.max(target.rect.height,copy.rect.height);}
+    target.rotation!.members.push(copy);
+  });
+  if(draft.components.find(c=>c.id===areaId)?.rotation?.members.some(c=>c.id===copy.id)){
+    rotationPreview.set(areaId,copy.id);closePicker();render();queuePreview();notice('Item added to your draft. Save to update the display.');
+  }
+}
+function renderRotationPicker(parent:HTMLElement) {
+  const area=draft.components.find(c=>c.id===rotationPicker);if(!area?.rotation){closePicker();return;}
+  parent.hidden=false;
+  const choice=(title:string,item:Component,connector:string,source?:string,moving?:string)=>{
+    const row=node('div','rotation-choice');row.append(node('strong','',title),node('small','',`${item.rect.width} × ${item.rect.height} px`));
+    const actions=node('div','rotation-item-actions');row.append(actions);
+    const fits=fitsArea(item,area);
+    if(fits)action(moving?'Move & add':'Add item',`${moving?'Move':'Add'} ${title} to rotation`,actions,()=>addRotationCopy(area.id,item,moving));
+    else {
+      row.append(node('p','render-report','Larger than this area. Edit to fit, or give the area more room.'));
+      const next=clone(draft);next.components=next.components.filter(c=>c.id!==moving);
+      const target=next.components.find(c=>c.id===area.id)!;
+      const rect={...target.rect,width:Math.max(target.rect.width,item.rect.width),height:Math.max(target.rect.height,item.rect.height)};
+      if(validRect(rect,area.id,next))action('Resize area & add',`Resize area and add ${title}`,actions,()=>addRotationCopy(area.id,item,moving,true));
+    }
+    action(fits?'Customise first':'Edit to fit',`Customise ${title} for rotation`,actions,()=>{
+      if(moving){void designExisting(item,{area:area.id,moving});}
+      else startDesigner(connector,source,item,undefined,undefined,{area:area.id});
+    });
+    parent.append(row);
+  };
+  parent.append(node('h3','','On your display'));
+  const available=draft.components.filter(c=>!c.rotation&&c.id!==area.id);
+  for(const item of available)choice(name(item),item,builtinDesigns,undefined,item.id);
+  if(!available.length)parent.append(node('p','','No other components to move here.'));
+  parent.append(node('h3','','Saved designs'));
+  for(const design of designLibrary.designs){
+    const sources=connectionStore.connections.filter(c=>c.connector_id===design.connector_id);
+    if(design.connector_id===builtinDesigns)choice(design.name,design.component,builtinDesigns);
+    else if(sources.length){
+      const group=node('div','rotation-source-choice');parent.append(group);
+      let source=sources[0]!.id;
+      const sourceInput=select(`Source for ${design.name}`,source,sources.map(c=>[c.id,c.label]),group,value=>{source=value;});
+      const options=node('div');group.append(options);
+      const addOptions=()=>{options.replaceChildren();const oldCount=parent.children.length;choice(design.name,bindDesign(design.component,source),design.connector_id,source);while(parent.children.length>oldCount)options.append(parent.lastElementChild!);};
+      sourceInput.onchange=event=>{source=(event.target as HTMLSelectElement).value;addOptions();};addOptions();
+    }else parent.append(node('p','',`${design.name}: add a ${pluginLabel(design.connector_id)} source in Data sources first.`));
+  }
+  if(!designLibrary.designs.length)parent.append(node('p','','No saved designs yet. Create an item below.'));
+  parent.append(node('h3','','Create an item'));
+  action('Text, time or a blank design','Create a rotating item',parent,()=>startDesigner(builtinDesigns,undefined,undefined,undefined,undefined,{area:area.id})).className='wide-button';
+  for(const source of connectionStore.connections)action(source.label,`Create rotating item from ${source.label}`,parent,()=>startDesigner(source.connector_id,source.id,undefined,undefined,undefined,{area:area.id})).className='wide-button';
+}
+function placeRotationDesign(session:DesignSession,item:Component) {
+  const target=session.rotationTarget!;
+  const area=session.previous.state.layout.components.find(c=>c.id===target.area);
+  if(!area?.rotation||!fitsArea(item,area)||(!target.member&&area.rotation.members.length>=8)){notice('This item must fit the rotating area before applying. Your design is kept.',true);return;}
+  const copy=localItem(item,target.member??identifier('item'));
+  const previous=session.previous;clearDesignerChrome();restoreEditor(previous);showPage('display');
+  selected=target.area;contentMode=false;selectedElement=null;viewingDraft=true;
+  change(layout=>{
+    if(target.moving)layout.components=layout.components.filter(c=>c.id!==target.moving);
+    const r=layout.components.find(c=>c.id===target.area)!.rotation!;
+    if(target.member)r.members[r.members.findIndex(c=>c.id===target.member)]=copy;else r.members.push(copy);
+  });
+  rotationPreview.set(target.area,copy.id);render();queuePreview();notice('Item design applied to your draft. Save to update the display.');
+}
+
 function buildInspector() {
   const inspector = $('inspector-body');
   const inspected = editingContents() ? `${selected}/${selectedElement}` : selected;
@@ -640,6 +796,11 @@ function buildInspector() {
     numeric('Item gap',c.gap,0,64,fields,value=>updateComponent(component=>{component.gap=value;}));
     const border=node('input');border.type='checkbox';border.checked=c.border;border.onchange=()=>updateComponent(component=>{component.border=border.checked;});
     const borderLabel=node('label','check');borderLabel.append(border,document.createTextNode('Draw component border'));spacing.append(borderLabel);
+    if(designSession.rotationTarget){
+      const refresh=section('Display updates',stylePane);
+      select('Update method',c.refresh_hint??'automatic',[['automatic','Automatic (recommended)'],['partial','Partial when possible'],['full','Full screen']],refresh,value=>updateComponent(c=>{c.refresh_hint=value as Component['refresh_hint'];}));
+      refresh.append(node('p','render-report','This item and its shared area use the stronger refresh preference. Screen cleanup and display limits always take priority.'));
+    }
     if(!element()) panes.get('content')!.append(node('p','property-section subtle','Select an item on the preview or in the strip below to change its content.'));
   }
   if (!editingContents()) {
@@ -648,22 +809,31 @@ function buildInspector() {
     for (const [key, title, min, max] of [['x', 'X', 0, draft.display.width - c.rect.width], ['y', 'Y', 0, draft.display.height - c.rect.height], ['width', 'Width', 32, draft.display.width], ['height', 'Height', 32, draft.display.height]] as const) {
       numeric(title, c.rect[key], min, max, geometry, n => updateComponent(c => { c.rect[key] = n; }));
     }
+    if (!c.rotation) {
     const appearance = section('Spacing & border', stylePane);
     const spacing = node('div', 'field-grid'); appearance.append(spacing);
     numeric('Padding', c.padding, 0, 64, spacing, n => updateComponent(c => { c.padding = n; }));
     numeric('Block gap', c.gap, 0, 64, spacing, n => updateComponent(c => { c.gap = n; }));
     const borderLabel = node('label', 'check'); const border = node('input'); border.type = 'checkbox'; border.checked = c.border;
     border.onchange = () => updateComponent(c => { c.border = border.checked; }); borderLabel.append(border, document.createTextNode('Draw component border')); appearance.append(borderLabel);
+    }
     const refresh = section('Display updates', stylePane);
     select('Update method', c.refresh_hint ?? 'automatic', [['automatic', 'Automatic (recommended)'], ['partial', 'Partial when possible'], ['full', 'Full screen']], refresh, value => updateComponent(c => { c.refresh_hint = value as Component['refresh_hint']; }));
     refresh.append(node('p', 'render-report', 'This preference applies when this component changes. Screen-wide cleanup and display limits always take priority.'));
     if (saved.mode === 'physical' && !saved.refresh.profile.partial) refresh.append(node('p', 'render-report', 'This display currently uses full refreshes. Your preference is saved for a display that supports partial updates.'));
+    if (!c.rotation) {
     const layout = section('Element layout', positionPane);
     select('Content layout', c.content_layout ?? 'flow', [['flow', 'Vertical flow'], ['positioned', 'Positioned elements']], layout, value => { if (value === 'flow') useFlow(); else void enterContents(); });
     layout.append(node('p', 'render-report', 'Free positioning converts the current flow into individual element boxes. You can undo this change.'));
     action(c.content_layout === 'positioned' ? 'Edit individual elements' : 'Position elements freely', c.content_layout === 'positioned' ? 'Edit individual elements' : 'Position elements freely', layout, () => { void enterContents(); }, converting).className = 'wide-button';
   }
+    }
+  if (c.rotation) {
+    const identity=section('Area name',stylePane); textField('Area name',c.label??'',identity,value=>updateComponent(c=>{c.label=value;},`${id}.label`,false));
+    renderRotationInspector(c,panes.get('content')!); return;
+  }
   const content = section(editingContents() ? 'Selected element' : 'Component content', panes.get('content')!);
+  if (!editingContents()) action('Show in turns','Show this component in turns with others',content,()=>{change(layout=>{layout.components[layout.components.findIndex(item=>item.id===id)]=rotatingArea(c,identifier('item'));});notice('This area keeps its space. Add another item to start showing them in turns.');}).className='wide-button';
   if (!editingContents()) action('Design this component', 'Design this component', content, () => { void designExisting(c); }).className='wide-button';
   if (!editingContents()) { const identity = section('Component name', stylePane); textField('Component name', c.label ?? '', identity, value => updateComponent(c => { c.label = value.trim() ? value : undefined; }, `${id}.label`, false), false, 96); }
   c.blocks.forEach((block, index) => {
@@ -955,9 +1125,10 @@ button('device-redo').onclick = () => history('redo');
 button('display-open').onclick = () => { if (saved) showPage('display'); };
 button('about-open').onclick = () => { if (saved) showPage('about'); };
 button('about-close').onclick = () => showPage('display');
-button('add-open').onclick = () => { const open = $('add-picker').hidden; $('add-picker').hidden = !open; button('add-open').setAttribute('aria-expanded', String(open)); if (open) { renderTemplates(); button('add-text').focus(); } };
-button('add-close').onclick = () => { closePicker(); button('add-open').focus(); };
-document.addEventListener('pointerdown', event => { if (!(event.target as HTMLElement).closest('#add-picker, #add-open')) closePicker(); });
+button('add-open').onclick = () => { rotationPicker=undefined; const open = $('add-picker').hidden; $('add-picker').hidden = !open; button('add-open').setAttribute('aria-expanded', String(open)); if (open) { renderTemplates(); button('add-text').focus(); } };
+function dismissPicker(){const target=rotationPicker?'rotation-add-item':'add-open';closePicker();document.getElementById(target)?.focus({preventScroll:true});}
+button('add-close').onclick = dismissPicker;
+document.addEventListener('pointerdown', event => { if (!(event.target as HTMLElement).closest('#add-picker, #add-open, [data-rotation-controls]')) closePicker(); });
 button('exit-content').onclick = leaveContents;
 button('use-flow').onclick = useFlow;
 button('refresh').onclick = async () => {
@@ -979,7 +1150,7 @@ window.addEventListener('beforeunload', event => { if (dirty() || connectionDirt
 document.addEventListener('keydown', event => {
   if (document.querySelector(':popover-open')) return;
   if ($<HTMLDialogElement>('confirm-dialog').open || currentPage === 'sources' || currentPage === 'about' || currentPage === 'designs') return;
-  if (event.key === 'Escape' && !$('add-picker').hidden) { event.preventDefault(); closePicker(); button('add-open').focus(); return; }
+  if (event.key === 'Escape' && !$('add-picker').hidden) { event.preventDefault(); dismissPicker(); return; }
   const typing = (event.target as HTMLElement).closest('input,textarea,select,[contenteditable=true]');
   const mod = event.ctrlKey || event.metaKey;
   if (mod && event.key.toLowerCase() === 's') { event.preventDefault(); void save(); return; }
@@ -996,6 +1167,7 @@ document.addEventListener('keydown', event => {
   const c = component();
   if (!c || (currentPage !== 'display' && currentPage !== 'designer')) return;
   if (event.key === 'Delete' || event.key === 'Backspace') {
+    if ((event.target as HTMLElement).closest('[data-rotation-controls]')) return;
     event.preventDefault();
     if (editingContents()) {
       if (selectedElement && c.blocks.length > 1) { const id = selectedElement; change(l => { const target = l.components.find(component => component.id === c.id)!; target.blocks = target.blocks.filter(block => block.id !== id); }); selectedElement = null; render(); }
@@ -1058,9 +1230,12 @@ async function poll() {
       if (editing && viewingDraft) queuePreview();
       if (changedSchema && active() && !document.activeElement?.closest('input,textarea,select')) renderInspector();
     }
+    const rotationChanged=current.rotation_epoch!==saved.rotation_epoch;
+    saved.rotation_epoch=current.rotation_epoch; saved.rotations=current.rotations; updateRotationStatus();
+    if(rotationChanged&&editing&&viewingDraft&&!designSession)queuePreview();
     saved.mode=current.mode;saved.display_frame_available=current.display_frame_available;saved.display_warning=current.display_warning;
     if (designSession) { const minute=Math.floor(current.clock_now/60); if(minute!==draftMinute&&component()?.blocks.some(block=>block.source.kind==='clock')){draftMinute=minute;queuePreview();} connected=true; saved.phase=current.phase; saved.refresh=current.refresh; saved.clock_now=current.clock_now; saved.data_revision=current.data_revision; updateStatus(); return; }
-    const changed = !connected || current.revision !== saved.revision || current.frame_id !== saved.frame_id || current.displayed_revision !== saved.displayed_revision || current.phase !== saved.phase;
+    const changed = rotationChanged || !connected || current.revision !== saved.revision || current.frame_id !== saved.frame_id || current.displayed_revision !== saved.displayed_revision || current.phase !== saved.phase;
     connected = true;
     if (editing) {
       if (current.revision !== saved.revision && !conflict) { conflict = true; notice('A newer layout was saved in another tab. Your draft is retained. Discard to load the newer layout.', true); }
@@ -1589,7 +1764,7 @@ function renderDesignLibrary() {
     }); remove.classList.add('danger'); list.append(row);
   }
 }
-function startDesigner(connector: string, source?: string, componentCopy?: Component, id?: string, original?: string) {
+function startDesigner(connector: string, source?: string, componentCopy?: Component, id?: string, original?: string, rotationTarget?:RotationTarget) {
   if (!saved || designSession || saving) return;
   if (connectionDraft) { connectionNotice('Save or discard the connection form before designing a component.'); return; }
   const previous=retainEditor(); closePicker();
@@ -1597,7 +1772,7 @@ function startDesigner(connector: string, source?: string, componentCopy?: Compo
   const c=componentCopy ? bindDesign(componentCopy,connection) : {id:identifier('design'),label:'New design',rect:{x:0,y:0,width:32,height:32},padding:4,gap:2,border:false,content_layout:'flow' as const,blocks:[]};
   if (componentCopy && original) { c.blocks=clone(componentCopy.blocks); c.rect.x=0; c.rect.y=0; }
   c.label ||= componentCopy?name(componentCopy):'New design';
-  designSession={previous,connector,source:connection,id,baseline:clone(c),original,busy:false,automatic:!componentCopy,fixedWidth:undefined,ready:false,error:'',needsFit:true,startingPoint:componentCopy&&!original&&!id?connectorDefinitions.find(plugin=>plugin.id===connector)?.templates?.find(template=>equal(template.component.blocks.map(block=>block.id),componentCopy.blocks.map(block=>block.id)))?.id:undefined};
+  designSession={rotationTarget,previous,connector,source:connection,id,baseline:clone(c),original,busy:false,automatic:!componentCopy,fixedWidth:undefined,ready:false,error:'',needsFit:true,startingPoint:componentCopy&&!original&&!id?connectorDefinitions.find(plugin=>plugin.id===connector)?.templates?.find(template=>equal(template.component.blocks.map(block=>block.id),componentCopy.blocks.map(block=>block.id)))?.id:undefined};
   draft={schema_version:1,display:{id:'component-design',width:c.rect.width,height:c.rect.height},components:[c]};
   selected=c.id; selectedElement=c.blocks[0]?.id??null; editing=true; viewingDraft=true; contentMode=true;
   undo=[]; redo=[]; reports=[]; draftImage=''; conflict=false; autoFit=true; lastInspectedId=null;
@@ -1605,13 +1780,13 @@ function startDesigner(connector: string, source?: string, componentCopy?: Compo
   $<HTMLImageElement>('frame').removeAttribute('src');
   showPage('designer'); renderDesignerControls(); render(); queuePreview(); $('design-name').focus({preventScroll:true});
 }
-async function designExisting(c: Component) {
+async function designExisting(c: Component, rotationTarget?:RotationTarget) {
   const source=c.blocks.map(block=>sourceBinding(block.source)?.connection_id).find(Boolean);
   const firstBinding=c.blocks.map(block=>sourceBinding(block.source)).find(Boolean);
   const connector=connectionStore.connections.find(connection=>connection.id===source)?.connector_id
     ?? (firstBinding ? connectorDefinitions.find(plugin=>plugin.templates?.some(template=>template.component.blocks.some(block=>sourceBinding(block.source)?.dataset_id===firstBinding.dataset_id)))?.id : undefined);
   // Existing legacy/fixture bindings stay intact even without a configured source.
-  startDesigner(connector ?? builtinDesigns,source,c,undefined,c.id);
+  startDesigner(connector ?? builtinDesigns,source,c,undefined,c.id,rotationTarget);
 }
 function renderDesignerControls() {
   const session=designSession; if (!session) return;
@@ -1647,13 +1822,15 @@ function renderDesignerState() {
   button('edit').hidden=true; button('refresh').hidden=true; button('discard').hidden=false; button('discard').textContent='Close designer';
   button('save').hidden=false; button('save').textContent='Save design'; button('save').classList.remove('primary');
   button('save').disabled=!!session.libraryConflict || session.busy || !session.ready || !c.label?.trim() || !designGeometryValid(c) || !validElements(c) || !c.blocks.length;
-  button('design-place').hidden=false; button('design-place').textContent=session.original?'Apply to layout':'Add to display';
+  button('design-place').hidden=false; button('design-place').textContent=session.rotationTarget?(session.rotationTarget.member?'Apply to item':'Add to rotation'):session.original?'Apply to layout':'Add to display';
   const nameMissing=!c.label?.trim(); const nameTooLong=new TextEncoder().encode(c.label??'').length>128;
   $('design-name-error').textContent=nameMissing?'Enter a design name before saving.':nameTooLong?'Use a shorter design name (up to 128 bytes).':'';
   $('design-name-error').hidden=!nameMissing&&!nameTooLong; $('design-name').setAttribute('aria-invalid',String(nameMissing||nameTooLong));
   button('save').disabled ||=nameTooLong;
+  const rotationArea=session.previous.state.layout.components.find(item=>item.id===session.rotationTarget?.area);
+  const outsideArea=!!rotationArea&&!fitsArea(c,rotationArea);
   const requiresSource=c.blocks.some(block=>sourceBinding(block.source));
-  button('design-place').disabled=nameMissing||nameTooLong||session.busy||!session.ready||!validElements(c)||!c.blocks.length||requiresSource&&!session.source;
+  button('design-place').disabled=outsideArea||nameMissing||nameTooLong||session.busy||!session.ready||!validElements(c)||!c.blocks.length||requiresSource&&!session.source;
   $('inspector-body').inert=session.busy;
   $('designer-controls').inert=session.busy;
   $('save-state').textContent=session.busy?'Saving design…':dirty()?'Unsaved design changes':session.id?'Design saved':'New component design';
@@ -1668,7 +1845,8 @@ function renderDesignerState() {
   button('custom-design-new').hidden=true; button('designs-open').hidden=true;
   const needed=c.rect.width*c.rect.height/(session.previous.state.layout.display.width*session.previous.state.layout.display.height)*100;
   $('design-footprint').textContent=`${c.rect.width} × ${c.rect.height} px · ${Math.max(.1,Math.round(needed*10)/10)}% of your display`;
-  $('design-feedback').textContent=session.error || (designHasOverflow()?`Clipped items: ${clippedItemNames()}. You can save this design. Use Fit to contents, or enlarge the affected items.`:requiresSource&&!session.source?'Choose a source to use live information when adding. You can save this design first.':!c.blocks.length?'Add your first item to begin.':session.ready?'Preview uses current values. Leave extra room for longer information.':'Preparing your preview…');
+  if(rotationArea)$('design-footprint').textContent+=` · Area ${rotationArea.rect.width} × ${rotationArea.rect.height} px`;
+  $('design-feedback').textContent=session.error || (outsideArea?'This item is larger than the rotating area. Reduce its width or height before applying. Your design is kept.':'') || (designHasOverflow()?`Clipped items: ${clippedItemNames()}. You can save this design. Use Fit to contents, or enlarge the affected items.`:requiresSource&&!session.source?'Choose a source to use live information when adding. You can save this design first.':!c.blocks.length?'Add your first item to begin.':session.ready?'Preview uses current values. Leave extra room for longer information.':'Preparing your preview…');
   $('design-feedback').classList.toggle('error',!!session.error);
   $('design-feedback').classList.toggle('clipping-warning',!session.error&&designHasOverflow());
   const width=$<HTMLInputElement>('design-width'); width.max=String(Math.max(session.previous.state.layout.display.width,c.rect.width)); width.min=String(Math.max(32,2*c.padding+1)); if (document.activeElement!==width) width.value=String(c.rect.width);
@@ -1713,6 +1891,7 @@ async function saveDesign() {
 }
 function placeDesign() {
   const session=designSession; const c=component(); if (!session||!c||!c.label?.trim()||!session.ready||session.busy||c.blocks.some(block=>sourceBinding(block.source))&&!session.source) return;
+  if(session.rotationTarget) { placeRotationDesign(session,c); return; }
   const layout=clone(session.previous.state.layout); const target=clone(c);
   const original=layout.components.find(component=>component.id===session.original);
   if (session.original) layout.components=layout.components.filter(component=>component.id!==session.original);

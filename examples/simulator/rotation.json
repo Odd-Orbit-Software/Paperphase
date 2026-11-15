@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "display": {"id": "rotation-example", "width": 320, "height": 160},
+  "components": [
+    {
+      "id": "news", "label": "Headlines in turn",
+      "rect": {"x": 8, "y": 8, "width": 160, "height": 120},
+      "padding": 0, "gap": 0, "blocks": [],
+      "rotation": {
+        "interval_secs": 300, "paused": false,
+        "members": [
+          {"id": "local", "label": "Local headlines", "rect": {"x": 0, "y": 0, "width": 160, "height": 120}, "padding": 8, "border": true,
+           "blocks": [{"id": "title", "font_size": 14, "source": {"kind": "literal", "text": "LOCAL · SAMPLE"}}, {"id": "story", "font_size": 18, "source": {"kind": "literal", "text": "A short local story."}}]},
+          {"id": "world", "label": "World headlines", "rect": {"x": 0, "y": 0, "width": 128, "height": 96}, "padding": 8, "border": true,
+           "blocks": [{"id": "title", "font_size": 14, "source": {"kind": "literal", "text": "WORLD · SAMPLE"}}, {"id": "story", "font_size": 18, "source": {"kind": "literal", "text": "A world story."}}]},
+          {"id": "culture", "label": "Culture headlines", "rect": {"x": 0, "y": 0, "width": 160, "height": 120}, "padding": 8, "border": true,
+           "blocks": [{"id": "title", "font_size": 14, "source": {"kind": "literal", "text": "CULTURE · SAMPLE"}}, {"id": "story", "font_size": 18, "source": {"kind": "literal", "text": "A culture story."}}]}
+        ]
+      }
+    },
+    {"id": "pinned", "label": "Pinned information", "rect": {"x": 176, "y": 8, "width": 136, "height": 96}, "padding": 8,
+     "blocks": [{"id": "text", "font_size": 16, "source": {"kind": "literal", "text": "PINNED\nAlways visible"}}]}
+  ]
+}

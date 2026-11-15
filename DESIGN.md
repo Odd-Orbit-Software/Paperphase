@@ -432,3 +432,17 @@ maker card are local attribution treatments, not Paperphase theme tokens.
 - Don't add decorative entrance animation or replace the local font stack with externally loaded fonts.
 - Don't blur or smooth the monochrome display frame; retain its pixelated rendering.
 - Don't present narrow-screen adaptations as a promise of full phone/tablet editing.
+
+### Components shown in turns
+
+Rotation extends the existing Content/Position/Style inspector. Content keeps
+an ordered item list, Preview Previous/Next and Add item together; timing and
+pause live in a compact disclosure. Preview selection affects only the browser,
+while item/order/timing edits use the existing draft, Undo, Discard and Save
+model. A live On display line distinguishes acknowledged content from preview.
+The normal picker moves existing components or copies saved designs and opens
+the established designer for new items. Incompatible sizes require editing or
+explicit shared-area resizing, without shrinking fonts or moving neighbours.
+The outer area remains one non-overlapping canvas rectangle. Picker Close and
+Escape return focus to its invoking Add item button. The established paper
+palette, typography, tokens and responsive editor layout remain authoritative.

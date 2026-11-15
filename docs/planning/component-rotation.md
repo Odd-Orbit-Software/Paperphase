@@ -1,16 +1,18 @@
 # Alternating components and making better use of display space
 
-Status: owner approved recording all six ideas below as potential screen
-improvement TODOs, to revisit after the physical display works reliably.
-Automatic full-refresh integration is now working; partial-refresh and longer
-panel qualification remain ahead of this backlog. These are not implemented
-features or a commitment to build every option immediately.
+Status: component rotation is implemented on `component-rotation`; the other
+five ideas remain potential screen-improvement TODOs. Physical rotation
+validation is tracked separately from desktop checks.
+Automatic full/partial updates and screen-wide health enforcement are now
+working. The owner selected component rotation as the next feature after
+committing `1ba8dfa`; GitHub release updates remain planned separately. Other
+ideas below remain potential follow-up work.
 Detailed UX, cadence, priority within this group and acceptance criteria will be
 settled using the real panel's refresh/ghosting measurements.
 
 ## Potential screen improvements — after physical-display integration
 
-- [ ] Alternate components in one area, with order, timing and browser preview.
+- [x] Alternate components in one area, with order, timing and browser preview.
 - [ ] Combine multiple feeds into one source-labelled headline list.
 - [ ] Add display pages while keeping important information pinned.
 - [ ] Schedule different views for different times or days.
@@ -25,7 +27,7 @@ these user-facing features before hardware validation.
 
 Let an owner select a component and choose **Show in turns**, then add compatible
 existing or saved designs to the same display area. Show a simple ordered list,
-a **Switch every** setting, and previous/next preview controls in the browser.
+a **Timing & pause** disclosure, and previous/next preview controls in the browser.
 The display is not assumed to have touch controls. A first version should keep
 one fixed outer rectangle and fit every member inside it; it must not silently
 shrink text, crop a design or move neighbouring components.
@@ -37,8 +39,8 @@ Only the active presentation renders; hide inactive content entirely. Keep
 source/attribution visible where required. An optional position cue such as
 “2 of 4” can explain that more information is available without taking much room.
 
-Prefer a slow, hardware-appropriate default (five minutes is a proposal, not a
-validated panel setting). Keep time-critical information pinned while lower
+Prefer a slow, hardware-appropriate default (five minutes is the owner-confirmed default, not a
+vendor-prescribed panel setting). Keep time-critical information pinned while lower
 urgency news rotates. Allow pausing/turning off rotation and previewing every
 member without waiting for physical refreshes. Advanced scheduling can be added
 later rather than leading the first-use workflow.
@@ -87,3 +89,37 @@ Suggested starting combination: pinned important information, one rotating news
 area, and combined feeds where a shared template is sufficient. Evaluate the
 physical refresh results before adding several independent rotation areas or
 whole-screen cycling. Avoid scrolling text/animations on this display.
+
+## Confirmed first implementation
+
+- Move an existing component into the rotating area, freeing its former space.
+  Keep this change in the layout draft with Undo/Discard until Save to display.
+- Let the owner set time per item, with a five-minute default. Start an item's
+  dwell only when it is successfully shown; hardware/quiet-hours limits may
+  delay a switch. Content refreshes and full maintenance of the same item do
+  not restart its dwell. Preview Previous/Next affects the editor only.
+- One stable outer rectangle owns non-overlapping display space. Members keep
+  their sizes, content, fonts and bindings. Fit/resize failures retain the draft
+  and explain the needed room; no silent text scaling or neighbour movement.
+- Use independent embedded copies of members/designs, matching placed component
+  behaviour. Keep rotation separate from provider polling and library lifetime.
+
+## Direction contract
+
+THESIS: one calm area can carry several useful views while important neighbours
+stay pinned; rotation is a property of a display area, not a new screen mode.
+
+OWN-WORLD: inherit DESIGN.md's paper surfaces, green selection, native controls
+and Content/Position/Style inspector. No new visual identity or component family.
+
+STORY: select Show in turns, add existing components or saved designs, check each
+item with Previous/Next, set its readable dwell and explicitly save the layout.
+
+FIRST VIEWPORT: retain the main canvas and task bar. The selected area's Content
+inspector shows the ordered item list, preview navigation and Add item action;
+Position edits the shared area and Style retains the shared refresh preference.
+
+FORM: extend the existing canvas/inspector surface; no whole-surface or visual-world
+roll is needed. Use the existing task picker for member selection.
+
+FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance.

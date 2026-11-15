@@ -128,7 +128,18 @@ impl Renderer {
         data: &SnapshotSet,
         now: u64,
     ) -> Result<RenderedFrame> {
-        layout.validate()?;
+        self.render_selected(layout, data, now, &BTreeMap::new())
+    }
+
+    pub fn render_selected(
+        &mut self,
+        layout: &Layout,
+        data: &SnapshotSet,
+        now: u64,
+        selected: &BTreeMap<String, String>,
+    ) -> Result<RenderedFrame> {
+        let resolved = layout.resolve_rotations(selected)?;
+        let layout = &resolved;
         data.validate()?;
         let mut frame = Frame::blank(&layout.display)?;
         let index: BTreeMap<_, _> = data

@@ -9,6 +9,46 @@ Owner accepted the component designer and authorized its commit, merge to
 `main`, and GitHub push. This publication also includes the previously local
 UIUX redesign commit. Foundation version remains `0.1.0`.
 
+### Show components in turns
+
+- Added fixed rotating areas containing up to eight independent component
+  copies. Kept top-level non-overlap, member geometry/bindings, readable text,
+  and the normal renderer's clock, icon, missing/stale-data and privacy behavior.
+- Added an owner-editable five-minute default, pause/keep-showing, reorder,
+  remove, move-from-display, saved-design copies and creation/editing through
+  the existing designer. Incompatible items require explicit resizing or
+  editing; pinned neighbours stay put. Member and area update preferences
+  retain the existing shared cleanup overrides.
+- Kept Previous/Next preview independent of saved state and physical output.
+  Draft history, Undo, Discard, focused input protection and explicit Save work
+  across member operations. Restored picker focus and disclosure open state.
+- Anchored dwell to successful presentation acknowledgement, including logical
+  identical-pixel transitions. Same-item data/maintenance updates do not reset
+  dwell. Quiet hours, retry gates and count/time full cleanup use the existing
+  serialized controller; missed turns never replay after quiet hours/restart.
+- Added a validated preview-selection request and live acknowledged/candidate
+  status. All inactive members and aggregate stored text remain validated.
+  Documented behavior in `docs/design/component-rotation.md` and owner steps in
+  `docs/usage/component-rotation.md`; kept foundation version `0.1.0`.
+
+Desktop verification: `sh scripts/check.sh` passed 203 Rust and 11 Python tests,
+including dwell/acknowledgement, identical images, quiet-hours resume, failed
+switch recovery, pinned pixels, inactive validation and saved-definition restart.
+The 39 existing browser flows passed; all six rotation flows passed after fixing
+an open-disclosure regression and making test observations wait for Save.
+The ARM64 release build passed. Fresh Impeccable review scored its four requested
+fixes resolved (first viewport, preview truth, focus, documentation), with `ship`
+for that batch; the per-item Style preference also passed its narrow review.
+Physical verification: an isolated V2/Rev2.3 test completed A → B → A with
+300-second dwell and two partial operations (240×72; 0.422/0.417-second
+waveforms). The final A matched the first output exactly; every changed pixel
+stayed within the rotating area. The owner confirmed clean readable transitions
+and unchanged pinned information. The live layout file hash was unchanged and
+the tested build installed for normal service restoration, carrying forward the
+physical cooldown. The recovery full refresh acknowledged original revision 5
+and returned the regular service to idle without error. Longer-duration panel and provider/account qualification
+remain separate.
+
 ### Enforce screen-wide cleanup for component preferences
 
 - Exposed each component's existing Automatic / Partial when possible / Full

@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
@@ -93,6 +93,20 @@ pub struct Component {
     #[serde(default)]
     pub refresh_hint: RefreshHint,
     pub blocks: Vec<TextBlock>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rotation: Option<Rotation>,
+}
+
+/// One stable display rectangle containing independent, non-nested components.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Rotation {
+    pub interval_secs: u32,
+    #[serde(default)]
+    pub paused: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub paused_member: Option<String>,
+    pub members: Vec<Component>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
@@ -271,6 +285,7 @@ impl Layout {
         )?;
         let mut ids = BTreeSet::new();
         let mut text_bytes = 0;
+        let mut presentations = 0;
         for (i, component) in self.components.iter().enumerate() {
             let path = format!("layout.components[{i}]");
             require(
@@ -308,6 +323,86 @@ impl Layout {
                 &path,
                 "padding and gap must be at most 64 pixels",
             )?;
+            for other in &self.components[..i] {
+                require(
+                    !rect.intersects(other.rect),
+                    format!("{path}.rect"),
+                    "component overlaps another component",
+                )?;
+            }
+            if let Some(rotation) = &component.rotation {
+                require(
+                    component.blocks.is_empty()
+                        && component.padding == 0
+                        && component.gap == 0
+                        && !component.border
+                        && component.content_layout == ContentLayout::Flow,
+                    &path,
+                    "a rotating area uses its members' content and appearance",
+                )?;
+                require(
+                    (5..=86400).contains(&rotation.interval_secs),
+                    format!("{path}.rotation.interval_secs"),
+                    "item duration must be 5–86400 seconds",
+                )?;
+                require(
+                    (1..=8).contains(&rotation.members.len()),
+                    format!("{path}.rotation.members"),
+                    "a rotating area must contain 1–8 items",
+                )?;
+                let mut member_ids = BTreeSet::new();
+                for (index, member) in rotation.members.iter().enumerate() {
+                    let member_path = format!("{path}.rotation.members[{index}]");
+                    require(
+                        member.rotation.is_none(),
+                        &member_path,
+                        "rotating areas cannot be nested",
+                    )?;
+                    require(
+                        member_ids.insert(&member.id),
+                        &member_path,
+                        "duplicate item identifier",
+                    )?;
+                    require(
+                        member.rect.x == 0 && member.rect.y == 0,
+                        &member_path,
+                        "item coordinates must be relative to the area",
+                    )?;
+                    let scene = Layout {
+                        schema_version: 1,
+                        display: DisplaySpec {
+                            id: "rotation-item".into(),
+                            width: rect.width,
+                            height: rect.height,
+                        },
+                        components: vec![member.clone()],
+                    };
+                    scene.validate().map_err(|error| crate::ValidationError {
+                        path: member_path.clone(),
+                        message: error.to_string(),
+                    })?;
+                    for block in &member.blocks {
+                        text_bytes += match &block.source {
+                            TextSource::Literal { text } => text.len(),
+                            TextSource::Field { binding } => {
+                                binding.prefix.len() + binding.suffix.len()
+                            }
+                            _ => 0,
+                        };
+                    }
+                }
+                require(
+                    rotation
+                        .paused_member
+                        .as_ref()
+                        .is_none_or(|id| member_ids.contains(id)),
+                    format!("{path}.rotation.paused_member"),
+                    "paused item does not exist",
+                )?;
+                presentations += rotation.members.len();
+                continue;
+            }
+            presentations += 1;
             let padding = 2 * u32::from(component.padding);
             let status = if component.has_bindings() {
                 STATUS_HEIGHT
@@ -324,13 +419,6 @@ impl Layout {
                 format!("{path}.blocks"),
                 "must have 1–32 text blocks",
             )?;
-            for other in &self.components[..i] {
-                require(
-                    !rect.intersects(other.rect),
-                    format!("{path}.rect"),
-                    "component overlaps another component",
-                )?;
-            }
             let mut block_ids = BTreeSet::new();
             for (j, block) in component.blocks.iter().enumerate() {
                 let path = format!("{path}.blocks[{j}]");
@@ -425,10 +513,64 @@ impl Layout {
             }
         }
         require(
+            presentations <= 128,
+            "layout.components",
+            "total presentation limit exceeded",
+        )?;
+        require(
             text_bytes <= 65536,
             "layout",
             "total text byte limit exceeded",
         )
+    }
+
+    /// Resolve exactly one presentation per area; previews default to its first item.
+    pub fn resolve_rotations(&self, selected: &BTreeMap<String, String>) -> Result<Self> {
+        self.validate()?;
+        for (area, item) in selected {
+            require(
+                self.components
+                    .iter()
+                    .find(|c| &c.id == area)
+                    .and_then(|c| c.rotation.as_ref())
+                    .is_some_and(|rotation| {
+                        rotation.members.iter().any(|member| &member.id == item)
+                    }),
+                "rotation_selection",
+                "unknown rotating area or item",
+            )?;
+        }
+        let mut resolved = self.clone();
+        for component in &mut resolved.components {
+            let Some(rotation) = &component.rotation else {
+                continue;
+            };
+            let id = selected
+                .get(&component.id)
+                .or(rotation.paused_member.as_ref());
+            let mut member = rotation
+                .members
+                .iter()
+                .find(|member| Some(&member.id) == id)
+                .unwrap_or(&rotation.members[0])
+                .clone();
+            member.id = component.id.clone();
+            member.rect.x = component.rect.x;
+            member.rect.y = component.rect.y;
+            member.refresh_hint = if component.refresh_hint == RefreshHint::Full
+                || member.refresh_hint == RefreshHint::Full
+            {
+                RefreshHint::Full
+            } else if component.refresh_hint == RefreshHint::Partial
+                || member.refresh_hint == RefreshHint::Partial
+            {
+                RefreshHint::Partial
+            } else {
+                RefreshHint::Automatic
+            };
+            *component = member;
+        }
+        Ok(resolved)
     }
 }
 

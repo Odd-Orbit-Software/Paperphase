@@ -42,10 +42,12 @@ The owner approved recording alternating components, combined feeds, display
 pages with pinned information, scheduled views, relevant-information priority,
 and summary/detail views as potential TODOs. See the
 [screen-improvement backlog](component-rotation.md) for the checklist and
-reliability considerations. Implement and validate the physical display first;
-then revisit these ideas and agree their scope/order using the measured panel
-behavior. The first full-refresh integration is implemented; remaining panel
-qualification comes before these presentation features.
+reliability considerations. Automatic partial updates, shared count/time cleanup
+and recovery were subsequently validated on the panel. The owner then selected
+component rotation before GitHub release updates: rotation is implemented on
+`component-rotation`, with desktop and physical verification recorded separately
+in its design document and changelog. The other five ideas remain deferred;
+longer panel qualification remains foundation work.
 
 ### Component design before placement
 

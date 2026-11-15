@@ -364,3 +364,26 @@ body.dragging, body.dragging * { cursor: grabbing; user-select: none; }
 .design-name-field > label { margin-bottom: 7px; }
 
 #design-feedback.clipping-warning { padding: 8px 10px; border-radius: 6px; color: var(--amber); background: var(--amber-surface); }
+
+
+/* Rotating items use the same inspector and picker as pinned components. */
+.rotation-preview-controls, .rotation-item-actions, .rotation-order-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.rotation-preview-controls { justify-content: space-between; }
+.rotation-preview-controls span { font-variant-numeric: tabular-nums; color: var(--muted); }
+.rotation-items { margin: 20px 0 0; padding: 0; list-style: none; }
+.rotation-item { padding: 16px 0; border-top: 1px solid var(--line); }
+.rotation-item strong, .rotation-choice strong { display: block; overflow-wrap: anywhere; }
+.rotation-item small, .rotation-choice small { display: block; margin: 6px 0 12px; color: var(--muted); }
+.rotation-item.previewing > strong { color: var(--green); }
+.rotation-order-actions { margin-top: 8px; }
+.rotation-live { margin-top: 16px; font-size: 13px; line-height: 1.5; color: var(--muted); }
+.rotation-choice, .rotation-source-choice { padding: 16px 0; border-bottom: 1px solid var(--line); }
+.rotation-source-choice .rotation-choice { border: 0; padding-bottom: 0; }
+#plugin-templates > h3:not(:first-child) { margin-top: 28px; }
+.rotation-settings > .render-report { margin-bottom: 12px; }
+.rotation-timing summary { font-size: 13px; color: var(--green); font-weight: 600; }
+.rotation-timing[open] summary { margin-bottom: 16px; }
+.rotation-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.rotation-heading h3 { margin: 0; }
+.rotation-heading + .rotation-preview-controls { margin-top: 8px; }
+#plugin-templates > .wide-button + .wide-button { margin-top: 8px; }

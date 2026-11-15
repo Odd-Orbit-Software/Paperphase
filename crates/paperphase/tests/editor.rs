@@ -1027,3 +1027,58 @@ fn failed_design_storage_keeps_revision_and_fit_is_preview_only() {
     assert_eq!(store["designs"], json!([]));
     assert_eq!(server.state()["layout"], before["layout"]);
 }
+
+#[test]
+fn rotating_items_preview_without_output_and_restart_from_a_complete_saved_definition() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("workspace.json");
+    let mut server = Server::start(&path);
+    let before = server.state();
+    let mut layout: Value =
+        serde_json::from_str(include_str!("../../../examples/simulator/rotation.json")).unwrap();
+    layout["display"] = before["layout"]["display"].clone();
+    layout["components"][0]["rotation"]["paused"] = json!(true);
+    layout["components"][0]["rotation"]["paused_member"] = json!("world");
+    let response = server
+        .client
+        .put(format!("{}/api/layout", server.url))
+        .json(&json!({"base_revision":before["revision"],"layout":layout}))
+        .send()
+        .unwrap();
+    assert!(
+        response.status().is_success(),
+        "{}",
+        response.text().unwrap()
+    );
+    for _ in 0..100 {
+        if server.state()["phase"] == "idle" {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let saved = server.state();
+    assert_eq!(saved["rotations"][0]["shown_member"], "world");
+    let pixels = server.png();
+    let response = server
+        .client
+        .post(format!("{}/api/preview", server.url))
+        .json(&json!({"layout":saved["layout"],"rotation_selection":{"news":"culture"}}))
+        .send()
+        .unwrap();
+    assert!(response.status().is_success());
+    assert_eq!(server.png(), pixels);
+    assert_eq!(server.state()["rotation_epoch"], saved["rotation_epoch"]);
+    server.stop();
+    let restarted = Server::start(&path);
+    assert_eq!(restarted.state()["layout"], saved["layout"]);
+    assert_eq!(restarted.state()["rotations"][0]["shown_member"], "world");
+    assert_eq!(restarted.png(), pixels);
+    let area = &saved["layout"]["components"][0];
+    let response = restarted
+        .client
+        .post(format!("{}/api/component-fit", restarted.url))
+        .json(&json!({"component":area}))
+        .send()
+        .unwrap();
+    assert_eq!(response.status(), 422);
+}

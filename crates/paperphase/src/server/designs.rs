@@ -70,6 +70,10 @@ fn normalize(component: &mut Component) {
 }
 fn validate(design: &Design) -> Result<()> {
     ensure!(
+        design.component.rotation.is_none(),
+        "Save individual rotating items as reusable designs, not the whole area"
+    );
+    ensure!(
         valid_id(&design.id) && valid_id(&design.connector_id),
         "invalid design or plugin identifier"
     );
@@ -393,6 +397,11 @@ pub(super) async fn fit(
 ) -> ApiResult<Json<Value>> {
     // Validate structure before any potentially expensive measurement. Flow's
     // supplied geometry is replaced by a bounded measurement surface.
+    if request.component.rotation.is_some() {
+        return Err(invalid(
+            "Fit individual rotating items, not the whole area.",
+        ));
+    }
     let mut check = request.component.clone();
     check.rect = Rect {
         x: 0,
