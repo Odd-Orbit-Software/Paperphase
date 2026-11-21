@@ -1,0 +1,26 @@
+[Unit]
+Description=Paperphase with independent update and rollback supervisor
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=600
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=pmck
+WorkingDirectory=/home/pmck/paperphase-test
+ExecStart=/home/pmck/paperphase-test/bootstrap/paperphase-update-agent run --installation /home/pmck/paperphase-test/installation.json
+Restart=on-failure
+RestartSec=10
+KillSignal=SIGTERM
+KillMode=mixed
+TimeoutStopSec=210
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/pmck/paperphase-test /tmp
+ReadOnlyPaths=/home/pmck/paperphase-test/bootstrap /home/pmck/paperphase-test/bin /home/pmck/paperphase-test/panel /home/pmck/paperphase-test/installation.json
+
+[Install]
+WantedBy=multi-user.target

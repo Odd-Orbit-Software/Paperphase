@@ -65,6 +65,8 @@ validation remain pending.
 - [Desktop editor design](docs/design/desktop-editor.md)
 - [Internal element editor](docs/design/internal-editor.md)
 - [Show components in turns](docs/usage/component-rotation.md)
+- [UI software updates and SSH recovery](docs/usage/release-updates.md)
+- [Release update design](docs/design/release-updates.md)
 - [Component rotation design](docs/design/component-rotation.md)
 - [Clock and refresh scheduling](docs/design/clock-and-refresh.md)
 - [Refresh controller design](docs/design/refresh-controller.md)

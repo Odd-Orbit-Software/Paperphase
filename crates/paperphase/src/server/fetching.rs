@@ -80,7 +80,15 @@ impl Registry {
     pub(super) fn http_client(&self) -> reqwest::blocking::Client {
         self.runtime.reference_client()
     }
+    #[cfg(test)]
     pub(super) fn load(path: &Path, catalog: &ConnectorCatalog) -> Result<Self> {
+        Self::load_managed(path, catalog, None)
+    }
+    pub(super) fn load_managed(
+        path: &Path,
+        catalog: &ConnectorCatalog,
+        managed: Option<&paperphase::update::store::Installation>,
+    ) -> Result<Self> {
         let file: RegistrationFile = super::read_json(path)?;
         ensure!(
             file.schema_version == 1 && file.bindings.len() <= 32,
@@ -99,7 +107,36 @@ impl Registry {
             BTreeMap::new();
         let mut bindings = BTreeMap::new();
         let mut floors = BTreeMap::new();
-        for entry in file.bindings {
+        let active = managed.map(|config| config.active()).transpose()?;
+        if let Some(config) = managed {
+            for (id, target) in &config.targets {
+                if matches!(
+                    target.target,
+                    paperphase::update::package::Target::Plugin { .. }
+                ) {
+                    ensure!(
+                        file.bindings.iter().any(|entry| &entry.connector_id == id),
+                        "managed plugin is not registered in the host binding file"
+                    );
+                }
+            }
+        }
+        for mut entry in file.bindings {
+            if let (Some(config), Some(active)) = (managed, active.as_ref())
+                && let Some(slot) = active.slots.get(&entry.connector_id)
+            {
+                config.check_slot(&entry.connector_id, slot)?;
+                entry.wasm = slot.directory.join("plugin.wasm");
+                if slot
+                    .manifest
+                    .files
+                    .iter()
+                    .any(|file| file.name == "icons.json")
+                {
+                    entry.icon_manifest = Some(slot.directory.join("icons.json"));
+                }
+            }
+
             let definition = catalog
                 .get(&entry.connector_id)
                 .context("registration refers to an unknown connector")?;
@@ -813,6 +850,9 @@ pub(super) fn start(app: Shared) -> tokio::task::JoinHandle<()> {
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             interval.tick().await;
+            if super::updates::network_held(&app).await {
+                continue;
+            }
             {
                 let mut store = app.connections.lock().await;
                 if store.dirty && flush_metadata(&app, &mut store).await.is_err() {
@@ -890,6 +930,9 @@ pub(super) fn start_references(app: Shared) -> tokio::task::JoinHandle<()> {
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             interval.tick().await;
+            if super::updates::network_held(&app).await {
+                continue;
+            }
             let connections = {
                 let store = app.connections.lock().await;
                 store

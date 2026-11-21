@@ -37,6 +37,7 @@ mod google;
 mod reference;
 mod rotation;
 mod scheduling;
+mod updates;
 
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -68,11 +69,14 @@ struct Workspace {
     display_frame_available: bool,
     display_warning: Option<String>,
     rotations: rotation::Runtime,
+    maintenance: Option<String>,
+    maintenance_ack: Option<String>,
 }
 
 struct App {
     driver: Arc<crate::display::driver::Driver>,
     stopping: std::sync::atomic::AtomicBool,
+    updates: Option<Arc<updates::Service>>,
     executors: Option<Arc<fetching::Registry>>,
     google: Option<Arc<google::Service>>,
     fetch_slots: Arc<Semaphore>,
@@ -155,6 +159,16 @@ pub fn run(
     options: Options,
 ) -> Result<()> {
     let fixed_now = options.fixed_now;
+    let update_service = updates::Service::from_environment()?;
+    if let Some(service) = &update_service {
+        ensure!(
+            state_file
+                .canonicalize()
+                .unwrap_or_else(|_| state_file.clone())
+                .starts_with(&service.config.data_dir),
+            "managed workspace must be inside the configured private data folder"
+        );
+    }
     ensure!(
         fixed_now.is_none()
             || matches!(
@@ -284,7 +298,14 @@ pub fn run(
     connections::validate_store(&connection_store, &connector_catalog)?;
     let executors = connector_bindings
         .as_deref()
-        .map(|path| fetching::Registry::load(path, &connector_catalog).map(Arc::new))
+        .map(|path| {
+            fetching::Registry::load_managed(
+                path,
+                &connector_catalog,
+                update_service.as_ref().map(|s| &s.config),
+            )
+            .map(Arc::new)
+        })
         .transpose()?;
     let client = if let Some(registry) = &executors {
         registry.http_client()
@@ -420,6 +441,7 @@ pub fn run(
         }
         let app = Arc::new(App {
             driver,
+            updates: update_service,
             stopping: std::sync::atomic::AtomicBool::new(false),
             executors,
             google,
@@ -448,6 +470,34 @@ pub fn run(
             _file_lock: file_lock,
         });
         let routes = Router::new()
+            .route(
+                "/help/updates",
+                get(|| async {
+                    asset(
+                        "text/html; charset=utf-8",
+                        paperphase::update::status::HELP_HTML,
+                    )
+                }),
+            )
+            .route(
+                "/help/updates-guide",
+                get(|| async {
+                    asset(
+                        "text/plain; charset=utf-8",
+                        paperphase::update::status::HELP_GUIDE,
+                    )
+                }),
+            )
+            .route("/api/updates", get(updates::status))
+            .route("/api/updates/check", post(updates::check))
+            .route("/api/updates/install", post(updates::install))
+            .route(
+                "/api/updates/upload",
+                post(updates::upload).layer(DefaultBodyLimit::max(
+                    paperphase::update::package::DOWNLOAD_LIMIT as usize,
+                )),
+            )
+            .route("/api/update-health", get(updates::health))
             .route(
                 "/",
                 get(|| async {
@@ -644,6 +694,23 @@ async fn same_origin(State(app): State<Shared>, request: Request, next: Next) ->
         )
         .into_response();
     }
+    if request.method() != axum::http::Method::GET
+        && request.method() != axum::http::Method::HEAD
+        && !request.uri().path().starts_with("/api/updates")
+    {
+        let held = app
+            .updates
+            .as_ref()
+            .is_some_and(|service| service.holding_startup())
+            || app.workspace.lock().await.maintenance.is_some();
+        if held {
+            return ApiError(
+                StatusCode::LOCKED,
+                "Paperphase is updating. Wait for the restart before making changes.".into(),
+            )
+            .into_response();
+        }
+    }
     let mut response = next.run(request).await;
     let headers = response.headers_mut();
     headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
@@ -652,7 +719,20 @@ async fn same_origin(State(app): State<Shared>, request: Request, next: Next) ->
         "x-content-type-options",
         HeaderValue::from_static("nosniff"),
     );
-    headers.insert("content-security-policy", HeaderValue::from_static("default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"));
+    let mut connections = "'self'".to_string();
+    if let Some(service) = &app.updates
+        && service.config.status_port > 0
+        && let Ok(mut origin) = url::Url::parse(&format!("http://{host}"))
+        && origin.set_port(Some(service.config.status_port)).is_ok()
+    {
+        connections.push(' ');
+        connections.push_str(&origin.origin().ascii_serialization());
+    }
+    if let Ok(policy) = HeaderValue::from_str(&format!(
+        "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src {connections}; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+    )) {
+        headers.insert("content-security-policy", policy);
+    }
     response
 }
 
@@ -661,6 +741,7 @@ async fn state(State(app): State<Shared>) -> Json<serde_json::Value> {
     Json(json!({
         "revision": ws.saved.revision, "layout": ws.saved.layout, "refresh_settings": ws.saved.refresh_settings,
         "displayed_revision": ws.displayed_revision,
+        "updating":ws.maintenance.is_some()||app.updates.as_ref().is_some_and(|s|s.holding_startup()),
         "rotation_epoch": ws.rotations.epoch(), "rotations": ws.rotations.status(&ws.saved.layout, tokio::time::Instant::now()),
         "phase": ws.phase(), "pending": ws.pending, "next_update_at": ws.next_due,
         "frame_id": format!("{}-{}", app.boot_id, ws.frame_serial), "clock_now": (app.clock)(), "clock_fixed": app.clock_fixed,
@@ -838,6 +919,17 @@ async fn save(
     let app_commit = Arc::clone(&app);
     tokio::spawn(async move {
         let mut ws = app_commit.workspace.lock().await;
+        if ws.maintenance.is_some()
+            || app_commit
+                .updates
+                .as_ref()
+                .is_some_and(|service| service.holding_startup())
+        {
+            return Err(ApiError(
+                StatusCode::LOCKED,
+                "Paperphase is updating. Wait for it to finish before saving.".into(),
+            ));
+        }
         if ws.saved.revision != saved.revision - 1 {
             return Err(ApiError(
                 StatusCode::CONFLICT,

@@ -9,6 +9,73 @@ Owner accepted the component designer and authorized its commit, merge to
 `main`, and GitHub push. This publication also includes the previously local
 UIUX redesign commit. Foundation version remains `0.1.0`.
 
+### Prepare the first experimental release
+
+Prepared `v0.1.0-foundation.1` for publication from `release-updates`, retaining
+application and workspace version `0.1.0`. The release targets 64-bit Raspberry Pi
+OS / Linux ARM64 with glibc 2.41 or newer and includes signed app/all-nine-plugin
+packages, public manifests/checksums and a separate bootstrap supervisor. Normal
+update checks exclude it unless experimental releases are explicitly enabled.
+Publisher private keys and device/Google state remain outside source/assets.
+
+Pre-publication verification on 2026-11-21: the required `sh scripts/check.sh`
+passed again with 216 Rust and 13 Python tests; embedded UI assets rebuilt.
+All 50 browser flows passed against the optimized native release build. The
+initial debug harness exceeded its startup deadline during concurrent release
+builds; no source change was needed for the optimized-browser qualification.
+Release discovery/download/activation will be recorded separately after the
+signed assets are published.
+
+### Update from signed releases through Device
+
+- Added Device → Updates for the app and registered plugins: explicit checks,
+  installed/selected versions, notes, restart confirmation and progress. Normal
+  releases are the default; experimental pre-releases, a specific GitHub URL
+  and signed package upload are separate Advanced controls. Layout drafts stay
+  available and block activation until saved/discarded.
+- Added bounded Ed25519-signed portable packages with repository/release/build,
+  platform/ABI/state identities and exact payload hashes. Reject tampering,
+  unsupported schemas, paths, hooks, caches and trailing bytes; preflight native
+  capabilities and portable Wasm imports/exports before requesting maintenance.
+- Added an independent supervisor, durable transactions, private-state backups,
+  immutable slots, child/launch-specific health checks and startup rollback.
+  Interrupted activation recovers independently of the app. Retained backups
+  and an SSH command support unsuccessful rollback. Host plugin grants and
+  persisted provider cooldowns remain intact.
+- Route Updating through the serialized display worker and require its successful
+  acknowledgement before stopping. Hold normal output and provider/reference
+  fetching through startup probation; restore according to saved quiet hours
+  and physical limits after approval. Keep supervisor progress/help available
+  while the main app restarts.
+- Added public publisher keys, private-path signing/configuration tools and a
+  managed systemd template. Private signing material is ignored and never
+  bundled. Documented package/recovery algorithms, owner/operator instructions
+  and actual compiled desktop/mobile screenshots with provenance.
+
+Desktop verification: `sh scripts/check.sh` passed 216 Rust and 13 Python tests.
+Process tests covered valid core/plugin activation, incompatible/corrupt package
+rejection, failed-start rollback and interrupted-supervisor recovery; installed
+plugin execution retained host grants, cached data and cooldown. All 50 distinct
+browser flows passed across the existing suite and updater regressions. The
+ARM64 release build passed. Fresh UX review returned `ship` for its four resolved
+fixes: control focus, progress visibility, subsection selection and documentation,
+including bundled help at both widths.
+Pi verification: signed local plugin/app packages were uploaded through the real
+browser and reached healthy after acknowledged physical Updating frames and
+completed backups. The plugin's normal frame returned with sample value 24.
+A deliberately failing signed native build rolled back to both previous slots
+and compatible private state under the actual managed systemd permissions;
+the browser reconnected and showed Previous version restored. Same-host browser
+reads of the independent supervisor succeeded. Panel refreshes kept the
+180-second floor. The owner layout hash remained unchanged during the isolated
+synthetic test. The regular managed service completed a full recovery refresh of
+revision 5 and returned idle without error; both regular services are active and
+the main service remains enabled. Real browser release discovery succeeded for
+all ten targets, with no releases available; independent help returned 200.
+Optical confirmation of Updating readability/retention is still pending.
+GitHub discovery found no published releases; real release download/activation
+requires a separately authorized first signed release. Foundation remains `0.1.0`.
+
 ### Show components in turns
 
 - Added fixed rotating areas containing up to eight independent component

@@ -717,3 +717,22 @@ fn automatic_connections_share_a_busy_origin_without_starving_later_ids() {
         worker.abort();
     });
 }
+
+#[test]
+fn update_maintenance_does_not_start_new_provider_work_or_reset_its_rate_state() {
+    let source = Source::new();
+    let (app, _, _dir) = setup(&source, false);
+    run(async {
+        configure(&app, "home").await;
+        app.workspace.lock().await.maintenance = Some("test-update".into());
+        let before = app.connections.lock().await.origin_deadlines.clone();
+        let worker = start(Arc::clone(&app));
+        tokio::time::sleep(Duration::from_millis(1100)).await;
+        assert_eq!(source.hits.load(Ordering::SeqCst), 0);
+        assert_eq!(app.connections.lock().await.origin_deadlines, before);
+        app.workspace.lock().await.maintenance = None;
+        hit(&source, 1).await;
+        worker.abort();
+        complete(&app).await;
+    });
+}

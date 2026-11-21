@@ -311,8 +311,11 @@ update through the UI from GitHub releases. Observe Updating on the real panel
 through a restart and normal content after recovery. Exercise failed download,
 incompatible/corrupt assets, interrupted activation and a failed new version;
 verify retained settings, component designs, cached data and rate-limit state,
-along with a usable rollback path. This is planned work, not an implemented
-update feature.
+along with a usable rollback path. Implementation and desktop validation now
+exist on `release-updates`; see the [update plan](release-updates.md),
+[design/validation ledger](../design/release-updates.md) and
+[operator guide](../usage/release-updates.md). Physical validation and a first
+published signed release remain distinct completion checks.
 
 ## Documentation for every implemented feature
 

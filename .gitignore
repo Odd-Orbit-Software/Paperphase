@@ -30,3 +30,7 @@ id_ed25519
 *.display.json
 
 __pycache__/
+
+# Release publisher secrets and generated binary packages.
+*.pk8
+*.ppkg

@@ -42,6 +42,8 @@ impl Workspace {
             display_frame_available: true,
             display_warning: None,
             rotations,
+            maintenance: None,
+            maintenance_ack: None,
         })
     }
 
@@ -117,6 +119,61 @@ pub(super) struct PreparedFrame {
     at: u64,
     declared: Layout,
     selection: std::collections::BTreeMap<String, String>,
+    maintenance: Option<String>,
+}
+
+/// An explicit update may show its notice during quiet hours, but never bypasses
+/// physical spacing/retry gates. Normal output resumes only after agent health.
+pub(super) async fn begin_maintenance(app: Shared, id: &str) -> ApiResult<()> {
+    let declared = {
+        let mut ws = app.workspace.lock().await;
+        if ws.maintenance.as_ref().is_some_and(|old| {
+            app.updates
+                .as_ref()
+                .is_some_and(|service| service.maintenance_finished(old))
+        }) {
+            ws.maintenance = None;
+            ws.maintenance_ack = None;
+        }
+        if ws.maintenance.is_some() {
+            return Err(invalid(
+                "An update is already preparing its display notice.",
+            ));
+        }
+        ws.maintenance = Some(id.into());
+        ws.maintenance_ack = None;
+        ws.saved.layout.clone()
+    };
+    let display = &declared.display;
+    let padding = 8u32.min(display.width / 8).min(display.height / 8);
+    let heading = if display.width >= 400 && display.height >= 200 {
+        32
+    } else {
+        20
+    };
+    let scene:Layout=serde_json::from_value(serde_json::json!({"schema_version":1,"display":display,"components":[{
+        "id":"updating","rect":{"x":0,"y":0,"width":display.width,"height":display.height},"padding":padding,"gap":12,"refresh_hint":"full","blocks":[
+            {"id":"heading","font_size":heading,"source":{"kind":"literal","text":"Updating Paperphase"}},
+            {"id":"message","font_size":14,"source":{"kind":"literal","text":"Please keep power connected.\nYour display will return when the update is ready."}}
+        ]}]})).map_err(internal)?;
+    let at = (app.clock)();
+    let preview = super::render(std::sync::Arc::clone(&app), scene, at).await?;
+    let frame = PreparedFrame {
+        data_epoch: preview.data_epoch,
+        revision: 0,
+        layout: preview.effective_layout,
+        frame: preview.frame,
+        png: STANDARD.decode(preview.png_base64).map_err(internal)?,
+        next_due: None,
+        quiet: false,
+        at,
+        declared,
+        selection: Default::default(),
+        maintenance: Some(id.into()),
+    };
+    let mut ws = app.workspace.lock().await;
+    queue(&app, &mut ws, frame);
+    Ok(())
 }
 
 pub(super) async fn prepare(
@@ -145,6 +202,7 @@ pub(super) async fn prepare(
         at,
         declared: layout.clone(),
         selection,
+        maintenance: None,
     })
 }
 
@@ -153,8 +211,11 @@ pub(super) fn queue(app: &Shared, ws: &mut Workspace, mut frame: PreparedFrame) 
     ws.next_due = frame.next_due;
     ws.quiet = frame.quiet;
     ws.pending = true;
-    if frame.data_epoch != app.data_epoch.load(std::sync::atomic::Ordering::SeqCst)
-        || frame.selection != ws.rotations.selection(&ws.saved.layout, Instant::now())
+    if (frame.maintenance.is_some() && frame.maintenance != ws.maintenance)
+        || (frame.maintenance.is_none()
+            && (ws.maintenance.is_some()
+                || frame.data_epoch != app.data_epoch.load(std::sync::atomic::Ordering::SeqCst)
+                || frame.selection != ws.rotations.selection(&ws.saved.layout, Instant::now())))
     {
         ws.refresh_wake.notify_one();
         return;
@@ -180,7 +241,7 @@ pub(super) fn queue(app: &Shared, ws: &mut Workspace, mut frame: PreparedFrame) 
     frame.revision = ws.saved.revision;
     ws.desired = Some(frame);
     ws.refresh_wake.notify_one();
-    if ws.quiet || ws.worker_running {
+    if (ws.quiet && ws.maintenance.is_none()) || ws.worker_running {
         return;
     }
     ws.worker_running = true;
@@ -191,12 +252,24 @@ pub(super) fn queue(app: &Shared, ws: &mut Workspace, mut frame: PreparedFrame) 
 }
 
 fn acknowledge_rotation(ws: &mut Workspace, frame: &PreparedFrame) {
+    if let Some(id) = &frame.maintenance {
+        if ws.maintenance.as_ref() == Some(id) {
+            ws.maintenance_ack = Some(paperphase::update::package::sha256(frame.frame.bits()));
+        }
+        return;
+    }
     ws.rotations
         .acknowledge(&frame.declared, &frame.selection, Instant::now());
     ws.rotations.retain(&ws.saved.layout);
 }
 
 fn current(app: &Shared, ws: &Workspace, frame: &PreparedFrame, now: u64) -> bool {
+    if frame.maintenance.is_some() {
+        return frame.maintenance == ws.maintenance;
+    }
+    if ws.maintenance.is_some() {
+        return false;
+    }
     frame.revision == ws.saved.revision
         && frame.data_epoch == app.data_epoch.load(std::sync::atomic::Ordering::SeqCst)
         && now >= frame.at
@@ -219,7 +292,7 @@ async fn drive(app: Shared) {
                 .refresh_settings
                 .is_quiet((app.clock)())
                 .unwrap_or(true);
-            if ws.quiet {
+            if ws.quiet && ws.maintenance.is_none() {
                 ws.worker_running = false;
                 return;
             }
@@ -334,7 +407,7 @@ async fn drive(app: Shared) {
             ws.pending = !up_to_date || ws.desired.is_some();
             ws.last_error = None;
         }
-        if ws.desired.is_none() || ws.quiet {
+        if ws.desired.is_none() || (ws.quiet && ws.maintenance.is_none()) {
             ws.worker_running = false;
             return;
         }
@@ -345,7 +418,30 @@ pub(super) async fn tick(app: Shared, force: bool) -> ApiResult<()> {
     if app.stopping.load(std::sync::atomic::Ordering::SeqCst) {
         return Ok(());
     }
+    if app
+        .updates
+        .as_ref()
+        .is_some_and(|service| service.holding_startup())
+    {
+        return Ok(());
+    }
     let _tick = app.tick_lock.lock().await;
+    {
+        let mut ws = app.workspace.lock().await;
+        if let Some(id) = &ws.maintenance {
+            if app
+                .updates
+                .as_ref()
+                .is_some_and(|service| service.maintenance_finished(id))
+            {
+                ws.maintenance = None;
+                ws.maintenance_ack = None;
+                ws.pending = true;
+            } else {
+                return Ok(());
+            }
+        }
+    }
     let now = (app.clock)();
     let saved = {
         let mut ws = app.workspace.lock().await;
@@ -465,6 +561,7 @@ pub(super) mod tests {
         persist(&path, &workspace.saved).unwrap();
         let app = Arc::new(App {
             driver: Arc::new(crate::display::driver::Driver::simulator()),
+            updates: None,
             stopping: std::sync::atomic::AtomicBool::new(false),
             executors: None,
             google: None,
@@ -964,5 +1061,51 @@ pub(super) mod tests {
         assert_eq!(shown(&ws), "world");
         assert_eq!(ws.frame_serial, 1);
         assert!(!ws.rotations.due(&ws.saved.layout, Instant::now()));
+    }
+    #[tokio::test]
+    async fn updating_notice_is_acknowledged_without_changing_the_saved_layout_or_rotation_dwell() {
+        let (app, clock, _dir) = app(rotating_scene(), quiet(), empty(), START + 60);
+        let original = serde_json::to_value(&app.workspace.lock().await.saved).unwrap();
+        app.workspace.lock().await.rotations.age_for_test(301);
+        begin_maintenance(Arc::clone(&app), "updater-test")
+            .await
+            .unwrap();
+        settle(&app).await;
+        let ws = app.workspace.lock().await;
+        assert!(ws.maintenance_ack.is_some());
+        assert_eq!(serde_json::to_value(&ws.saved).unwrap(), original);
+        assert_eq!(shown(&ws), "local");
+        assert!(ws.rotations.due(&ws.saved.layout, Instant::now()));
+        assert_eq!(
+            ws.controller.completed.as_ref().unwrap().plan.mode,
+            crate::display::Mode::Full
+        );
+        let notice = ws.png.clone();
+        drop(ws);
+        clock.store(START + 240, Ordering::SeqCst);
+        tick(Arc::clone(&app), false).await.unwrap();
+        assert_eq!(app.workspace.lock().await.png, notice);
+    }
+    #[tokio::test]
+    async fn failed_updating_notice_keeps_normal_pixels_until_full_recovery_acknowledges_it() {
+        let (app, _, _dir) = app(scene(), RefreshSettings::default(), empty(), START);
+        let before = app.workspace.lock().await.png.clone();
+        app.workspace.lock().await.controller.fail_next = true;
+        begin_maintenance(Arc::clone(&app), "updater-test")
+            .await
+            .unwrap();
+        wait_for(&app, |ws| ws.controller.failures == 1).await;
+        {
+            let ws = app.workspace.lock().await;
+            assert_eq!(ws.png, before);
+            assert!(ws.maintenance_ack.is_none());
+        }
+        settle(&app).await;
+        let ws = app.workspace.lock().await;
+        assert!(ws.maintenance_ack.is_some());
+        assert_eq!(
+            ws.controller.completed.as_ref().unwrap().plan.mode,
+            crate::display::Mode::Full
+        );
     }
 }

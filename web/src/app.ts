@@ -1,3 +1,4 @@
+import { UpdatePanel } from './updates';
 import type { Rect, Binding, ClockSpec, Block, Component, Layout, BlockPlacement, IconPack } from './model';
 import { sourceBinding } from './model';
 import { fitsArea, validRotation, localItem, rotatingArea } from './rotation';
@@ -8,7 +9,7 @@ type Operation = { mode: 'partial' | 'full'; reason: string; region: Rect; revis
 type RefreshStatus = { profile: { id: string; partial?: boolean; scheduled_full?: boolean; max_partials: number; max_full_age_secs: number; max_partial_area_percent: number; min_interval_ms: number }; active: Operation | null; last_completed: Operation | null; partial_count: number; baseline_known: boolean; failures: number; wait_ms: number };
 type RefreshSettings = { policy: Policy; quiet_hours: { timezone: string; start: string; end: string } | null };
 type RotationStatus = { component_id:string; shown_member:string|null; candidate_member:string; paused:boolean; count:number; next_in_ms:number|null };
-type Workspace = { rotation_epoch?:number; rotations?:RotationStatus[]; mode?:'simulated'|'physical'; display_frame_available?:boolean; display_warning?:string|null; clock_fixed: boolean; refresh: RefreshStatus; last_error: string | null; revision: number; displayed_revision: number; data_revision: number; frame_id: string; clock_now: number; pending: boolean; phase: string; layout: Layout; refresh_settings: RefreshSettings; addresses: string[]; connector_execution: boolean; fixture_data: boolean };
+type Workspace = { updating?:boolean; rotation_epoch?:number; rotations?:RotationStatus[]; mode?:'simulated'|'physical'; display_frame_available?:boolean; display_warning?:string|null; clock_fixed: boolean; refresh: RefreshStatus; last_error: string | null; revision: number; displayed_revision: number; data_revision: number; frame_id: string; clock_now: number; pending: boolean; phase: string; layout: Layout; refresh_settings: RefreshSettings; addresses: string[]; connector_execution: boolean; fixture_data: boolean };
 type EditState = { layout: Layout; settings: RefreshSettings; design?: {source?:string;automatic:boolean;fixedWidth?:number;startingPoint?:string} };
 type Dataset = { connection_id: string; connection_label?: string; dataset_id: string; fields: { id: string; kind: string; unit?: string }[]; rows: number; stale: boolean };
 type Report = { id: string; state: string; warnings: string[]; blocks: BlockPlacement[] };
@@ -64,6 +65,8 @@ let lastInspectedId: string | null = null;
 let drag: { id: string; blockId?: string; startX: number; startY: number; original: Rect; last: Rect; baseline: EditState; resize: boolean; pointerId: number; invalid: boolean } | undefined;
 type Page = 'display' | 'sources' | 'device' | 'about' | 'designer' | 'designs';
 let currentPage: Page = 'display';
+let deviceView:'settings'|'updates'='settings';
+let updatingSoftware=false;
 let inspectorTab = 'content';
 let googleView = false;
 let choosingSource = false;
@@ -100,8 +103,8 @@ for (const element of document.querySelectorAll<HTMLElement>('[data-icon]')) ele
 const focusables = (root: ParentNode) => [...root.querySelectorAll<HTMLElement>('button, input, select, textarea, summary, a[href], [tabindex="0"]')];
 function focusKey(target: HTMLElement) {
   if (target.id) return `id:${target.id}`;
-  const scope = target.closest<HTMLElement>('[data-block], [data-component], [data-element]');
-  return [scope?.dataset.block ?? scope?.dataset.component ?? scope?.dataset.element ?? '', target.tagName,
+  const scope = target.closest<HTMLElement>('[data-block], [data-component], [data-element], [data-update-target]');
+  return [scope?.dataset.updateTarget ?? scope?.dataset.block ?? scope?.dataset.component ?? scope?.dataset.element ?? '', target.tagName,
     target.getAttribute('aria-label') ?? target.getAttribute('data-focus') ?? target.textContent?.trim()].join('|');
 }
 let tabDestination: { element: HTMLElement; key: string } | undefined;
@@ -126,7 +129,8 @@ function retainFocus(root: HTMLElement, build: () => void) {
   build();
   for (const details of root.querySelectorAll('details')) { const open = disclosures.get(details.id || details.querySelector('summary')?.textContent || ''); if (open !== undefined) details.open = open; }
   if (!owned || previous?.isConnected) return;
-  const replacement = focusables(root).find(el => focusKey(el) === key);
+  const focusCandidate=previous?.id?document.getElementById(previous.id):undefined;
+  const replacement=focusables(root).find(el=>focusKey(el)===key)??(focusCandidate&&root.contains(focusCandidate)?focusCandidate:undefined);
   replacement?.focus({ preventScroll: true });
   if (selection && replacement && (replacement instanceof HTMLInputElement || replacement instanceof HTMLTextAreaElement)) {
     try { replacement.setSelectionRange(selection[0] ?? null, selection[1] ?? null); } catch { /* Not a text field. */ }
@@ -158,6 +162,8 @@ function showPage(page: Page) {
   $('design-library-page').hidden = page !== 'designs'; $('display-page').classList.toggle('design-studio',page==='designer');
   $('designer-controls').hidden = page !== 'designer'; $('device-page').hidden = page !== 'device';
   $('about-page').hidden = page !== 'about';
+  if(page!=='device'||deviceView!=='updates')updatePanel.close();
+  if(page==='device'&&deviceView==='updates')updatePanel.open();
   if (page === 'sources') { if (!connectionDialog().open) connectionDialog().show(); }
   else connectionDialog().close();
   for (const [id, active] of [['display-open', page === 'display' || page === 'designer' || page === 'designs'], ['connections-open', page === 'sources'], ['display-settings', page === 'device'], ['about-open', page === 'about']] as const) {
@@ -189,7 +195,7 @@ function notice(message = '', error = false) {
   $('notice').classList.toggle('error', error);
 }
 function dirty() { if (designSession) return !equal(component(), designSession.baseline); return editing && (!equal(draft, saved.layout) || !equal(draftSettings, saved.refresh_settings)); }
-function active() { return editing && viewingDraft && !saving; }
+function active() { return editing && viewingDraft && !saving && !updatingSoftware && !saved.updating; }
 function component() { return draft.components.find(c => c.id === selected); }
 function editingContents() { return (!!designSession || contentMode) && editing && viewingDraft && !!component(); }
 function element() { return component()?.blocks.find(block => block.id === selectedElement); }
@@ -373,10 +379,28 @@ function render(rebuildInspector = true) {
   renderList();
   renderTemplates();
   renderOverlays();
-  if (rebuildInspector) { renderInspector(); if (currentPage === 'device') retainFocus($('device-settings-body'), () => renderSettings($('device-settings-body'))); }
+  if (rebuildInspector) { renderInspector(); if (currentPage === 'device') renderDevice(); }
   if (designSession) renderDesignerState(); else button('design-place').hidden=true;
+  $('save-state').hidden=currentPage==='device'&&deviceView==='updates';
+  if(currentPage==='device'&&deviceView==='updates'){
+    $('draft-badge').hidden=true;
+    button('refresh').hidden=true;button('edit').hidden=true;button('designs-main').hidden=true;
+    if(!isDirty){button('save').hidden=true;button('discard').hidden=true;}
+  }
+  if(updatingSoftware||saved.updating){for(const id of ['edit','save','discard','refresh','designs-main'])button(id).disabled=true;}
   fit();
 }
+function renderDevice(){
+  const updates=deviceView==='updates';$('device-settings-body').hidden=updates;$('device-updates-body').hidden=!updates;
+  $('device-intro-title').textContent=updates?'Device':'Display settings';$('device-intro-copy').textContent=updates?'Manage the software on your Paperphase display.':'Choose when your display updates. Changes are saved with your display draft.';
+  $('page-title').textContent=updates?'Device':'Display settings';
+  for(const [id,active] of [['device-view-settings',!updates],['device-view-updates',updates]] as const){button(id).classList.toggle('active',active);if(active)button(id).setAttribute('aria-current','page');else button(id).removeAttribute('aria-current');}
+  button('device-undo').hidden=updates;button('device-redo').hidden=updates;
+  document.querySelector<HTMLElement>('.settings-intro .display-status')!.hidden=updates;
+  if(updates)updatePanel.render();else retainFocus($('device-settings-body'),()=>renderSettings($('device-settings-body')));
+}
+button('device-view-settings').onclick=()=>{deviceView='settings';updatePanel.close();render();};
+button('device-view-updates').onclick=()=>{deviceView='updates';updatePanel.open();render();};
 function setDisplayedImage(force = false) {
   const image = $<HTMLImageElement>('frame');
   const path = `/api/display.png?frame=${encodeURIComponent(saved.frame_id)}`;
@@ -1089,7 +1113,7 @@ function history(direction: 'undo' | 'redo') {
 }
 async function save() {
   if (designSession) { await saveDesign(); return; }
-  if (!dirty() || saving || conflict || !connected || drag) return;
+  if (!dirty() || saving || conflict || !connected || drag || updatingSoftware || saved.updating) return;
   saving = true; render(false); notice();
   try {
     const result = await api<{ revision: number; phase: string }>('/api/layout', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ base_revision: saved.revision, layout: draft, refresh_settings: draftSettings }) });
@@ -1154,6 +1178,7 @@ document.addEventListener('keydown', event => {
   const typing = (event.target as HTMLElement).closest('input,textarea,select,[contenteditable=true]');
   const mod = event.ctrlKey || event.metaKey;
   if (mod && event.key.toLowerCase() === 's') { event.preventDefault(); void save(); return; }
+  if(currentPage==='device'&&deviceView==='updates')return;
   if (!active()) return;
   if (event.key === 'Escape') {
     if (designSession && !drag) { $('viewport').focus({preventScroll:true}); selectedElement=null; render(); return; }
@@ -1209,7 +1234,7 @@ function renderRefreshStatus() {
 }
 function updateStatus() {
   renderRefreshStatus();
-  $('device-status').textContent = !connected ? 'Service unavailable' : saved.phase === 'paused' ? 'Quiet hours · paused' : saved.phase === 'pending' ? 'Display update pending' : saved.phase === 'error' ? 'Display update failed' : saved.phase === 'refreshing' ? saved.mode==='physical'?'Updating display':'Simulator refreshing' : saved.mode==='physical'?'Display ready':'Simulator idle';
+  $('device-status').textContent = updatePanel.isReconnecting()?'Restarting Paperphase':updatingSoftware||saved.updating?'Updating software':!connected ? 'Service unavailable' : saved.phase === 'paused' ? 'Quiet hours · paused' : saved.phase === 'pending' ? 'Display update pending' : saved.phase === 'error' ? 'Display update failed' : saved.phase === 'refreshing' ? saved.mode==='physical'?'Updating display':'Simulator refreshing' : saved.mode==='physical'?'Display ready':'Simulator idle';
   const dot = document.querySelector('.device .status-dot')!;
   dot.classList.toggle('busy', connected && saved.phase === 'refreshing'); dot.classList.toggle('offline', !connected);
   const onLan = location.hostname !== 'localhost' && location.hostname !== '127.0.0.1' && location.hostname !== '[::1]';
@@ -1217,6 +1242,7 @@ function updateStatus() {
   $('host-address').title = ['Browser address: ' + location.host, ...saved.addresses].join('\n');
 }
 async function poll() {
+  void updatePanel.poll();
   if (saving || drag) return;
   try {
     const current = await api<Workspace>('/api/state');
@@ -1233,7 +1259,7 @@ async function poll() {
     const rotationChanged=current.rotation_epoch!==saved.rotation_epoch;
     saved.rotation_epoch=current.rotation_epoch; saved.rotations=current.rotations; updateRotationStatus();
     if(rotationChanged&&editing&&viewingDraft&&!designSession)queuePreview();
-    saved.mode=current.mode;saved.display_frame_available=current.display_frame_available;saved.display_warning=current.display_warning;
+    saved.updating=current.updating; saved.mode=current.mode;saved.display_frame_available=current.display_frame_available;saved.display_warning=current.display_warning;
     if (designSession) { const minute=Math.floor(current.clock_now/60); if(minute!==draftMinute&&component()?.blocks.some(block=>block.source.kind==='clock')){draftMinute=minute;queuePreview();} connected=true; saved.phase=current.phase; saved.refresh=current.refresh; saved.clock_now=current.clock_now; saved.data_revision=current.data_revision; updateStatus(); return; }
     const changed = rotationChanged || !connected || current.revision !== saved.revision || current.frame_id !== saved.frame_id || current.displayed_revision !== saved.displayed_revision || current.phase !== saved.phase;
     connected = true;
@@ -1304,6 +1330,11 @@ async function start() {
 button('retry-start').onclick = () => { notice(); void start(); };
 button('retry-metadata').onclick = async () => { button('retry-metadata').disabled = true; try { await loadMetadata(); } finally { button('retry-metadata').disabled = false; } };
 
+const updatePanel=new UpdatePanel($('device-updates-body'),{
+  api,unsaved:()=>dirty()||connectionDirty(),confirm:confirmAction,
+  retain:build=>retainFocus($('device-updates-body'),build),
+  changed:()=>{updatingSoftware=updatePanel.inProgress();if(saved){render(false);updateStatus();}}
+});
 void start();
 
 let connectorDefinitions: ConnectorDefinition[] = [];

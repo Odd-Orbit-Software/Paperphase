@@ -300,6 +300,50 @@ impl PluginRuntime {
         Ok(PreparedPlugin { module })
     }
 
+    /// Validate imports and required exports without executing a Wasm start function.
+    pub fn validate_for_installation(&self, plugin: &PreparedPlugin) -> Result<()> {
+        self.linker()?
+            .instantiate_pre(&plugin.module)
+            .context("plugin host imports are incompatible")?;
+        let memory = plugin
+            .module
+            .get_export("memory")
+            .and_then(|ty| ty.memory().cloned())
+            .ok_or_else(|| anyhow!("plugin must export memory"))?;
+        ensure!(
+            !memory.is_64()
+                && !memory.is_shared()
+                && memory.minimum().saturating_mul(65536) <= self.limits.memory_bytes as u64,
+            "plugin initial memory is incompatible with host limits"
+        );
+        let run = plugin
+            .module
+            .get_export("run")
+            .and_then(|ty| ty.func().cloned())
+            .ok_or_else(|| anyhow!("plugin requires run() -> i32"))?;
+        ensure!(
+            run.params().len() == 0
+                && run.results().len() == 1
+                && run.results().next().unwrap().is_i32(),
+            "plugin requires run() -> i32"
+        );
+        Ok(())
+    }
+    fn linker(&self) -> Result<Linker<HostState>> {
+        let mut linker = Linker::new(&self.engine);
+        linker.func_wrap(ABI, "unix_time", |caller: Caller<'_, HostState>| -> i64 {
+            caller.data().now as i64
+        })?;
+        linker.func_wrap(ABI, "previous_dataset", previous_dataset)?;
+        linker.func_wrap(ABI, "reference_lookup", reference_lookup)?;
+        linker.func_wrap(ABI, "source_url", source_url)?;
+        linker.func_wrap(ABI, "settings_json", settings_json)?;
+        linker.func_wrap(ABI, "http_get", http_get)?;
+        linker.func_wrap(ABI, "publish", publish)?;
+        linker.func_wrap(ABI, "publish_with_metadata", publish_with_metadata)?;
+        Ok(linker)
+    }
+
     pub fn reference_client(&self) -> Client {
         self.client.clone()
     }
@@ -366,17 +410,7 @@ impl PluginRuntime {
         store.limiter(|state| &mut state.limits);
         // Set before instantiation: a module's start function is untrusted too.
         store.set_fuel(budgets.fuel)?;
-        let mut linker = Linker::new(&self.engine);
-        linker.func_wrap(ABI, "unix_time", |caller: Caller<'_, HostState>| -> i64 {
-            caller.data().now as i64
-        })?;
-        linker.func_wrap(ABI, "previous_dataset", previous_dataset)?;
-        linker.func_wrap(ABI, "reference_lookup", reference_lookup)?;
-        linker.func_wrap(ABI, "source_url", source_url)?;
-        linker.func_wrap(ABI, "settings_json", settings_json)?;
-        linker.func_wrap(ABI, "http_get", http_get)?;
-        linker.func_wrap(ABI, "publish", publish)?;
-        linker.func_wrap(ABI, "publish_with_metadata", publish_with_metadata)?;
+        let linker = self.linker()?;
         let instance = linker
             .instantiate(&mut store, &plugin.module)
             .context("instantiating plugin")?;

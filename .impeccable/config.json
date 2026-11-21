@@ -29,6 +29,15 @@
         ],
         "createdAt": "2026-11-15T16:50:35.784Z",
         "reason": "User confirmed: retain the paper-inspired green palette and approved option A on 2026-11-15. The warm paper background is an explicit product requirement."
+      },
+      {
+        "rule": "cream-palette",
+        "value": "*",
+        "files": [
+          "web/src/update-help.html"
+        ],
+        "createdAt": "2026-11-16T22:04:01.070Z",
+        "reason": "User confirmed: keep the existing paper palette because it evokes paper; this help page intentionally inherits the approved Paperphase palette in DESIGN.md."
       }
     ]
   }

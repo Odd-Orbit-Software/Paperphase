@@ -1220,3 +1220,19 @@ fn compiled_google_calendar_guest_uses_host_auth_and_publishes_private_agenda() 
     );
     assert!(!request.contains("show_titles") && !request.contains("account_id"));
 }
+
+#[test]
+fn installation_abi_validation_checks_linking_without_executing_start_functions() {
+    let runtime = PluginRuntime::new(Limits::default()).unwrap();
+    let valid=wat::parse_str(r#"(module (memory (export "memory") 1) (func $start unreachable) (start $start) (func (export "run") (result i32) i32.const 0))"#).unwrap();
+    let prepared = runtime.prepare(&valid).unwrap();
+    runtime.validate_for_installation(&prepared).unwrap();
+    for source in [
+        r#"(module (import "wasi_snapshot_preview1" "proc_exit" (func (param i32))) (memory (export "memory") 1) (func (export "run") (result i32) i32.const 0))"#,
+        r#"(module (memory (export "memory") 1) (func (export "run") (param i32) (result i32) local.get 0))"#,
+        r#"(module (memory (export "memory") 513) (func (export "run") (result i32) i32.const 0))"#,
+    ] {
+        let prepared = runtime.prepare(&wat::parse_str(source).unwrap()).unwrap();
+        assert!(runtime.validate_for_installation(&prepared).is_err());
+    }
+}

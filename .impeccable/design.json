@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-11-15T16:37:12.584220Z",
+  "generatedAt": "2026-11-16T22:04:26.071180Z",
   "title": "Design System: Paperphase",
   "extensions": {
     "colorMeta": {
@@ -406,7 +406,13 @@
       ".impeccable/review/sources.png",
       ".impeccable/review/device.png",
       ".impeccable/review/about.png",
-      ".impeccable/review/mobile.png"
+      ".impeccable/review/mobile.png",
+      "DESIGN.md",
+      "web/src/updates.ts",
+      "web/src/update-help.html",
+      "docs/design/release-updates.md",
+      ".impeccable/review/release-updates/desktop.png",
+      ".impeccable/review/release-updates/mobile.png"
     ],
     "assetProvenance": {
       "readme": "web/assets/brand/README.md",
@@ -420,6 +426,16 @@
         "path": "web/assets/brand/orbi.png",
         "source": "../Orbi/hd/reference-panels/hero-portrait.png",
         "usage": "About only; preserve opaque background, crop with object-fit cover and object-position center 25%."
+      }
+    },
+    "componentGuidance": {
+      "componentsShownInTurns": {
+        "title": "Components shown in turns",
+        "description": "Rotation extends the existing Content/Position/Style inspector. Content keeps an ordered item list, Preview Previous/Next and Add item together; timing and pause live in a compact disclosure. Preview selection affects only the browser, while item/order/timing edits use the existing draft, Undo, Discard and Save model. A live On display line distinguishes acknowledged content from preview. The normal picker moves existing components or copies saved designs and opens the established designer for new items. Incompatible sizes require editing or explicit shared-area resizing, without shrinking fonts or moving neighbours. The outer area remains one non-overlapping canvas rectangle. Picker Close and Escape return focus to its invoking Add item button. The established paper palette, typography, tokens and responsive editor layout remain authoritative."
+      },
+      "softwareUpdates": {
+        "title": "Software updates",
+        "description": "Device contains visibly selected Display settings and Updates subsections. Updates leads with installed software and a manual release check, then version selection, release notes and explicit confirmation. Core and registered plugins share one pattern. Experimental channels, release URLs and signed-package upload remain under Advanced; bundled setup/recovery help also works from the supervisor. Unsaved layout drafts are retained and block installation. Stable per-control and per-target identities preserve focus across polls. Accepted updates reveal and focus progress once; later polling preserves reading position. Stages and final outcomes reflect the durable supervisor transaction, including successful rollback and required recovery. Layout draft badges/revision chrome are suppressed here. The existing paper surfaces, green state colors, typography and native controls remain authoritative."
       }
     }
   },

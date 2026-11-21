@@ -29,6 +29,8 @@ struct Args {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Report updater compatibility without opening private state, network or GPIO.
+    UpdateCapabilities,
     /// Serve a deterministic local temperature API for connector development.
     DemoSource {
         #[arg(long, default_value = "127.0.0.1:9001")]
@@ -111,8 +113,16 @@ struct Report {
 }
 
 fn main() -> Result<()> {
+    paperphase::update::agent::watch_parent();
     let args = Args::parse();
     let (plugin, source_url, iterations, _demo) = match args.command {
+        Command::UpdateCapabilities => {
+            println!(
+                "{}",
+                serde_json::json!({"update_protocol":1,"state_schema":1,"platform":paperphase::update::agent::platform(),"plugin_abi":paperphase::update::package::PLUGIN_ABI})
+            );
+            return Ok(());
+        }
         Command::DemoSource { listen } => {
             let source = DemoApi::start_at(listen)?;
             println!("Paperphase demo source: {} (fixed 18.5 °C)", source.url);

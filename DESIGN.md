@@ -446,3 +446,18 @@ explicit shared-area resizing, without shrinking fonts or moving neighbours.
 The outer area remains one non-overlapping canvas rectangle. Picker Close and
 Escape return focus to its invoking Add item button. The established paper
 palette, typography, tokens and responsive editor layout remain authoritative.
+
+### Software updates
+
+Device contains visibly selected Display settings and Updates subsections.
+Updates leads with installed software and a manual release check, then version
+selection, release notes and explicit confirmation. Core and registered plugins
+share one pattern. Experimental channels, release URLs and signed-package upload
+remain under Advanced; bundled setup/recovery help also works from the supervisor.
+Unsaved layout drafts are retained and block installation. Stable per-control and
+per-target identities preserve focus across polls. Accepted updates reveal and
+focus progress once; later polling preserves reading position. Stages and final
+outcomes reflect the durable supervisor transaction, including successful rollback
+and required recovery. Layout draft badges/revision chrome are suppressed here.
+The existing paper surfaces, green state colors, typography and native controls
+remain authoritative.

@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Paperphase · Update setup and recovery</title><link rel="stylesheet" href="/app.css"></head>
+<body>
+<header class="topbar"><span class="brand">paperphase</span></header>
+<main class="update-help">
+<h1>Update setup and recovery</h1>
+<p>Normal updates run from Device → Updates. Choose a release, review it, then confirm the restart. Save your layout changes first and keep power connected.</p>
+<section><h2>During an update</h2><p>Paperphase checks the publisher and package before showing Updating on the physical screen. Display cooldowns still apply. The supervisor then backs up saved data, restarts the app and checks it is ready. Normal screen content resumes according to your saved quiet-hours settings.</p><p>The original browser tab follows supervisor progress while the app restarts. A failed startup restores the previous software and compatible saved data.</p></section>
+<section><h2>If recovery is needed</h2><p>Use SSH to inspect the transaction. These commands match the example Pi installation; substitute your installation paths if different.</p><pre><code>/home/pmck/paperphase-test/bootstrap/paperphase-update-agent status \
+  --installation /home/pmck/paperphase-test/installation.json</code></pre><p>If automatic rollback could not finish, stop the managed service before explicit recovery:</p><pre><code>sudo systemctl stop paperphase.service
+/home/pmck/paperphase-test/bootstrap/paperphase-update-agent recover \
+  --installation /home/pmck/paperphase-test/installation.json
+sudo systemctl start paperphase.service</code></pre><p>Recovery retains the backup and failed-version data. If a backup or executable is unavailable, keep the files in place and use your known-good bootstrap binary and private-state backup.</p></section>
+<section><h2>Set up an existing development image</h2><p>UI updates need the independent supervisor installed once. Factory images should already include it. The supervisor stays outside application release slots, stores trusted public publisher keys, and preserves the existing private data folder and host permissions. Publisher private keys never belong on a device image.</p><p><a href="/help/updates-guide">Read the complete operator guide</a> for configuration, service setup, package signing and recovery details. This bundled guide remains available from the supervisor while the main app is unavailable.</p></section>
+</main>
+<footer class="page-footer"><a href="https://oddorbit.software" target="_blank" rel="noreferrer">Developed by <strong>Odd Orbit Software</strong></a></footer>
+</body></html>
