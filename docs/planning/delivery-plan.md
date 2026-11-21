@@ -314,8 +314,11 @@ verify retained settings, component designs, cached data and rate-limit state,
 along with a usable rollback path. Implementation and desktop validation now
 exist on `release-updates`; see the [update plan](release-updates.md),
 [design/validation ledger](../design/release-updates.md) and
-[operator guide](../usage/release-updates.md). Physical validation and a first
-published signed release remain distinct completion checks.
+[operator guide](../usage/release-updates.md). The first signed
+experimental releases are published, and real GitHub app/weather-plugin updates
+passed through the Pi UI. Updating was physically acknowledged and owner-confirmed
+centered/readable; the saved layout returned with unchanged configuration. See
+the design ledger for the separate desktop, CI and physical evidence.
 
 ## Documentation for every implemented feature
 

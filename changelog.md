@@ -16,14 +16,22 @@ centering. Center each text line horizontally, measure the rendered ink (includi
 wrapping/font bearings), then center the heading and supporting copy vertically
 as one group. Keep existing wording, sizes, full-refresh acknowledgement and
 restart/cooldown behavior. Verify unclipped ink and centering on 800×480 and
-320×240 renderings. Prepare `v0.1.0-foundation.2` for this visual refinement;
-application/workspace version remains `0.1.0`.
+320×240 renderings. Published `v0.1.0-foundation.2` from commit `e734554` for
+this visual refinement; application/workspace version remains `0.1.0`.
 
 Verification: `sh scripts/check.sh` passed 217 Rust and 13 Python tests. Actual
 compiled-app 800×480 and 320×240 maintenance frames were inspected; the fresh
 Impeccable reviewer returned `ship` for centering, hierarchy, margins and clipping.
-The ARM64 release build passed; the existing 50 web flows passed for the first
-release. No web UI source or design tokens changed in this refinement.
+The ARM64 release build passed; both branch/tag GitHub checks passed, including
+all 50 web flows. No web UI source or design tokens changed in this refinement.
+The Pi installed the app and Open-Meteo weather plugin from the published GitHub
+release through the UI. Both reached healthy after Updating acknowledgement,
+backup and restart. Downloaded package hashes matched the audited public assets.
+The final full refresh restored owner revision 5 without error. Layout, binding
+and installation fingerprints remained unchanged. The owner confirmed that the
+notice was centered/readable and the restored weather information/icons looked
+correct. All 24 assets in each pre-release matched GitHub SHA-256 values before
+publication; publisher private keys and device credentials stayed private.
 
 ### Publish the first experimental release
 
@@ -45,9 +53,9 @@ the real Pi browser found all ten targets after opt-in. The app downloaded from
 GitHub, verified and restarted healthy after an Updating acknowledgement and
 complete backup. A full refresh restored owner revision 5; layout, bindings and
 installation fingerprints stayed unchanged. The owner confirmed the Updating
-message on the real panel. The weather-plugin network path remains under test.
-The branch CI passed; the tag run hit one designer-focus assertion (49/50 browser
-flows) and is being rerun separately.
+message on the real panel. The weather-plugin network path passed in the
+centered follow-up. Branch CI passed; the first tag attempt hit one designer-focus
+assertion (49/50 browser flows), then its rerun passed all checks.
 
 ### Update from signed releases through Device
 

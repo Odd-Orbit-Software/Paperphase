@@ -4,14 +4,16 @@ Status: implemented on `release-updates`, after rotation commit
 `5145b19`. Owner-approved requirements remain in requirements.md and delivery-plan.md.
 The repository had no published releases at preflight. The owner subsequently
 authorized publishing `v0.1.0-foundation.1`; its 24 audited public assets were
-published on 2026-11-21 from source commit `2f92ef7`.
+published on 2026-11-21 from source commit `2f92ef7`. The owner-requested centered
+follow-up `v0.1.0-foundation.2` was published from `e734554`.
 
 Desktop and isolated Pi uploaded-package activation/rollback passed; the regular
 managed service restored owner revision 5. Real Pi discovery now finds the first
-published release only after experimental opt-in. Live GitHub app/plugin
-activation are being qualified. The owner confirmed Updating on the real panel
-and requested centered placement; the follow-up keeps version `0.1.0` and uses
-release tag `v0.1.0-foundation.2`. See the design validation ledger.
+published releases only after experimental opt-in. Real GitHub app and weather
+plugin activation passed through the UI, with backups, acknowledged Updating,
+healthy restart and final restoration of owner revision 5. The owner confirmed
+the centered message and correct weather display. Both release-commit branch/tag
+checks passed; version remains `0.1.0`. See the design validation ledger.
 
 ## Delivery contract
 

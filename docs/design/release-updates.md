@@ -3,7 +3,8 @@
 Status: implemented on `release-updates`; validation is recorded below as it is
 completed. The first signed experimental release, `v0.1.0-foundation.1`, was
 published on 2026-11-21 from commit `2f92ef7`. The foundation application/package
-version remains `0.1.0`.
+version remains `0.1.0`. The centered follow-up `v0.1.0-foundation.2` was
+published from commit `e734554` and qualified on the same Pi.
 
 ## Ownership and private installation records
 
@@ -104,8 +105,10 @@ keeps the existing wording, readable font sizes and full-update behavior.
 ![Actual centered 800×480 maintenance frame](images/update-notice-centered.png)
 
 The 800×480 panel and 320×240 compact rendering were checked for centering and
-clipping. A fresh visual reviewer returned `ship` for this narrow refinement;
-the editor's design system and tokens remain unchanged.
+clipping. A fresh visual reviewer returned `ship` for this narrow refinement.
+During the real weather-plugin update the owner confirmed the physical notice
+was centered and readable, then confirmed the restored layout/weather icons.
+The editor's design system and tokens remain unchanged.
 
 ## Maintenance, activation and recovery
 
@@ -169,7 +172,8 @@ and [bundled operator help](images/release-updates-help.png).
 - Process integration has demonstrated core activation, startup-failure rollback,
   interrupted-supervisor recovery and rejection before display changes. Installed
   plugin execution and retained grants/cache/cooldowns also passed.
-- `sh scripts/check.sh` passed 216 Rust and 13 Python tests.
+- `sh scripts/check.sh` passed 217 Rust and 13 Python tests after the centered
+  notice refinement (216 Rust tests before it).
 - Browser flows cover explicit checks/confirmation, experimental defaults,
   unsaved drafts, independent progress/recovery, manual-install setup and focus/
   file persistence/reveal-on-start. All 50 distinct browser flows passed across
@@ -199,15 +203,20 @@ and [bundled operator help](images/release-updates-help.png).
   pushed on `release-updates` and tagged `v0.1.0-foundation.1`. Its 24 assets
   include ten signed packages, public manifests/build identity/checksums and a
   bootstrap archive. Independent Ed25519/payload checks passed; all 24 GitHub
-  SHA-256 digests matched local files. Branch CI passed; a duplicate tag run
-  hit one designer-focus assertion and is being rerun.
+  SHA-256 digests matched local files. Branch CI passed. The tag run initially
+  hit one designer-focus assertion; its rerun passed.
 - The real Pi browser excluded the pre-release on the normal channel and found
   all ten targets after experimental opt-in. The app downloaded from GitHub,
   verified, acknowledged Updating, backed up state and restarted healthy. Owner
   revision 5 returned through a full refresh at 12:27:29 UTC. Layout, bindings and
   installation fingerprints remained unchanged. The owner confirmed Updating
   was visible during this run and requested the centered follow-up refinement.
-  The real weather-plugin download/activation remains under qualification.
+- The centered app and Open-Meteo weather plugin from `v0.1.0-foundation.2`
+  downloaded, verified, acknowledged Updating, backed up state and restarted
+  healthy. Their downloaded hashes matched the signed public assets. Both source
+  branch/tag CI runs passed. The owner confirmed the centered physical notice and
+  correct restored weather information/icons. The final full refresh restored
+  revision 5 without error; the three saved-file fingerprints remained unchanged.
 - Real Google-account longevity and longer optical panel qualification remain
   separately recorded foundation work.
 
