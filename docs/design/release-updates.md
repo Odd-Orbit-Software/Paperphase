@@ -1,8 +1,9 @@
 # Release updates and independent recovery
 
 Status: implemented on `release-updates`; validation is recorded below as it is
-completed. No GitHub release has been published by this implementation. The
-foundation application/package version remains `0.1.0`.
+completed. The first signed experimental release, `v0.1.0-foundation.1`, was
+published on 2026-11-21 from commit `2f92ef7`. The foundation application/package
+version remains `0.1.0`.
 
 ## Ownership and private installation records
 
@@ -92,6 +93,20 @@ are never attached. The API contract is documented by GitHub's
 [release endpoints](https://docs.github.com/en/rest/releases/releases) and
 [asset endpoints](https://docs.github.com/en/rest/releases/assets).
 
+## Maintenance notice placement
+
+After seeing the real Updating message, the owner requested centered placement.
+The heading and supporting copy use the existing center text alignment. A first
+render measures the visible ink, including font bearings and line wrapping; a
+second render moves the group to the vertical center. The maintenance scene
+keeps the existing wording, readable font sizes and full-update behavior.
+
+![Actual centered 800×480 maintenance frame](images/update-notice-centered.png)
+
+The 800×480 panel and 320×240 compact rendering were checked for centering and
+clipping. A fresh visual reviewer returned `ship` for this narrow refinement;
+the editor's design system and tokens remain unchanged.
+
 ## Maintenance, activation and recovery
 
 Preparing a package does not change the saved layout or completed frame. A
@@ -178,13 +193,21 @@ and [bundled operator help](images/release-updates-help.png).
   and the managed regular unit was started with all nine plugin registrations.
   The recovery full refresh acknowledged owner revision 5; output returned idle
   without error, and both regular services remained active with the main service
-  enabled. The owner has not yet confirmed optical readability/retention of this
-  test's Updating message.
-- The regular Pi browser performed a real GitHub check for all ten registered
-  targets with HTTP 200 and no per-target errors. Independent bundled help also
-  returned 200. Discovery currently finds no releases. A real signed release must
-  be published with owner authorization before download/activation from that
-  release can be claimed tested. Desktop mocks/uploaded packages do not prove it.
+  enabled. The owner later confirmed the real Updating message during the
+  published-release qualification on 2026-11-21.
+- On 2026-11-21 the owner authorized publication. Source commit `2f92ef7` was
+  pushed on `release-updates` and tagged `v0.1.0-foundation.1`. Its 24 assets
+  include ten signed packages, public manifests/build identity/checksums and a
+  bootstrap archive. Independent Ed25519/payload checks passed; all 24 GitHub
+  SHA-256 digests matched local files. Branch CI passed; a duplicate tag run
+  hit one designer-focus assertion and is being rerun.
+- The real Pi browser excluded the pre-release on the normal channel and found
+  all ten targets after experimental opt-in. The app downloaded from GitHub,
+  verified, acknowledged Updating, backed up state and restarted healthy. Owner
+  revision 5 returned through a full refresh at 12:27:29 UTC. Layout, bindings and
+  installation fingerprints remained unchanged. The owner confirmed Updating
+  was visible during this run and requested the centered follow-up refinement.
+  The real weather-plugin download/activation remains under qualification.
 - Real Google-account longevity and longer optical panel qualification remain
   separately recorded foundation work.
 

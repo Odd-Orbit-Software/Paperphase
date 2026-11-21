@@ -9,9 +9,25 @@ Owner accepted the component designer and authorized its commit, merge to
 `main`, and GitHub push. This publication also includes the previously local
 UIUX redesign commit. Foundation version remains `0.1.0`.
 
-### Prepare the first experimental release
+### Center the physical Updating notice
 
-Prepared `v0.1.0-foundation.1` for publication from `release-updates`, retaining
+The owner confirmed the real GitHub update notice on the panel and requested
+centering. Center each text line horizontally, measure the rendered ink (including
+wrapping/font bearings), then center the heading and supporting copy vertically
+as one group. Keep existing wording, sizes, full-refresh acknowledgement and
+restart/cooldown behavior. Verify unclipped ink and centering on 800×480 and
+320×240 renderings. Prepare `v0.1.0-foundation.2` for this visual refinement;
+application/workspace version remains `0.1.0`.
+
+Verification: `sh scripts/check.sh` passed 217 Rust and 13 Python tests. Actual
+compiled-app 800×480 and 320×240 maintenance frames were inspected; the fresh
+Impeccable reviewer returned `ship` for centering, hierarchy, margins and clipping.
+The ARM64 release build passed; the existing 50 web flows passed for the first
+release. No web UI source or design tokens changed in this refinement.
+
+### Publish the first experimental release
+
+Published `v0.1.0-foundation.1` from commit `2f92ef7` on `release-updates`, retaining
 application and workspace version `0.1.0`. The release targets 64-bit Raspberry Pi
 OS / Linux ARM64 with glibc 2.41 or newer and includes signed app/all-nine-plugin
 packages, public manifests/checksums and a separate bootstrap supervisor. Normal
@@ -23,8 +39,15 @@ passed again with 216 Rust and 13 Python tests; embedded UI assets rebuilt.
 All 50 browser flows passed against the optimized native release build. The
 initial debug harness exceeded its startup deadline during concurrent release
 builds; no source change was needed for the optimized-browser qualification.
-Release discovery/download/activation will be recorded separately after the
-signed assets are published.
+All 24 GitHub asset SHA-256 digests matched the locally audited files, including
+independently verified Ed25519 packages. The normal channel excluded the release;
+the real Pi browser found all ten targets after opt-in. The app downloaded from
+GitHub, verified and restarted healthy after an Updating acknowledgement and
+complete backup. A full refresh restored owner revision 5; layout, bindings and
+installation fingerprints stayed unchanged. The owner confirmed the Updating
+message on the real panel. The weather-plugin network path remains under test.
+The branch CI passed; the tag run hit one designer-focus assertion (49/50 browser
+flows) and is being rerun separately.
 
 ### Update from signed releases through Device
 

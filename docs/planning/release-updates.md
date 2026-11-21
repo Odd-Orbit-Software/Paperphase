@@ -2,13 +2,16 @@
 
 Status: implemented on `release-updates`, after rotation commit
 `5145b19`. Owner-approved requirements remain in requirements.md and delivery-plan.md.
-The repository has no published releases at preflight. Publishing a first release
-is a separate external action after code, packages and verification are ready.
+The repository had no published releases at preflight. The owner subsequently
+authorized publishing `v0.1.0-foundation.1`; its 24 audited public assets were
+published on 2026-11-21 from source commit `2f92ef7`.
 
 Desktop and isolated Pi uploaded-package activation/rollback passed; the regular
-managed service restored owner revision 5. Real GitHub discovery returns no
-releases. Download/activation from a first published release and owner optical
-confirmation remain open; see the design validation ledger.
+managed service restored owner revision 5. Real Pi discovery now finds the first
+published release only after experimental opt-in. Live GitHub app/plugin
+activation are being qualified. The owner confirmed Updating on the real panel
+and requested centered placement; the follow-up keeps version `0.1.0` and uses
+release tag `v0.1.0-foundation.2`. See the design validation ledger.
 
 ## Delivery contract
 

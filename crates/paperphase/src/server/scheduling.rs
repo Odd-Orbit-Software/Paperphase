@@ -144,20 +144,8 @@ pub(super) async fn begin_maintenance(app: Shared, id: &str) -> ApiResult<()> {
         ws.maintenance_ack = None;
         ws.saved.layout.clone()
     };
-    let display = &declared.display;
-    let padding = 8u32.min(display.width / 8).min(display.height / 8);
-    let heading = if display.width >= 400 && display.height >= 200 {
-        32
-    } else {
-        20
-    };
-    let scene:Layout=serde_json::from_value(serde_json::json!({"schema_version":1,"display":display,"components":[{
-        "id":"updating","rect":{"x":0,"y":0,"width":display.width,"height":display.height},"padding":padding,"gap":12,"refresh_hint":"full","blocks":[
-            {"id":"heading","font_size":heading,"source":{"kind":"literal","text":"Updating Paperphase"}},
-            {"id":"message","font_size":14,"source":{"kind":"literal","text":"Please keep power connected.\nYour display will return when the update is ready."}}
-        ]}]})).map_err(internal)?;
     let at = (app.clock)();
-    let preview = super::render(std::sync::Arc::clone(&app), scene, at).await?;
+    let preview = updating_preview(std::sync::Arc::clone(&app), &declared.display, at).await?;
     let frame = PreparedFrame {
         data_epoch: preview.data_epoch,
         revision: 0,
@@ -174,6 +162,38 @@ pub(super) async fn begin_maintenance(app: Shared, id: &str) -> ApiResult<()> {
     let mut ws = app.workspace.lock().await;
     queue(&app, &mut ws, frame);
     Ok(())
+}
+
+async fn updating_preview(
+    app: Shared,
+    display: &paperphase_core::DisplaySpec,
+    at: u64,
+) -> ApiResult<super::Preview> {
+    let padding = 8u32.min(display.width / 8).min(display.height / 8);
+    let heading = if display.width >= 400 && display.height >= 200 {
+        32
+    } else {
+        20
+    };
+    let mut scene:Layout=serde_json::from_value(serde_json::json!({"schema_version":1,"display":display,"components":[{
+        "id":"updating","rect":{"x":0,"y":0,"width":display.width,"height":display.height},"padding":padding,"gap":12,"refresh_hint":"full","blocks":[
+            {"id":"heading","font_size":heading,"align":"center","source":{"kind":"literal","text":"Updating Paperphase"}},
+            {"id":"message","font_size":14,"align":"center","source":{"kind":"literal","text":"Please keep power connected.\nYour display will return when the update is ready."}}
+        ]}]})).map_err(internal)?;
+    let preview = super::render(std::sync::Arc::clone(&app), scene.clone(), at).await?;
+    let blank = Frame::blank(display).map_err(internal)?;
+    let Some(ink) = preview.frame.difference_bounds(&blank).map_err(internal)? else {
+        return Ok(preview);
+    };
+    // Measure actual ink, including wrapping and font bearings, so the visible
+    // heading and supporting lines form one vertically centered group.
+    let shift = ((display.height - ink.height) / 2).saturating_sub(ink.y);
+    if shift == 0 {
+        return Ok(preview);
+    }
+    scene.components[0].rect.y = shift;
+    scene.components[0].rect.height -= shift;
+    super::render(app, scene, at).await
 }
 
 pub(super) async fn prepare(
@@ -1061,6 +1081,38 @@ pub(super) mod tests {
         assert_eq!(shown(&ws), "world");
         assert_eq!(ws.frame_serial, 1);
         assert!(!ws.rotations.due(&ws.saved.layout, Instant::now()));
+    }
+    #[tokio::test]
+    async fn updating_notice_centers_visible_ink_without_clipping_at_panel_and_compact_sizes() {
+        let (app, _, _dir) = app(scene(), RefreshSettings::default(), empty(), START);
+        for (width, height) in [(800, 480), (320, 240)] {
+            let display = paperphase_core::DisplaySpec {
+                id: "notice-test".into(),
+                width,
+                height,
+            };
+            let preview = updating_preview(Arc::clone(&app), &display, START)
+                .await
+                .unwrap();
+            assert!(
+                preview
+                    .components
+                    .iter()
+                    .all(|component| { component.blocks.iter().all(|block| !block.overflow) })
+            );
+            let ink = preview
+                .frame
+                .difference_bounds(&Frame::blank(&display).unwrap())
+                .unwrap()
+                .unwrap();
+            // Center alignment includes advances and wrapped whitespace; the
+            // visible horizontal midpoint can differ by up to four pixels.
+            assert!(
+                (2 * ink.x + ink.width).abs_diff(width) <= 8,
+                "{width}x{height}: {ink:?}"
+            );
+            assert!((2 * ink.y + ink.height).abs_diff(height) <= 1);
+        }
     }
     #[tokio::test]
     async fn updating_notice_is_acknowledged_without_changing_the_saved_layout_or_rotation_dwell() {
